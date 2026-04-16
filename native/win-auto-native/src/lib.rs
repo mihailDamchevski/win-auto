@@ -44,6 +44,12 @@
 //! const sourceElement = await findElement(windowHandle, ['SourceClass']);
 //! const targetElement = await findElement(windowHandle, ['TargetClass']);
 //! await dragDrop(sourceElement, targetElement);
+//!
+//! // Capture a screenshot
+//! const screenshot = await captureScreenshot(element);
+//! // Or save to a file
+//! await captureScreenshotToFile(element, 'screenshot.bmp');
+//! ```
 //! ## Testing
 //!
 //! To test the native module:
@@ -95,6 +101,11 @@ use std::process::Command;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+  BitBlt, BI_RGB, BITMAPFILEHEADER, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap,
+  CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD,
+  SelectObject, SRCCOPY, DIB_RGB_COLORS,
+};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children};
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEINPUT};
@@ -485,6 +496,142 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
     SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
   }
   Ok(())
+}
+
+fn capture_window_bitmap(hwnd: HWND) -> Result<Vec<u8>> {
+  unsafe {
+    let mut rect = RECT::default();
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+      return Err(napi_error("Failed to get window rectangle"));
+    }
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if width <= 0 || height <= 0 {
+      return Err(napi_error("Invalid window bounds for screenshot"));
+    }
+
+    let hdc_window = GetWindowDC(hwnd);
+    if hdc_window.is_invalid() {
+      return Err(napi_error("Failed to get window device context"));
+    }
+
+    let hdc_mem = CreateCompatibleDC(hdc_window);
+    if hdc_mem.is_invalid() {
+      ReleaseDC(hwnd, hdc_window);
+      return Err(napi_error("Failed to create compatible DC"));
+    }
+
+    let hbitmap = CreateCompatibleBitmap(hdc_window, width, height);
+    if hbitmap.is_invalid() {
+      let _ = DeleteDC(hdc_mem);
+      let _ = ReleaseDC(hwnd, hdc_window);
+      return Err(napi_error("Failed to create compatible bitmap"));
+    }
+
+    let old_obj = SelectObject(hdc_mem, hbitmap);
+    if old_obj.is_invalid() {
+      let _ = DeleteObject(hbitmap);
+      let _ = DeleteDC(hdc_mem);
+      let _ = ReleaseDC(hwnd, hdc_window);
+      return Err(napi_error("Failed to select bitmap into DC"));
+    }
+
+    if BitBlt(hdc_mem, 0, 0, width, height, hdc_window, 0, 0, SRCCOPY).is_err() {
+      let _ = SelectObject(hdc_mem, old_obj);
+      let _ = DeleteObject(hbitmap);
+      let _ = DeleteDC(hdc_mem);
+      let _ = ReleaseDC(hwnd, hdc_window);
+      return Err(napi_error("Failed to capture window bitmap"));
+    }
+
+    let header = BITMAPINFOHEADER {
+      biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+      biWidth: width,
+      biHeight: height,
+      biPlanes: 1,
+      biBitCount: 32,
+      biCompression: BI_RGB.0,
+      biSizeImage: (width * height * 4) as u32,
+      biXPelsPerMeter: 0,
+      biYPelsPerMeter: 0,
+      biClrUsed: 0,
+      biClrImportant: 0,
+    };
+
+    let mut info = BITMAPINFO {
+      bmiHeader: header,
+      bmiColors: [RGBQUAD::default()],
+    };
+    let image_size = (width * height * 4) as usize;
+    let mut buffer = vec![0u8; image_size];
+
+    let result = GetDIBits(
+      hdc_mem,
+      hbitmap,
+      0,
+      height as u32,
+      Some(buffer.as_mut_ptr() as *mut _),
+      &mut info,
+      DIB_RGB_COLORS,
+    );
+
+    let _ = SelectObject(hdc_mem, old_obj);
+    let _ = DeleteObject(hbitmap);
+    let _ = DeleteDC(hdc_mem);
+    let _ = ReleaseDC(hwnd, hdc_window);
+
+    if result == 0 {
+      return Err(napi_error("Failed to read bitmap pixels"));
+    }
+
+    let file_header = BITMAPFILEHEADER {
+      bfType: 0x4D42,
+      bfSize: (std::mem::size_of::<BITMAPFILEHEADER>() + std::mem::size_of::<BITMAPINFOHEADER>() + image_size) as u32,
+      bfReserved1: 0,
+      bfReserved2: 0,
+      bfOffBits: (std::mem::size_of::<BITMAPFILEHEADER>() + std::mem::size_of::<BITMAPINFOHEADER>()) as u32,
+    };
+
+    let mut output = Vec::with_capacity(file_header.bfSize as usize);
+    output.extend_from_slice(std::slice::from_raw_parts(
+      (&file_header as *const BITMAPFILEHEADER) as *const u8,
+      std::mem::size_of::<BITMAPFILEHEADER>(),
+    ));
+    output.extend_from_slice(std::slice::from_raw_parts(
+      (&header as *const BITMAPINFOHEADER) as *const u8,
+      std::mem::size_of::<BITMAPINFOHEADER>(),
+    ));
+    output.extend_from_slice(&buffer);
+
+    Ok(output)
+  }
+}
+
+/// Captures a screenshot of the specified element or window.
+///
+/// # Arguments
+/// * `element_handle` - String representation of the window handle to capture
+///
+/// # Returns
+/// A `Result` containing raw BMP image bytes
+#[napi(js_name = "captureScreenshot")]
+pub async fn capture_screenshot(element_handle: String) -> Result<Vec<u8>> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  capture_window_bitmap(hwnd)
+}
+
+/// Saves a screenshot to a BMP file.
+///
+/// # Arguments
+/// * `element_handle` - String representation of the window handle to capture
+/// * `path` - Destination file path
+///
+/// # Returns
+/// A `Result` that resolves when the file is written
+#[napi(js_name = "captureScreenshotToFile")]
+pub async fn capture_screenshot_to_file(element_handle: String, path: String) -> Result<()> {
+  let bytes = capture_screenshot(element_handle).await?;
+  std::fs::write(path, bytes).map_err(|err| napi_error(format!("Failed to write screenshot file: {err}")))
 }
 
 /// Moves the mouse cursor to hover over an element.
