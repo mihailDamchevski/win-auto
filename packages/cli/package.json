@@ -1,0 +1,16 @@
+{
+  "name": "win-auto",
+  "version": "0.1.0",
+  "description": "CLI for Windows desktop automation test project scaffolding.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "win-auto": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@win-auto/core": "0.1.0"
+  }
+}

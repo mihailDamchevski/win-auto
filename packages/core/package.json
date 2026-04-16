@@ -1,0 +1,17 @@
+{
+  "name": "@win-auto/core",
+  "version": "0.1.0",
+  "description": "Core TypeScript API for Windows desktop automation.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run src/mock/mockRuntime.test.ts"
+  }
+}

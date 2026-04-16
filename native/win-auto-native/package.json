@@ -1,0 +1,18 @@
+{
+  "name": "win-auto-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native addon skeleton for win-auto (Rust + napi-rs).",
+  "main": "index.js",
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "clean": "rimraf *.node"
+  },
+  "napi": {
+    "name": "win-auto-native"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
+  }
+}
