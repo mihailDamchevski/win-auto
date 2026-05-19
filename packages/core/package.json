@@ -49,5 +49,8 @@
     "test": "vitest run src/mock/mockRuntime.test.ts",
     "prepublishOnly": "npm run build",
     "prepack": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
