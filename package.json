@@ -18,6 +18,8 @@
   ],
   "scripts": {
     "build": "npm run build -w @win-auto/core && npm run build -w win-auto && npm run build:native",
+    "publish:all": "node scripts/publish-all.js",
+    "bump:patch": "node scripts/bump-versions.js",
     "build:native": "npm run build -w win-auto-native",
     "test": "npm run test -w @win-auto/core && npm run test:e2e",
     "test:e2e": "vitest run tests/e2e/native-ping.test.ts",
