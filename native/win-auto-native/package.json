@@ -1,6 +1,6 @@
 {
   "name": "win-auto-native",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Native addon skeleton for win-auto (Rust + napi-rs).",
   "repository": {
     "type": "git",

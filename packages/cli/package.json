@@ -1,6 +1,6 @@
 {
   "name": "win-auto",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for Windows desktop automation test project scaffolding.",
   "repository": {
     "type": "git",
@@ -29,6 +29,6 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@win-auto/core": "0.1.0"
+    "@win-auto/core": "0.1.1"
   }
 }
