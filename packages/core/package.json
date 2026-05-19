@@ -4,13 +4,13 @@
   "description": "Core TypeScript API for Windows desktop automation.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/win-auto.git",
+    "url": "https://github.com/mihailDamchevski/win-auto.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/win-auto/issues"
+    "url": "https://github.com/mihailDamchevski/win-auto/issues"
   },
-  "homepage": "https://github.com/yourusername/win-auto/tree/main/packages/core#readme",
+  "homepage": "https://github.com/mihailDamchevski/win-auto/tree/main/packages/core#readme",
   "license": "MIT",
   "author": "Your Name",
   "main": "dist/index.js",

@@ -4,13 +4,13 @@
   "description": "Native addon skeleton for win-auto (Rust + napi-rs).",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/win-auto.git",
+    "url": "https://github.com/mihailDamchevski/win-auto.git",
     "directory": "native/win-auto-native"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/win-auto/issues"
+    "url": "https://github.com/mihailDamchevski/win-auto/issues"
   },
-  "homepage": "https://github.com/yourusername/win-auto/tree/main/native/win-auto-native#readme",
+  "homepage": "https://github.com/mihailDamchevski/win-auto/tree/main/native/win-auto-native#readme",
   "license": "MIT",
   "author": "Your Name",
   "main": "index.js",

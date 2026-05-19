@@ -14,7 +14,7 @@ First off, thanks for taking the time to contribute! 🎉
 
 ```powershell
 # Clone the repository
-git clone https://github.com/yourusername/win-auto.git
+git clone https://github.com/mihailDamchevski/win-auto.git
 cd win-auto
 
 # Install dependencies

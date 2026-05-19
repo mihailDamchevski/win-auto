@@ -26,6 +26,7 @@ npm install win-auto-core
 ```
 
 For the CLI tool:
+
 ```bash
 npm install -g win-auto
 ```
@@ -33,17 +34,17 @@ npm install -g win-auto
 ### Basic Usage
 
 ```typescript
-import { Automation } from 'win-auto-core';
+import { Automation } from "win-auto-core";
 
 // Launch an application
 const automation = new Automation();
-const app = await automation.launch('C:\\Windows\\System32\\notepad.exe');
+const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
 
 // Find an element
-const textbox = await app.find({ role: 'textbox' });
+const textbox = await app.find({ role: "textbox" });
 
 // Interact with it
-await textbox?.type('Hello from win-auto!');
+await textbox?.type("Hello from win-auto!");
 ```
 
 ### Using the CLI
@@ -82,7 +83,7 @@ Represents a launched application.
 const mainWindow = await app.getMainWindow();
 
 // Find elements in the app
-const element = await app.find({ role: 'button', name: 'OK' });
+const element = await app.find({ role: "button", name: "OK" });
 ```
 
 ### Window
@@ -91,7 +92,7 @@ Represents a window in the application.
 
 ```typescript
 // Find elements within a window
-const element = await window.findElement({ role: 'textbox' });
+const element = await window.findElement({ role: "textbox" });
 
 // Get window properties
 const title = await window.getTitle();
@@ -103,7 +104,7 @@ Represents a UI element (button, textbox, etc.).
 
 ```typescript
 // Interact with elements
-await element.typeText('Hello');
+await element.typeText("Hello");
 await element.click();
 
 // Get element properties
@@ -124,20 +125,20 @@ const role = await element.getRole();
 ### Automating Notepad
 
 ```typescript
-import { Automation } from 'win-auto-core';
+import { Automation } from "win-auto-core";
 
 async function automateNotepad() {
   const automation = new Automation();
-  
+
   // Launch Notepad
-  const app = await automation.launch('C:\\Windows\\System32\\notepad.exe');
-  
+  const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
+
   // Find the text input
-  const textbox = await app.find({ role: 'textbox' });
-  
+  const textbox = await app.find({ role: "textbox" });
+
   // Type some text
-  await textbox?.type('This is an automated message!\n');
-  await textbox?.type('win-auto makes it easy!');
+  await textbox?.type("This is an automated message!\n");
+  await textbox?.type("win-auto makes it easy!");
 }
 
 automateNotepad().catch(console.error);
@@ -147,28 +148,28 @@ automateNotepad().catch(console.error);
 
 ```typescript
 // Find by role
-const button = await app.find({ role: 'button' });
+const button = await app.find({ role: "button" });
 
 // Find by name
-const okButton = await app.find({ name: 'OK' });
+const okButton = await app.find({ name: "OK" });
 
 // Find by multiple attributes
-const saveButton = await app.find({ role: 'button', name: 'Save' });
+const saveButton = await app.find({ role: "button", name: "Save" });
 ```
 
 ### Testing with vitest
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { Automation } from 'win-auto-core/testing';
+import { describe, it, expect } from "vitest";
+import { Automation } from "win-auto-core/testing";
 
-describe('Notepad Automation', () => {
-  it('should type text in notepad', async () => {
+describe("Notepad Automation", () => {
+  it("should type text in notepad", async () => {
     const automation = new Automation();
-    const app = await automation.launch('notepad.exe');
-    const textbox = await app.find({ role: 'textbox' });
-    
-    await textbox?.type('Test message');
+    const app = await automation.launch("notepad.exe");
+    const textbox = await app.find({ role: "textbox" });
+
+    await textbox?.type("Test message");
     expect(textbox).toBeDefined();
   });
 });
@@ -177,11 +178,13 @@ describe('Notepad Automation', () => {
 ## Requirements
 
 ### Runtime
+
 - **Windows 10 / Windows 11** or later
 - **Node.js 18+**
 - **npm 9+**
 
 ### Development
+
 - **Rust toolchain** (if building from source)
   - Install from [https://rustup.rs](https://rustup.rs)
 
@@ -198,7 +201,7 @@ This monorepo contains:
 ### Setup
 
 ```bash
-git clone https://github.com/yourusername/win-auto.git
+git clone https://github.com/mihailDamchevski/win-auto.git
 cd win-auto
 npm install
 ```
@@ -235,22 +238,28 @@ npm run clean
 ## Troubleshooting
 
 ### "Module not found" error
+
 Make sure the native addon is built:
+
 ```bash
 npm run build:native
 ```
 
 ### Cannot find executable
+
 Use the full path to the application:
+
 ```typescript
-const app = await automation.launch('C:\\Program Files\\MyApp\\myapp.exe');
+const app = await automation.launch("C:\\Program Files\\MyApp\\myapp.exe");
 ```
 
 ### Element not found
+
 Try waiting a moment for the UI to render:
+
 ```typescript
-await new Promise(resolve => setTimeout(resolve, 500));
-const element = await app.find({ role: 'button' });
+await new Promise((resolve) => setTimeout(resolve, 500));
+const element = await app.find({ role: "button" });
 ```
 
 ## Contributing
