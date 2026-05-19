@@ -5,11 +5,13 @@ First off, thanks for taking the time to contribute! 🎉
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 20+
 - npm 10+
 - Rust toolchain (install from https://rustup.rs)
 
 ### Development Setup
+
 ```powershell
 # Clone the repository
 git clone https://github.com/yourusername/win-auto.git
@@ -25,6 +27,7 @@ npm run build
 ## Development Workflow
 
 ### Build
+
 ```powershell
 # Build TypeScript packages
 npm run build -w @win-auto/core
@@ -38,6 +41,7 @@ npm run build
 ```
 
 ### Testing
+
 ```powershell
 # Run unit tests
 npm run test
@@ -50,11 +54,13 @@ npm run test:e2e:real
 ```
 
 ### Linting
+
 ```powershell
 npm run lint
 ```
 
 ### Cleaning
+
 ```powershell
 npm run clean
 ```
@@ -80,6 +86,7 @@ npm run clean
 ## Commit Message Format
 
 Use clear, descriptive commit messages:
+
 - `feat: add new feature`
 - `fix: resolve issue with X`
 - `docs: update documentation`
@@ -91,6 +98,7 @@ Use clear, descriptive commit messages:
 Before creating an issue, check existing issues to avoid duplicates.
 
 When reporting issues, include:
+
 - Clear description of the issue
 - Steps to reproduce
 - Expected behavior

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Initial scaffold for Windows desktop automation framework
 - TypeScript API with `Automation`, `App`, `Window`, and `Element` classes
 - CLI for project scaffolding: `win-auto init <project-name>`
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-05-19
 
 ### Added
+
 - Initial skeleton release
 
 [Unreleased]: https://github.com/yourusername/win-auto/compare/v0.1.0...HEAD
