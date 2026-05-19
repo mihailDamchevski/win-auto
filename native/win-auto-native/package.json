@@ -1,13 +1,25 @@
 {
   "name": "win-auto-native",
   "version": "0.1.0",
-  "private": true,
   "description": "Native addon skeleton for win-auto (Rust + napi-rs).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/win-auto.git",
+    "directory": "native/win-auto-native"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/win-auto/issues"
+  },
+  "homepage": "https://github.com/yourusername/win-auto/tree/main/native/win-auto-native#readme",
+  "license": "MIT",
+  "author": "Your Name",
   "main": "index.js",
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "clean": "rimraf *.node"
+    "clean": "rimraf *.node",
+    "prepublishOnly": "npm run build",
+    "prepack": "npm run build"
   },
   "napi": {
     "name": "win-auto-native"

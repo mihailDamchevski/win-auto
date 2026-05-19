@@ -2,13 +2,26 @@
   "name": "win-auto",
   "version": "0.1.0",
   "description": "CLI for Windows desktop automation test project scaffolding.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/win-auto.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/win-auto/issues"
+  },
+  "homepage": "https://github.com/yourusername/win-auto/tree/main/packages/cli#readme",
+  "license": "MIT",
+  "author": "Your Name",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "win-auto": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@win-auto/core": "0.1.0"

@@ -1,0 +1,12 @@
+src/
+tests/
+examples/
+scripts/
+.git/
+.github/
+.gitignore
+*.md
+tsconfig.json
+tsconfig.base.json
+vitest.config.ts
+test-native.js
