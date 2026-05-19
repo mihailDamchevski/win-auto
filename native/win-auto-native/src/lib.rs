@@ -100,7 +100,12 @@ use napi_derive::napi;
 use std::process::Command;
 use std::ptr::null_mut;
 use std::sync::Mutex;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, WPARAM};
+use std::time::Duration;
+use windows::Win32::Foundation::{BOOL, CloseHandle, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::System::Threading::{
+  GetExitCodeProcess, OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+  PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+};
 use windows::Win32::Graphics::Gdi::{
   BitBlt, BI_RGB, BITMAPFILEHEADER, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap,
   CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD,
@@ -110,9 +115,12 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_APART
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children};
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEINPUT};
 use windows::Win32::UI::WindowsAndMessaging::{
-  EnumWindows, FindWindowExW, GetClassNameW, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
-  SendMessageW, SetCursorPos, GW_OWNER, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL,
+  EnumWindows, FindWindowExW, GetClassNameW, GetWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+  GetWindowThreadProcessId, IsWindowVisible, PostMessageW, SendMessageW, SetCursorPos, GW_OWNER, WM_CLOSE,
+  WM_HSCROLL, WM_SETTEXT, WM_VSCROLL,
 };
+
+const STILL_ACTIVE: u32 = 259;
 
 #[derive(Clone)]
 struct AppConfig {
@@ -189,6 +197,131 @@ fn get_class_name(hwnd: HWND) -> String {
   }
 }
 
+fn get_window_title(hwnd: HWND) -> String {
+  unsafe {
+    let length = GetWindowTextLengthW(hwnd);
+    if length <= 0 {
+      return String::new();
+    }
+    let mut buffer = vec![0u16; (length + 1) as usize];
+    let copied = GetWindowTextW(hwnd, &mut buffer);
+    if copied <= 0 {
+      return String::new();
+    }
+    String::from_utf16_lossy(&buffer[..copied as usize])
+  }
+}
+
+fn window_pid(hwnd: HWND) -> u32 {
+  let mut pid = 0u32;
+  unsafe {
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+  }
+  pid
+}
+
+fn process_image_for_pid(pid: u32) -> String {
+  if pid == 0 {
+    return String::new();
+  }
+  let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) };
+  let Ok(handle) = process else {
+    return String::new();
+  };
+  let mut buffer = vec![0u16; 1024];
+  let mut size = buffer.len() as u32;
+  let query = unsafe {
+    QueryFullProcessImageNameW(
+      handle,
+      PROCESS_NAME_WIN32,
+      windows::core::PWSTR(buffer.as_mut_ptr()),
+      &mut size,
+    )
+  };
+  let _ = unsafe { CloseHandle(handle) };
+  if query.is_err() || size == 0 {
+    return String::new();
+  }
+  String::from_utf16_lossy(&buffer[..size as usize])
+}
+
+fn window_process_ends_with(hwnd: HWND, image_suffix: &str) -> bool {
+  let pid = window_pid(hwnd);
+  if pid == 0 {
+    return false;
+  }
+  let path = process_image_for_pid(pid).to_ascii_lowercase();
+  path.ends_with(&image_suffix.to_ascii_lowercase())
+}
+
+fn configured_executable_image_suffix() -> Option<String> {
+  let config = CONFIG.lock().unwrap();
+  let executable = config.as_ref()?.executable.clone();
+  let name = std::path::Path::new(&executable)
+    .file_name()?
+    .to_string_lossy()
+    .to_string();
+  Some(name.to_ascii_lowercase())
+}
+
+struct AllWindowsContext {
+  windows: Vec<HWND>,
+}
+
+unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+  let context_ptr = lparam.0 as *mut AllWindowsContext;
+  if context_ptr.is_null() {
+    return BOOL(0);
+  }
+  let context = &mut *context_ptr;
+  context.windows.push(hwnd);
+  BOOL(1)
+}
+
+fn collect_all_top_level_windows() -> Vec<HWND> {
+  let mut context = AllWindowsContext { windows: Vec::new() };
+  unsafe {
+    let _ = EnumWindows(
+      Some(enum_all_windows_proc),
+      LPARAM((&mut context as *mut AllWindowsContext) as isize),
+    );
+  }
+  context.windows
+}
+
+fn dedupe_hwnds(handles: Vec<HWND>) -> Vec<HWND> {
+  let mut unique = Vec::<HWND>::new();
+  for hwnd in handles {
+    if !unique.iter().any(|existing| existing.0 == hwnd.0) {
+      unique.push(hwnd);
+    }
+  }
+  unique
+}
+
+fn is_visible(hwnd: HWND) -> bool {
+  unsafe { IsWindowVisible(hwnd).as_bool() }
+}
+
+fn hwnd_priority(class_name: &str) -> i32 {
+  if class_name.eq_ignore_ascii_case("Notepad") {
+    return 0;
+  }
+  if class_name.eq_ignore_ascii_case("ApplicationFrameWindow") {
+    return 1;
+  }
+  2
+}
+
+fn sort_windows_for_selection(handles: &[HWND]) -> Vec<HWND> {
+  let mut sorted = handles.to_vec();
+  sorted.sort_by_key(|hwnd| {
+    let class_name = get_class_name(*hwnd);
+    (hwnd_priority(&class_name), class_name)
+  });
+  sorted
+}
+
 /// Recursively searches for edit control windows with specified class names.
 ///
 /// # Arguments
@@ -197,6 +330,21 @@ fn get_class_name(hwnd: HWND) -> String {
 ///
 /// # Returns
 /// `Some(HWND)` if an element with matching class is found, `None` otherwise
+fn class_name_matches(class_name: &str, configured: &str) -> bool {
+  if class_name.eq_ignore_ascii_case(configured) {
+    return true;
+  }
+  let class_lower = class_name.to_ascii_lowercase();
+  let configured_lower = configured.to_ascii_lowercase();
+  if configured_lower == "edit" && (class_lower.contains("edit") || class_lower.contains("document")) {
+    return true;
+  }
+  if configured_lower.contains("richedit") && class_lower.contains("richedit") {
+    return true;
+  }
+  false
+}
+
 fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> {
   fn recurse_children(parent: HWND, classes: &[String]) -> Option<HWND> {
     unsafe {
@@ -206,7 +354,7 @@ fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> {
           break;
         }
         let class_name = get_class_name(current);
-        if classes.iter().any(|c| class_name.eq_ignore_ascii_case(c)) {
+        if classes.iter().any(|c| class_name_matches(&class_name, c)) {
           return Some(current);
         }
         if let Some(found_nested) = recurse_children(current, classes) {
@@ -310,7 +458,7 @@ fn is_top_level_visible(hwnd: HWND) -> bool {
 ///
 /// # Returns
 /// A `Result` containing a `Vec<HWND>` of top-level visible windows, or error if UIA fails
-fn uia_windows_for_pid(process_id: u32) -> Result<Vec<HWND>> {
+fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
   unsafe {
     let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     let automation = create_uia()?;
@@ -346,7 +494,10 @@ fn uia_windows_for_pid(process_id: u32) -> Result<Vec<HWND>> {
         continue;
       }
       let hwnd = hwnd_raw;
-      if !is_top_level_visible(hwnd) {
+      if strict_top_level && !is_top_level_visible(hwnd) {
+        continue;
+      }
+      if !strict_top_level && !is_visible(hwnd) {
         continue;
       }
       if !windows.iter().any(|existing| existing.0 == hwnd.0) {
@@ -355,6 +506,140 @@ fn uia_windows_for_pid(process_id: u32) -> Result<Vec<HWND>> {
     }
     Ok(windows)
   }
+}
+
+fn enumerate_windows_strict_pid(process_id: u32) -> Vec<HWND> {
+  collect_windows_for_pid(process_id)
+    .into_iter()
+    .filter(|hwnd| is_top_level_visible(*hwnd))
+    .collect()
+}
+
+fn enumerate_windows_visible_pid(process_id: u32) -> Vec<HWND> {
+  collect_windows_for_pid(process_id)
+    .into_iter()
+    .filter(|hwnd| is_visible(*hwnd))
+    .collect()
+}
+
+fn is_probable_notepad_window(hwnd: HWND) -> bool {
+  let class_name = get_class_name(hwnd);
+  if class_name.eq_ignore_ascii_case("Notepad") {
+    return true;
+  }
+  if class_name.eq_ignore_ascii_case("ApplicationFrameWindow") {
+  let title = get_window_title(hwnd).to_ascii_lowercase();
+    return title.contains("notepad");
+  }
+  false
+}
+
+fn enumerate_windows_by_image_suffix(image_suffix: &str) -> Vec<HWND> {
+  collect_all_top_level_windows()
+    .into_iter()
+    .filter(|hwnd| is_visible(*hwnd))
+    .filter(|hwnd| window_process_ends_with(*hwnd, image_suffix))
+    .filter(|hwnd| is_probable_notepad_window(*hwnd))
+    .collect()
+}
+
+fn enumerate_windows_by_class_names(class_names: &[&str]) -> Vec<HWND> {
+  collect_all_top_level_windows()
+    .into_iter()
+    .filter(|hwnd| is_visible(*hwnd))
+    .filter(|hwnd| {
+      let class_name = get_class_name(*hwnd);
+      class_names
+        .iter()
+        .any(|candidate| class_name.eq_ignore_ascii_case(candidate))
+    })
+    .collect()
+}
+
+fn finalize_discovered_windows(handles: Vec<HWND>) -> Vec<HWND> {
+  let mut filtered = handles;
+  if configured_executable_image_suffix().as_deref() == Some("notepad.exe") {
+    filtered.retain(|hwnd| is_probable_notepad_window(*hwnd));
+  }
+  if filtered.is_empty() {
+    return filtered;
+  }
+  dedupe_hwnds(sort_windows_for_selection(&filtered))
+}
+
+fn discover_windows_for_pid(process_id: u32) -> Vec<HWND> {
+  if let Ok(uia_strict) = uia_windows_for_pid(process_id, true) {
+    if !uia_strict.is_empty() {
+      return finalize_discovered_windows(uia_strict);
+    }
+  }
+
+  if let Ok(uia_relaxed) = uia_windows_for_pid(process_id, false) {
+    if !uia_relaxed.is_empty() {
+      return finalize_discovered_windows(uia_relaxed);
+    }
+  }
+
+  let strict = enumerate_windows_strict_pid(process_id);
+  if !strict.is_empty() {
+    return finalize_discovered_windows(strict);
+  }
+
+  let visible_pid = enumerate_windows_visible_pid(process_id);
+  if !visible_pid.is_empty() {
+    return finalize_discovered_windows(visible_pid);
+  }
+
+  if let Some(image_suffix) = configured_executable_image_suffix() {
+    let by_image = enumerate_windows_by_image_suffix(&image_suffix);
+    if !by_image.is_empty() {
+      return finalize_discovered_windows(by_image);
+    }
+  }
+
+  let by_class = enumerate_windows_by_class_names(&["Notepad", "ApplicationFrameWindow"]);
+  if !by_class.is_empty() {
+    return finalize_discovered_windows(by_class);
+  }
+
+  Vec::new()
+}
+
+#[napi(object)]
+pub struct WindowDebugInfo {
+  pub hwnd: String,
+  pub pid: u32,
+  pub class_name: String,
+  pub title: String,
+  pub visible: bool,
+  pub owner_invalid: bool,
+  pub matches_target_pid: bool,
+  pub passes_top_level_visible: bool,
+  pub process_image: String,
+}
+
+/// Returns diagnostic information for all top-level windows and how they relate to a target PID.
+#[napi(js_name = "debugDiscovery")]
+pub fn debug_discovery(process_id: u32) -> Result<Vec<WindowDebugInfo>> {
+  let mut entries = Vec::new();
+  for hwnd in collect_all_top_level_windows() {
+    let pid = window_pid(hwnd);
+    let owner = unsafe { GetWindow(hwnd, GW_OWNER) };
+    let owner_invalid = owner.is_ok_and(|h| h.is_invalid());
+    let visible = is_visible(hwnd);
+    entries.push(WindowDebugInfo {
+      hwnd: hwnd_to_string(hwnd),
+      pid,
+      class_name: get_class_name(hwnd),
+      title: get_window_title(hwnd),
+      visible,
+      owner_invalid,
+      matches_target_pid: pid == process_id,
+      passes_top_level_visible: is_top_level_visible(hwnd),
+      process_image: process_image_for_pid(pid),
+    });
+  }
+  Ok(entries)
 }
 
 /// Creates and initializes a Windows UIAutomation COM object.
@@ -406,7 +691,29 @@ pub async fn launch(executable_path: Option<String>) -> Result<u32> {
     .spawn()
     .map_err(|err| napi_error(format!("Failed to launch process: {err}")))?;
 
-  Ok(child.id())
+  let child_pid = child.id();
+  let image_suffix = configured_executable_image_suffix();
+  for _ in 0..30 {
+    let windows = discover_windows_for_pid(child_pid);
+    if let Some(hwnd) = windows.first() {
+      let owner_pid = window_pid(*hwnd);
+      if owner_pid != 0 {
+        if let Some(ref suffix) = image_suffix {
+          if process_image_for_pid(owner_pid)
+            .to_ascii_lowercase()
+            .ends_with(suffix)
+          {
+            return Ok(owner_pid);
+          }
+        } else {
+          return Ok(owner_pid);
+        }
+      }
+    }
+    std::thread::sleep(Duration::from_millis(100));
+  }
+
+  Ok(child_pid)
 }
 
 /// Discovers all top-level visible windows for a given process.
@@ -422,21 +729,83 @@ pub async fn launch(executable_path: Option<String>) -> Result<u32> {
 /// A `Result` containing a vector of window handles as strings
 #[napi(js_name = "enumerateWindows")]
 pub async fn enumerate_windows(process_id: u32) -> Result<Vec<String>> {
-  // Prefer UIAutomation discovery first; this is more reliable with modern applications.
-  let uia_windows = uia_windows_for_pid(process_id)?;
-  if !uia_windows.is_empty() {
-    return Ok(uia_windows.into_iter().map(hwnd_to_string).collect());
+  let windows = discover_windows_for_pid(process_id);
+  Ok(windows.into_iter().map(hwnd_to_string).collect())
+}
+
+fn is_process_running(pid: u32) -> bool {
+  if pid == 0 {
+    return false;
+  }
+  let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) };
+  let Ok(handle) = process else {
+    return false;
+  };
+  if handle.is_invalid() {
+    return false;
+  }
+  let mut exit_code = 0u32;
+  let ok = unsafe { GetExitCodeProcess(handle, &mut exit_code).is_ok() };
+  let _ = unsafe { CloseHandle(handle) };
+  ok && exit_code == STILL_ACTIVE
+}
+
+fn terminate_process(pid: u32) -> Result<()> {
+  let process = unsafe { OpenProcess(PROCESS_TERMINATE, false, pid) };
+  let Ok(handle) = process else {
+    return Ok(());
+  };
+  if handle.is_invalid() {
+    return Ok(());
+  }
+  let result = unsafe { TerminateProcess(handle, 1) };
+  let _ = unsafe { CloseHandle(handle) };
+  if result.is_err() {
+    return Err(napi_error(format!("TerminateProcess failed for pid {pid}")));
+  }
+  Ok(())
+}
+
+fn close_app_internal(process_id: u32) -> Result<()> {
+  if !is_process_running(process_id) {
+    return Ok(());
   }
 
-  let context_windows = collect_windows_for_pid(process_id);
+  for hwnd in discover_windows_for_pid(process_id) {
+    unsafe {
+      let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+    }
+  }
 
-  let scoped = context_windows
-    .into_iter()
-    .filter(|hwnd| is_top_level_visible(*hwnd))
-    .map(hwnd_to_string)
-    .collect::<Vec<_>>();
+  for _ in 0..40 {
+    if !is_process_running(process_id) {
+      return Ok(());
+    }
+    std::thread::sleep(Duration::from_millis(50));
+  }
 
-  Ok(scoped)
+  if is_process_running(process_id) {
+    terminate_process(process_id)?;
+    for _ in 0..20 {
+      if !is_process_running(process_id) {
+        return Ok(());
+      }
+      std::thread::sleep(Duration::from_millis(50));
+    }
+    if is_process_running(process_id) {
+      return Err(napi_error(format!(
+        "Process {process_id} did not exit after close"
+      )));
+    }
+  }
+
+  Ok(())
+}
+
+/// Closes an application by process ID: WM_CLOSE on discovered windows, then terminate if needed.
+#[napi(js_name = "closeApp")]
+pub async fn close_app(process_id: u32) -> Result<()> {
+  close_app_internal(process_id)
 }
 
 /// Locates an interactive element within a window.
@@ -465,7 +834,7 @@ pub async fn find_element(
   };
 
   if classes.is_empty() {
-    return Ok(Some(window_handle));
+    return Ok(None);
   }
 
   let hwnd = parse_hwnd(&window_handle)?;
@@ -474,7 +843,12 @@ pub async fn find_element(
     return Ok(Some(hwnd_to_string(element_hwnd)));
   }
 
-  Ok(Some(window_handle))
+  // Win11 Notepad often exposes the editable surface on the top-level Notepad HWND.
+  if is_probable_notepad_window(hwnd) {
+    return Ok(Some(window_handle));
+  }
+
+  Ok(None)
 }
 
 /// Sets text content of a window element using the WM_SETTEXT message.

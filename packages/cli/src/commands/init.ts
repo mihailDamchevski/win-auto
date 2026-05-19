@@ -4,6 +4,7 @@ import {
   templatePackageJson,
   templateSampleSpec,
   templateTsConfig,
+  templateVitestConfig,
   templateWinAutoConfig
 } from "../templates/basic/templateFiles";
 
@@ -32,6 +33,7 @@ export async function initProject(projectName: string): Promise<void> {
   await fs.writeFile(path.join(targetDir, "package.json"), templatePackageJson(projectName), "utf8");
   await fs.writeFile(path.join(targetDir, "tsconfig.json"), templateTsConfig, "utf8");
   await fs.writeFile(path.join(targetDir, "win-auto.config.ts"), templateWinAutoConfig, "utf8");
+  await fs.writeFile(path.join(targetDir, "vitest.config.ts"), templateVitestConfig, "utf8");
   await fs.writeFile(path.join(targetDir, "tests", "sample.spec.ts"), templateSampleSpec, "utf8");
 
   process.stdout.write(`Initialized project at ${targetDir}\n`);

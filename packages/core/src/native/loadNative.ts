@@ -21,7 +21,8 @@ export function loadNativeBindings(): NativeBindings {
         typeof mod.launch === "function" &&
         typeof mod.enumerateWindows === "function" &&
         typeof mod.findElement === "function" &&
-        typeof mod.typeText === "function"
+        typeof mod.typeText === "function" &&
+        typeof mod.closeApp === "function"
       ) {
         return mod;
       }

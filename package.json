@@ -13,11 +13,13 @@
     "test": "npm run test -w @win-auto/core && npm run test:e2e",
     "test:e2e": "vitest run tests/e2e/native-ping.test.ts",
     "test:e2e:real": "vitest run tests/e2e/notepad-real.test.ts",
+    "debug:notepad": "node scripts/debug-notepad-discovery.js",
     "example:notepad": "node -e \"require('./packages/core/dist').Automation && console.log('Build complete. Run examples/notepad.ts with your TS runner.')\"",
     "lint": "tsc -b --pretty false",
     "clean": "rimraf packages/*/dist tests/.tmp"
   },
   "devDependencies": {
+    "@win-auto/core": "0.1.0",
     "@types/node": "^22.15.3",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3",

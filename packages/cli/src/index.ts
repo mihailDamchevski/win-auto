@@ -2,7 +2,7 @@
 import { initProject } from "./commands/init";
 import { Automation, App, Window, Element } from "@win-auto/core";
 
-export { Automation, App, Window, Element };
+export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
 
 async function runCli(): Promise<void> {
   const [, , command, ...args] = process.argv;

@@ -1,5 +1,6 @@
 import type { ElementSelector } from "./types";
 import { Element } from "./element";
+import { classNamesForSelector } from "../native/classNames";
 import { loadNativeBindings } from "../native/loadNative";
 
 export class Window {
@@ -14,6 +15,7 @@ export class Window {
   public async findElement(selector: ElementSelector): Promise<Element | null> {
     const elementHandle = await loadNativeBindings().findElement(
       this.handle,
+      classNamesForSelector(selector),
       selector.automationId,
       selector.name,
       selector.role

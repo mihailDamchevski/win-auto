@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { Automation } from "../../packages/core/src/api/automation";
+/// <reference path="../../packages/core/dist/testing/globals.d.ts" />
+
+import { loadNativeBindings } from "../../packages/core/src/native/loadNative";
 
 describe("native module integration", () => {
   it("calls native ping and returns ok", () => {
-    const automation = new Automation();
-    const result = automation.pingNative();
-    expect(result).toBe("ok");
+    const native = loadNativeBindings();
+    expect(native.ping()).toBe("ok");
   });
 });

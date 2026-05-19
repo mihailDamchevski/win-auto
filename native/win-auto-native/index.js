@@ -310,14 +310,18 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ping, setAppConfig, launch, enumerateWindows, findElement, typeText, hoverElement, scrollElement, dragDrop } = nativeBinding
+const { debugDiscovery, ping, setAppConfig, launch, enumerateWindows, closeApp, findElement, typeText, captureScreenshot, captureScreenshotToFile, hoverElement, scrollElement, dragDrop } = nativeBinding
 
+module.exports.debugDiscovery = debugDiscovery
 module.exports.ping = ping
 module.exports.setAppConfig = setAppConfig
 module.exports.launch = launch
 module.exports.enumerateWindows = enumerateWindows
+module.exports.closeApp = closeApp
 module.exports.findElement = findElement
 module.exports.typeText = typeText
+module.exports.captureScreenshot = captureScreenshot
+module.exports.captureScreenshotToFile = captureScreenshotToFile
 module.exports.hoverElement = hoverElement
 module.exports.scrollElement = scrollElement
 module.exports.dragDrop = dragDrop

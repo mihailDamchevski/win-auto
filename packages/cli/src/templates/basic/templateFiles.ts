@@ -10,6 +10,7 @@ export function templatePackageJson(projectName: string): string {
       },
       devDependencies: {
         "@types/node": "^22.15.3",
+        "@win-auto/core": "^0.1.0",
         typescript: "^5.8.3",
         vitest: "^3.1.1",
         "win-auto": "^0.1.0"
@@ -38,18 +39,28 @@ export const templateWinAutoConfig = `export default {
 };
 `;
 
-export const templateSampleSpec = `import { describe, expect, it } from "vitest";
-import { Automation } from "win-auto";
+export const templateVitestConfig = `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+    setupFiles: ["@win-auto/core/testing/setup"]
+  }
+});
+`;
+
+export const templateSampleSpec = `import "@win-auto/core/testing/globals";
+import { TestAutomation } from "@win-auto/core";
 
 describe("sample desktop automation test", () => {
   it("runs mock async flow", async () => {
-    const automation = new Automation();
+    const automation = new TestAutomation();
     const app = await automation.launchApp({
       executablePath: "C:\\\\Program Files\\\\Mock\\\\app.exe",
       title: "Sample App"
     });
-    const window = await app.getMainWindow();
-    const input = await window?.findElement({ automationId: "main-input", role: "textbox" });
+    const window = await app.waitForMainWindow();
+    const input = await window.findElement({ automationId: "main-input", role: "textbox" });
     await input?.typeText("hello from generated project");
     expect(await input?.getText()).toBe("hello from generated project");
   });
