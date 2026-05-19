@@ -10,3 +10,33 @@ tsconfig.json
 tsconfig.base.json
 vitest.config.ts
 test-native.js
+node_modules/
+**/node_modules/
+.vscode/
+.idea/
+.DS_Store
+*.log
+npm-debug.log
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Build outputs
+dist/
+**/dist/
+target/
+**/target/
+*.tsbuildinfo
+
+# Rust/Cargo
+**/Cargo.toml
+**/Cargo.lock
+**/build/
+
+# Misc
+coverage/
+.tmp/
+.cache/
+
+# Native compiled binaries are included only by package `files` settings
+!native/win-auto-native/index.js

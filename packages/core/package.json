@@ -33,6 +33,11 @@
       "default": "./dist/testing/globals.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "peerDependencies": {
     "vitest": ">=3.0.0"
   },

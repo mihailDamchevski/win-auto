@@ -14,6 +14,12 @@
   "license": "MIT",
   "author": "Your Name",
   "main": "index.js",
+  "files": [
+    "index.js",
+    "*.node",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
