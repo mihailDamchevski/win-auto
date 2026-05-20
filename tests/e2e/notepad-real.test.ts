@@ -6,7 +6,7 @@ describe("real Notepad automation", () => {
   it("launches Notepad and types text into the main editor", async () => {
     const automation = new TestAutomation();
     const app = await automation.launchApp({
-      executablePath: "C:\\Windows\\System32\\notepad.exe"
+      executablePath: "C:\\Windows\\System32\\notepad.exe",
     });
 
     const window = await app.waitForMainWindow();

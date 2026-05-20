@@ -111,13 +111,35 @@ use windows::Win32::Graphics::Gdi::{
   CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD,
   SelectObject, SRCCOPY, DIB_RGB_COLORS,
 };
+use windows::core::{BSTR, VARIANT};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED, CLSCTX_INPROC_SERVER};
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children};
-use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEINPUT};
+use windows::Win32::UI::Accessibility::{
+  CUIAutomation,
+  IUIAutomation, 
+  PropertyConditionFlags,
+  PropertyConditionFlags_MatchSubstring,
+  PropertyConditionFlags_IgnoreCase,
+  TreeScope_Children,
+  TreeScope_Descendants,
+  UIA_NamePropertyId,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+  SendInput,
+  INPUT,
+  INPUT_0,
+  KEYBDINPUT,
+  KEYEVENTF_KEYUP,
+  KEYEVENTF_UNICODE,
+  VIRTUAL_KEY,
+  MOUSEEVENTF_LEFTDOWN,
+  MOUSEEVENTF_LEFTUP,
+  MOUSEEVENTF_MOVE,
+  MOUSEINPUT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
   EnumWindows, FindWindowExW, GetClassNameW, GetWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-  GetWindowThreadProcessId, IsWindowVisible, PostMessageW, SendMessageW, SetCursorPos, GW_OWNER, WM_CLOSE,
-  WM_HSCROLL, WM_SETTEXT, WM_VSCROLL,
+  GetWindowThreadProcessId, IsWindowVisible, PostMessageW, SendMessageW, SetCursorPos, SetForegroundWindow,
+  GW_OWNER, WM_CLOSE, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL,
 };
 
 const STILL_ACTIVE: u32 = 259;
@@ -377,6 +399,54 @@ fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> {
       if let Some(element_hwnd) = element {
         if !element_hwnd.is_invalid() {
           return Some(element_hwnd);
+        }
+      }
+    }
+  }
+  None
+}
+
+fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND> {
+  unsafe {
+    let mut child = FindWindowExW(window_hwnd, HWND(null_mut()), None, None).ok();
+    while let Some(current) = child {
+      if current.is_invalid() {
+        break;
+      }
+
+      let text = get_window_title(current);
+      if !text.is_empty() && text.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
+        return Some(current);
+      }
+
+      if let Some(found_nested) = find_child_window_by_text(current, query) {
+        return Some(found_nested);
+      }
+
+      child = FindWindowExW(window_hwnd, current, None, None).ok();
+    }
+  }
+  None
+}
+
+fn find_element_uia(window_hwnd: HWND, query: &str) -> Option<HWND> {
+  unsafe {
+    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let automation = create_uia().ok()?;
+    let root = automation.ElementFromHandle(window_hwnd).ok()?;
+    let true_condition = automation.CreateTrueCondition().ok()?;
+    let all = root
+      .FindAll(TreeScope_Descendants, &true_condition)
+      .ok()?;
+    let length = all.Length().ok()?;
+
+    for i in 0..length {
+      let element = all.GetElement(i).ok()?;
+      let current_name = element.CurrentName().ok()?.to_string();
+      if !current_name.is_empty() && current_name.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
+        let hwnd_raw = element.CurrentNativeWindowHandle().ok()?;
+        if !hwnd_raw.is_invalid() {
+          return Some(hwnd_raw);
         }
       }
     }
@@ -808,6 +878,20 @@ pub async fn close_app(process_id: u32) -> Result<()> {
   close_app_internal(process_id)
 }
 
+#[napi(js_name = "closeWindow")]
+pub async fn close_window(window_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&window_handle)?;
+  unsafe {
+    let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+  }
+  Ok(())
+}
+
+#[napi(js_name = "isProcessRunning")]
+pub fn is_process_running_export(process_id: u32) -> bool {
+  is_process_running(process_id)
+}
+
 /// Locates an interactive element within a window.
 ///
 /// # Arguments
@@ -824,7 +908,7 @@ pub async fn find_element(
   window_handle: String,
   class_names: Option<Vec<String>>,
   _automation_id: Option<String>,
-  _name: Option<String>,
+  name: Option<String>,
   _role: Option<String>,
 ) -> Result<Option<String>> {
   let classes = if let Some(c) = class_names {
@@ -833,14 +917,21 @@ pub async fn find_element(
     CONFIG.lock().unwrap().as_ref().map(|config| config.class_names.clone()).unwrap_or_default()
   };
 
-  if classes.is_empty() {
-    return Ok(None);
-  }
-
   let hwnd = parse_hwnd(&window_handle)?;
 
-  if let Some(element_hwnd) = find_element_hwnd(hwnd, &classes) {
-    return Ok(Some(hwnd_to_string(element_hwnd)));
+  if !classes.is_empty() {
+    if let Some(element_hwnd) = find_element_hwnd(hwnd, &classes) {
+      return Ok(Some(hwnd_to_string(element_hwnd)));
+    }
+  }
+
+  if let Some(ref query_name) = name {
+    if let Some(element_hwnd) = find_child_window_by_text(hwnd, query_name) {
+      return Ok(Some(hwnd_to_string(element_hwnd)));
+    }
+    if let Some(element_hwnd) = find_element_uia(hwnd, query_name) {
+      return Ok(Some(hwnd_to_string(element_hwnd)));
+    }
   }
 
   // Win11 Notepad often exposes the editable surface on the top-level Notepad HWND.
@@ -870,6 +961,96 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
     SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
   }
   Ok(())
+}
+
+#[napi(js_name = "sendKeys")]
+pub async fn send_keys(element_handle: String, text: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let _ = SetForegroundWindow(hwnd);
+    std::thread::sleep(Duration::from_millis(10));
+  }
+
+  for code_point in text.encode_utf16() {
+    let input_down = INPUT {
+      r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+      Anonymous: INPUT_0 {
+        ki: KEYBDINPUT {
+          wVk: VIRTUAL_KEY(0),
+          wScan: code_point,
+          dwFlags: KEYEVENTF_UNICODE,
+          time: 0,
+          dwExtraInfo: 0,
+        },
+      },
+    };
+
+    let input_up = INPUT {
+      r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+      Anonymous: INPUT_0 {
+        ki: KEYBDINPUT {
+          wVk: VIRTUAL_KEY(0),
+          wScan: code_point,
+          dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+          time: 0,
+          dwExtraInfo: 0,
+        },
+      },
+    };
+
+    unsafe {
+      SendInput(&[input_down], std::mem::size_of::<INPUT>() as i32);
+      SendInput(&[input_up], std::mem::size_of::<INPUT>() as i32);
+    }
+  }
+
+  Ok(())
+}
+
+#[napi(js_name = "getText")]
+pub async fn get_text(element_handle: String) -> Result<String> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  Ok(get_window_title(hwnd))
+}
+
+#[napi(js_name = "findElementName")]
+pub async fn find_element_name(window_handle: String, name: String) -> Result<Option<String>> {
+  let hwnd = parse_hwnd(&window_handle)?;
+  unsafe {
+    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
+    let root = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA root from handle: {err}")))?;
+    let query_lower = name.to_ascii_lowercase();
+    let condition_flags = PropertyConditionFlags(
+      PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
+    );
+
+    let value: VARIANT = BSTR::from(name.clone()).into();
+
+    let condition = automation
+      .CreatePropertyConditionEx(
+        UIA_NamePropertyId,
+        &value,
+        condition_flags,
+      )
+      .map_err(|err| napi_error(format!("Failed to create UIA name condition: {err}")))?;
+
+    let element = root.FindFirst(TreeScope_Descendants, &condition).map_err(|err| napi_error(format!("Failed to find UIA element by name: {err}")))?;
+    let native_hwnd = element.CurrentNativeWindowHandle().map_err(|err| napi_error(format!("Failed to query UIA element native handle: {err}")))?;
+    if native_hwnd.is_invalid() {
+      return Ok(None);
+    }
+
+    let current_name = element.CurrentName().map_err(|err| napi_error(format!("Failed to read UIA element CurrentName: {err}")))?.to_string();
+    if current_name.is_empty() {
+      return Ok(None);
+    }
+    if !current_name.to_ascii_lowercase().contains(&query_lower) {
+      return Ok(None);
+    }
+
+    Ok(Some(current_name))
+  }
 }
 
 fn capture_window_bitmap(hwnd: HWND) -> Result<Vec<u8>> {

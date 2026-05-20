@@ -22,8 +22,7 @@ export class Element {
   }
 
   public async getText(): Promise<string> {
-    // Minimal backend currently supports writing text only.
-    return "";
+    return loadNativeBindings().getText(this.handle);
   }
 
   public async exists(): Promise<boolean> {

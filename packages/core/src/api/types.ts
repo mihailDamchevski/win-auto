@@ -39,8 +39,16 @@ export type NativeBindings = {
     classNames?: string[] | null,
     automationId?: string | null,
     name?: string | null,
-    role?: string | null
+    role?: string | null,
   ) => Promise<string | null>;
   typeText: (elementHandle: string, text: string) => Promise<void>;
+  sendKeys: (elementHandle: string, text: string) => Promise<void>;
   closeApp: (processId: number) => Promise<void>;
+  closeWindow: (elementHandle: string) => Promise<void>;
+  isProcessRunning: (processId: number) => boolean;
+  getText: (elementHandle: string) => Promise<string>;
+  findElementName: (
+    windowHandle: string,
+    name: string,
+  ) => Promise<string | null>;
 };

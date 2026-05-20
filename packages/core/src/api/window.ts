@@ -18,7 +18,7 @@ export class Window {
       classNamesForSelector(selector),
       selector.automationId,
       selector.name,
-      selector.role
+      selector.role,
     );
     if (!elementHandle) {
       return null;
@@ -33,6 +33,18 @@ export class Window {
   public async findElements(selector: ElementSelector): Promise<Element[]> {
     const element = await this.findElement(selector);
     return element ? [element] : [];
+  }
+
+  public async typeText(text: string): Promise<void> {
+    await loadNativeBindings().sendKeys(this.handle, text);
+  }
+
+  public async findElementName(name: string): Promise<string | null> {
+    return loadNativeBindings().findElementName(this.handle, name);
+  }
+
+  public async close(): Promise<void> {
+    await loadNativeBindings().closeWindow(this.handle);
   }
 
   public async focus(): Promise<void> {

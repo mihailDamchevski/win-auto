@@ -7,7 +7,7 @@ const nativeSearchPaths = [
   "../../../../native/win-auto-native/win_auto_native.node",
   "../../../../native/win-auto-native/index.node",
   "../../../../native/win-auto-native/index.js",
-  "../../../../native/win-auto-native"
+  "../../../../native/win-auto-native",
 ];
 
 export function loadNativeBindings(): NativeBindings {
@@ -22,7 +22,12 @@ export function loadNativeBindings(): NativeBindings {
         typeof mod.enumerateWindows === "function" &&
         typeof mod.findElement === "function" &&
         typeof mod.typeText === "function" &&
-        typeof mod.closeApp === "function"
+        typeof mod.sendKeys === "function" &&
+        typeof mod.closeWindow === "function" &&
+        typeof mod.closeApp === "function" &&
+        typeof mod.isProcessRunning === "function" &&
+        typeof mod.getText === "function" &&
+        typeof mod.findElementName === "function"
       ) {
         return mod;
       }
@@ -32,6 +37,6 @@ export function loadNativeBindings(): NativeBindings {
   }
 
   throw new Error(
-    "Native module not found. Run `npm run build:native` at workspace root before calling native functions."
+    "Native module not found. Run `npm run build:native` at workspace root before calling native functions.",
   );
 }

@@ -57,6 +57,8 @@ export declare function launch(executablePath?: string | undefined | null): Prom
 export declare function enumerateWindows(processId: number): Promise<Array<string>>
 /** Closes an application by process ID: WM_CLOSE on discovered windows, then terminate if needed. */
 export declare function closeApp(processId: number): Promise<void>
+export declare function closeWindow(windowHandle: string): Promise<void>
+export declare function isProcessRunning(processId: number): boolean
 /**
  * Locates an interactive element within a window.
  *
@@ -85,6 +87,9 @@ export declare function findElement(windowHandle: string, classNames?: Array<str
  * A `Result` that resolves when the message is processed
  */
 export declare function typeText(elementHandle: string, text: string): Promise<void>
+export declare function sendKeys(elementHandle: string, text: string): Promise<void>
+export declare function getText(elementHandle: string): Promise<string>
+export declare function findElementName(windowHandle: string, name: string): Promise<string | null>
 /**
  * Captures a screenshot of the specified element or window.
  *
