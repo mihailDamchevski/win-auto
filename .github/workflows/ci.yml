@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  node-version: "18"
+
+jobs:
+  lint-typecheck:
+    name: Lint & TypeCheck
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx eslint packages/ --max-warnings=0
+        continue-on-error: true
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test -w @win-auto/core
+
+  native-build:
+    name: Native Build (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: npm ci
+      - run: npm run build:native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-auto-native-x64
+          path: native/win-auto-native/*.node
+          retention-days: 1
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: windows-latest
+    needs: [native-build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: win-auto-native-x64
+          path: native/win-auto-native
+      - run: npm run test:e2e
+
+  coverage:
+    name: Coverage
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run coverage
+        continue-on-error: true

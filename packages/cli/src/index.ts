@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { initProject } from "./commands/init";
+import { inspectCommand } from "./commands/inspect";
 import { Automation, App, Window, Element } from "@win-auto/core";
 
 export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
@@ -11,9 +12,22 @@ async function runCli(): Promise<void> {
     return;
   }
 
+  if (command === "inspect") {
+    const target = args[0];
+    if (!target) {
+      process.stderr.write("Usage: win-auto inspect <pid|imageName> [maxDepth]\n");
+      process.exitCode = 1;
+      return;
+    }
+    const maxDepth = args[1] ? Number(args[1]) : undefined;
+    await inspectCommand(target, maxDepth);
+    return;
+  }
+
   process.stdout.write("win-auto CLI\n");
   process.stdout.write("Usage:\n");
   process.stdout.write("  win-auto init <project-name>\n");
+  process.stdout.write("  win-auto inspect <pid|imageName> [maxDepth]\n");
 }
 
 if (require.main === module) {

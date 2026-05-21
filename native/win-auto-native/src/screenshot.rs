@@ -1,12 +1,19 @@
 use napi::{Result};
 use napi_derive::napi;
+use image::{ImageBuffer, ImageEncoder, Rgba};
 use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPFILEHEADER, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
+use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
 
 use crate::error::napi_error;
 use crate::utils::parse_hwnd;
 
-fn capture_window_bitmap(hwnd: HWND) -> Result<Vec<u8>> {
+struct CapturedBitmap {
+  pixels: Vec<u8>,
+  width: i32,
+  height: i32,
+}
+
+fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
   unsafe {
     let mut rect = RECT::default();
     if windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rect).is_err() {
@@ -57,7 +64,7 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<Vec<u8>> {
     let header = BITMAPINFOHEADER {
       biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
       biWidth: width,
-      biHeight: height,
+      biHeight: -height,
       biPlanes: 1,
       biBitCount: 32,
       biCompression: BI_RGB.0,
@@ -95,33 +102,46 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<Vec<u8>> {
       return Err(napi_error("Failed to read bitmap pixels"));
     }
 
-    let file_header = BITMAPFILEHEADER {
-      bfType: 0x4D42,
-      bfSize: (std::mem::size_of::<BITMAPFILEHEADER>() + std::mem::size_of::<BITMAPINFOHEADER>() + image_size) as u32,
-      bfReserved1: 0,
-      bfReserved2: 0,
-      bfOffBits: (std::mem::size_of::<BITMAPFILEHEADER>() + std::mem::size_of::<BITMAPINFOHEADER>()) as u32,
-    };
-
-    let mut output = Vec::with_capacity(file_header.bfSize as usize);
-    output.extend_from_slice(std::slice::from_raw_parts(
-      (&file_header as *const BITMAPFILEHEADER) as *const u8,
-      std::mem::size_of::<BITMAPFILEHEADER>(),
-    ));
-    output.extend_from_slice(std::slice::from_raw_parts(
-      (&header as *const BITMAPINFOHEADER) as *const u8,
-      std::mem::size_of::<BITMAPINFOHEADER>(),
-    ));
-    output.extend_from_slice(&buffer);
-
-    Ok(output)
+    Ok(CapturedBitmap { pixels: buffer, width, height })
   }
+}
+
+fn bgra_to_png(bmp: CapturedBitmap) -> Vec<u8> {
+  let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(bmp.width as u32, bmp.height as u32);
+  for y in 0..bmp.height {
+    for x in 0..bmp.width {
+      let idx = ((y * bmp.width + x) * 4) as usize;
+      let b = bmp.pixels[idx];
+      let g = bmp.pixels[idx + 1];
+      let r = bmp.pixels[idx + 2];
+      let a = bmp.pixels[idx + 3];
+      img.put_pixel(x as u32, y as u32, Rgba([r, g, b, a]));
+    }
+  }
+  let mut png_bytes = Vec::new();
+  {
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    encoder
+      .write_image(
+        img.as_raw(),
+        bmp.width as u32,
+        bmp.height as u32,
+        image::ExtendedColorType::Rgba8,
+      )
+      .ok();
+  }
+  png_bytes
+}
+
+fn capture_window_bitmap_as_png(hwnd: HWND) -> Result<Vec<u8>> {
+  let bmp = capture_window_bitmap(hwnd)?;
+  Ok(bgra_to_png(bmp))
 }
 
 #[napi(js_name = "captureScreenshot")]
 pub async fn capture_screenshot(element_handle: String) -> Result<Vec<u8>> {
   let hwnd = parse_hwnd(&element_handle)?;
-  capture_window_bitmap(hwnd)
+  capture_window_bitmap_as_png(hwnd)
 }
 
 #[napi(js_name = "captureScreenshotToFile")]

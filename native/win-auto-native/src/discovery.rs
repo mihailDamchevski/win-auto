@@ -3,7 +3,7 @@ use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children, TreeScope_Descendants};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetWindow, GetWindowThreadProcessId, GW_OWNER};
 
@@ -152,7 +152,7 @@ pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND>
 
 pub fn find_element_uia(window_hwnd: HWND, query: &str) -> Option<HWND> {
   unsafe {
-    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia().ok()?;
     let root = automation.ElementFromHandle(window_hwnd).ok()?;
     let true_condition = automation.CreateTrueCondition().ok()?;
@@ -321,7 +321,7 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
   unsafe {
-    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
     let root = automation.GetRootElement().map_err(|err| napi_error(format!("UIA GetRootElement failed: {err}")))?;
     let true_condition = automation.CreateTrueCondition().map_err(|err| napi_error(format!("UIA CreateTrueCondition failed: {err}")))?;

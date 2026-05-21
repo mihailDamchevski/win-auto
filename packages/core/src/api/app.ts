@@ -135,4 +135,28 @@ export class App {
     await this.backend.killProcess(this.processId);
     this.events.emitProcessKilled(this.processId);
   }
+
+  public async waitForElement(
+    selector: { automationId?: string; name?: string; role?: string },
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const mainWindow = await this.waitForMainWindow({ timeoutMs: options?.timeoutMs ?? 15_000 });
+    return mainWindow.waitForElement(selector, options);
+  }
+
+  public async waitForVisible(
+    selector: { automationId?: string; name?: string; role?: string },
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const mainWindow = await this.waitForMainWindow({ timeoutMs: options?.timeoutMs ?? 15_000 });
+    return mainWindow.waitForVisible(selector, options);
+  }
+
+  public async waitForEnabled(
+    selector: { automationId?: string; name?: string; role?: string },
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const mainWindow = await this.waitForMainWindow({ timeoutMs: options?.timeoutMs ?? 15_000 });
+    return mainWindow.waitForEnabled(selector, options);
+  }
 }

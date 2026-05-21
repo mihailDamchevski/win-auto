@@ -310,9 +310,13 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { setAppConfig, debugDiscovery, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, getWindowBounds, setWindowBounds, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, captureScreenshot, captureScreenshotToFile, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess } = nativeBinding
+const { setAppConfig, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, debugDiscovery, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, getWindowBounds, setWindowBounds, focusWindow, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, keyDown, keyUp, selectText, getSelection, replaceSelectedText, inspectWindowTree, getElementAttribute, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess, captureScreenshot, captureScreenshotToFile } = nativeBinding
 
 module.exports.setAppConfig = setAppConfig
+module.exports.findDialogs = findDialogs
+module.exports.getDialogControls = getDialogControls
+module.exports.clickDialogButton = clickDialogButton
+module.exports.setDialogFilePath = setDialogFilePath
 module.exports.debugDiscovery = debugDiscovery
 module.exports.findElement = findElement
 module.exports.typeText = typeText
@@ -339,6 +343,7 @@ module.exports.isEnabled = isEnabled
 module.exports.isFocused = isFocused
 module.exports.getWindowBounds = getWindowBounds
 module.exports.setWindowBounds = setWindowBounds
+module.exports.focusWindow = focusWindow
 module.exports.maximizeWindow = maximizeWindow
 module.exports.minimizeWindow = minimizeWindow
 module.exports.restoreWindow = restoreWindow
@@ -346,6 +351,13 @@ module.exports.pressKey = pressKey
 module.exports.rightClickElement = rightClickElement
 module.exports.doubleClickElement = doubleClickElement
 module.exports.mouseMove = mouseMove
+module.exports.keyDown = keyDown
+module.exports.keyUp = keyUp
+module.exports.selectText = selectText
+module.exports.getSelection = getSelection
+module.exports.replaceSelectedText = replaceSelectedText
+module.exports.inspectWindowTree = inspectWindowTree
+module.exports.getElementAttribute = getElementAttribute
 module.exports.dragDrop = dragDrop
 module.exports.launch = launch
 module.exports.ping = ping
@@ -353,13 +365,9 @@ module.exports.enumerateWindows = enumerateWindows
 module.exports.closeApp = closeApp
 module.exports.closeWindow = closeWindow
 module.exports.isProcessRunning = isProcessRunning
-module.exports.captureScreenshot = captureScreenshot
-module.exports.captureScreenshotToFile = captureScreenshotToFile
-module.exports.findDialogs = findDialogs
-module.exports.getDialogControls = getDialogControls
-module.exports.clickDialogButton = clickDialogButton
-module.exports.setDialogFilePath = setDialogFilePath
 module.exports.findProcessesByName = findProcessesByName
 module.exports.waitForProcessExit = waitForProcessExit
 module.exports.getProcessImageName = getProcessImageName
 module.exports.killProcess = killProcess
+module.exports.captureScreenshot = captureScreenshot
+module.exports.captureScreenshotToFile = captureScreenshotToFile

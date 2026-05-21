@@ -23,12 +23,21 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
+    "build:arm64": "napi build --platform --target aarch64-pc-windows-msvc --release",
+    "build:x64": "napi build --platform --target x86_64-pc-windows-msvc --release",
     "clean": "rimraf *.node",
     "prepublishOnly": "npm run build",
     "prepack": "npm run build"
   },
   "napi": {
-    "name": "win-auto-native"
+    "name": "win-auto-native",
+    "triples": {
+      "defaults": false,
+      "additional": [
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc"
+      ]
+    }
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4"

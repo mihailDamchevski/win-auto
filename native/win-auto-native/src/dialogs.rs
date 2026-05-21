@@ -1,8 +1,8 @@
 use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
-use windows::Win32::Foundation::{BOOL, HWND};
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetWindowRect, SetForegroundWindow, ShowWindow, SW_NORMAL};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, SetForegroundWindow, ShowWindow, SW_NORMAL};
 
 use crate::discovery::collect_windows_for_pid;
 use crate::error::napi_error;

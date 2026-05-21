@@ -35,6 +35,31 @@ export type WindowDebugInfo = {
   processImage: string;
 };
 
+export type ElementAttributeName =
+  | "name"
+  | "automationId"
+  | "role"
+  | "ariaRole"
+  | "helpText"
+  | "className"
+  | "accessKey"
+  | "acceleratorKey"
+  | "itemType"
+  | "itemStatus"
+  | "culture"
+  | "isEnabled"
+  | "isOffscreen"
+  | "hasKeyboardFocus"
+  | "isPassword"
+  | "isRequiredForForm"
+  | "isControlElement"
+  | "isContentElement"
+  | "processId"
+  | "boundingRectangle"
+  | "bounds"
+  | "localizedControlType"
+  | "value";
+
 export type NativeBindings = {
   ping: () => string;
   setAppConfig?: (executable: string, classNames: string[]) => void;
@@ -82,6 +107,7 @@ export type NativeBindings = {
   isFocused: (elementHandle: string) => Promise<boolean>;
   getWindowBounds: (windowHandle: string) => Promise<{ left: number; top: number; width: number; height: number }>;
   setWindowBounds: (windowHandle: string, left: number, top: number, width: number, height: number) => Promise<void>;
+  focusWindow: (windowHandle: string) => Promise<void>;
   maximizeWindow: (windowHandle: string) => Promise<void>;
   minimizeWindow: (windowHandle: string) => Promise<void>;
   restoreWindow: (windowHandle: string) => Promise<void>;
@@ -90,6 +116,8 @@ export type NativeBindings = {
   doubleClickElement: (elementHandle: string) => Promise<void>;
   hoverElement: (elementHandle: string) => Promise<void>;
   mouseMove: (x: number, y: number) => Promise<void>;
+  scrollElement: (elementHandle: string, direction: string, amount: number) => Promise<void>;
+  dragDrop: (fromElementHandle: string, toElementHandle: string) => Promise<void>;
   captureScreenshot: (elementHandle: string) => Promise<number[]>;
   captureScreenshotToFile: (elementHandle: string, path: string) => Promise<void>;
   findDialogs: (processId: number) => DialogInfo[];
@@ -100,6 +128,13 @@ export type NativeBindings = {
   waitForProcessExit: (processId: number, timeoutMs: number) => Promise<boolean>;
   getProcessImageName: (processId: number) => string;
   killProcess: (processId: number) => Promise<void>;
+  getElementAttribute: (elementHandle: string, attributeName: string) => Promise<string>;
+  keyDown: (windowHandle: string, key: string) => Promise<void>;
+  keyUp: (windowHandle: string, key: string) => Promise<void>;
+  selectText: (elementHandle: string) => Promise<void>;
+  getSelection: (elementHandle: string) => Promise<string>;
+  replaceSelectedText: (elementHandle: string, text: string) => Promise<void>;
+  inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
 };
 
 export type ProcessEntry = {
@@ -118,4 +153,14 @@ export type DialogControl = {
   handle: string;
   name: string;
   control_type: string;
+};
+
+export type ElementNode = {
+  handle: string;
+  name: string;
+  role: string;
+  automationId: string;
+  isVisible: boolean;
+  isEnabled: boolean;
+  children: ElementNode[];
 };

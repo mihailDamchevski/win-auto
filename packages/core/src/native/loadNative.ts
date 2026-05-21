@@ -1,6 +1,69 @@
 import path from "node:path";
 import type { NativeBindings } from "../api/types";
 
+const CORE_FUNCTIONS: (keyof NativeBindings)[] = [
+  "ping",
+  "launch",
+  "enumerateWindows",
+  "findElement",
+  "typeText",
+  "sendKeys",
+  "closeWindow",
+  "closeApp",
+  "isProcessRunning",
+  "getText",
+  "findElementName",
+  "clickElement",
+  "clickElementByName",
+  "clickSequence",
+  "pressKeyCodes",
+  "getValue",
+  "setValue",
+  "selectElement",
+  "toggleElement",
+  "getToggleState",
+  "findAll",
+  "getParent",
+  "getChildren",
+  "getSiblings",
+  "isVisible",
+  "isEnabled",
+  "isFocused",
+  "getWindowBounds",
+  "setWindowBounds",
+  "maximizeWindow",
+  "minimizeWindow",
+  "restoreWindow",
+  "pressKey",
+];
+
+const EXTENDED_FUNCTIONS: (keyof NativeBindings)[] = [
+  "focusWindow",
+  "rightClickElement",
+  "doubleClickElement",
+  "hoverElement",
+  "mouseMove",
+  "scrollElement",
+  "dragDrop",
+  "captureScreenshot",
+  "captureScreenshotToFile",
+  "findDialogs",
+  "getDialogControls",
+  "clickDialogButton",
+  "setDialogFilePath",
+  "findProcessesByName",
+  "waitForProcessExit",
+  "getProcessImageName",
+  "killProcess",
+  "getElementAttribute",
+  "keyDown",
+  "keyUp",
+  "selectText",
+  "getSelection",
+  "replaceSelectedText",
+  "inspectWindowTree",
+];
+
 const nativeSearchPaths = [
   "../../../../native/win-auto-native/win-auto-native.win32-x64-msvc.node",
   "../../../../native/win-auto-native/win-auto-native.win32-arm64-msvc.node",
@@ -15,43 +78,14 @@ export function loadNativeBindings(): NativeBindings {
     const resolvedPath = path.resolve(__dirname, relativePath);
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require(resolvedPath) as NativeBindings;
-      if (
-        typeof mod.ping === "function" &&
-        typeof mod.launch === "function" &&
-        typeof mod.enumerateWindows === "function" &&
-        typeof mod.findElement === "function" &&
-        typeof mod.typeText === "function" &&
-        typeof mod.sendKeys === "function" &&
-        typeof mod.closeWindow === "function" &&
-        typeof mod.closeApp === "function" &&
-        typeof mod.isProcessRunning === "function" &&
-        typeof mod.getText === "function" &&
-        typeof mod.findElementName === "function" &&
-        typeof mod.clickElement === "function" &&
-        typeof mod.clickElementByName === "function" &&
-        typeof mod.clickSequence === "function" &&
-        typeof mod.pressKeyCodes === "function" &&
-        typeof mod.getValue === "function" &&
-        typeof mod.setValue === "function" &&
-        typeof mod.selectElement === "function" &&
-        typeof mod.toggleElement === "function" &&
-        typeof mod.getToggleState === "function" &&
-        typeof mod.findAll === "function" &&
-        typeof mod.getParent === "function" &&
-        typeof mod.getChildren === "function" &&
-        typeof mod.getSiblings === "function" &&
-        typeof mod.isVisible === "function" &&
-        typeof mod.isEnabled === "function" &&
-        typeof mod.isFocused === "function" &&
-        typeof mod.getWindowBounds === "function" &&
-        typeof mod.setWindowBounds === "function" &&
-        typeof mod.maximizeWindow === "function" &&
-        typeof mod.minimizeWindow === "function" &&
-        typeof mod.restoreWindow === "function" &&
-        typeof mod.pressKey === "function"
-      ) {
-        return mod;
+      const mod = require(resolvedPath) as Record<string, unknown>;
+      if (CORE_FUNCTIONS.every((fn) => typeof mod[fn] === "function")) {
+        for (const fn of EXTENDED_FUNCTIONS) {
+          if (typeof mod[fn] !== "function") {
+            console.warn(`[win-auto] Native module missing extended function: ${fn}. Run npm run build:native to rebuild.`);
+          }
+        }
+        return mod as NativeBindings;
       }
     } catch {
       continue;

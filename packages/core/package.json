@@ -18,18 +18,26 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.js",
       "default": "./dist/testing/index.js"
     },
     "./testing/setup": {
       "types": "./dist/testing/setup.d.ts",
+      "import": "./dist/testing/setup.js",
+      "require": "./dist/testing/setup.js",
       "default": "./dist/testing/setup.js"
     },
     "./testing/globals": {
       "types": "./dist/testing/globals.d.ts",
+      "import": "./dist/testing/globals.js",
+      "require": "./dist/testing/globals.js",
       "default": "./dist/testing/globals.js"
     }
   },

@@ -63,6 +63,10 @@ const running = await app.isRunning();
 await app.waitForExit(10000);
 await app.kill();
 
+// Wait for elements via the main window
+const btn = await app.waitForElement({ name: 'OK' }, { timeoutMs: 5000 });
+const visible = await app.waitForVisible({ name: 'OK' });
+
 // Dialog handling
 const dialog = await app.dialogs.waitFor({ title: 'Open', timeoutMs: 5000 });
 await dialog.selectFile('C:\\path\\file.txt');
@@ -91,9 +95,22 @@ await window.restore();
 await window.typeText('Hello');
 await window.pressKey('Ctrl+S');
 
+// Hold/release modifier keys
+await window.keyDown('Ctrl');
+await window.pressKey('A');
+await window.keyUp('Ctrl');
+
+// Inspect UI tree
+const tree = window.inspectTree(5);
+
 // Screenshots
 const pixels = await window.screenshot();
 await window.screenshotToFile('window.bmp');
+
+// Wait for elements
+const btn = await window.waitForElement({ name: 'OK' }, { timeoutMs: 5000 });
+const visible = await window.waitForVisible({ name: 'OK' });
+const enabled = await window.waitForEnabled({ name: 'OK' });
 
 await window.close();
 ```
@@ -109,6 +126,8 @@ await element.click();
 await element.rightClick();
 await element.doubleClick();
 await element.hover();
+await element.scroll('down', 3);
+await element.dragDrop(targetElement);
 await element.select();
 await element.toggle();
 
@@ -123,10 +142,30 @@ const enabled = await element.isEnabled();
 const focused = await element.isFocused();
 const toggleState = await element.getToggleState();
 
+// Read arbitrary UIA attributes
+const name = await element.getAttribute('name');
+const role = await element.getAttribute('role');
+const bounds = await element.getAttribute('bounds');
+// getProperty is an alias
+const autoId = await element.getProperty('automationId');
+
+// Wait for element state
+await element.waitForVisible({ timeoutMs: 5000 });
+await element.waitForEnabled();
+
 // Tree navigation
 const parent = await element.getParent();
 const children = await element.getChildren();
 const siblings = await element.getSiblings();
+
+// Text selection
+await element.selectText();
+const selected = await element.getSelection();
+await element.replaceSelectedText('replacement');
+
+// Keyboard modifiers
+await element.keyDown('Shift');
+await element.keyUp('Shift');
 
 // Screenshots
 const pixels = await element.screenshot();

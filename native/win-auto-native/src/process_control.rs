@@ -3,8 +3,12 @@ use std::thread::sleep;
 use std::time::Duration;
 use napi::{Result};
 use napi_derive::napi;
+use tracing::info;
 use windows::Win32::Foundation::{CloseHandle, WPARAM, LPARAM};
-use windows::Win32::System::Threading::{CreateToolhelp32Snapshot, GetExitCodeProcess, OpenProcess, TerminateProcess, ThreadEntry32, PROCESS_ENTRY_32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TH32CS_SNAPPROCESS};
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE};
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
 use crate::config::{configured_executable_image_suffix, get_config};
@@ -84,6 +88,7 @@ fn close_app_internal(process_id: u32) -> Result<()> {
 
 #[napi]
 pub async fn launch(executable_path: Option<String>) -> Result<u32> {
+  info!("launch executable_path={executable_path:?}");
   let path = if let Some(p) = executable_path {
     p
   } else {
@@ -124,6 +129,8 @@ pub async fn launch(executable_path: Option<String>) -> Result<u32> {
 /// Health check function exposed to Node.js.
 #[napi]
 pub fn ping() -> String {
+  crate::trace::init_tracing();
+  tracing::debug!("ping");
   "ok".to_string()
 }
 
@@ -142,6 +149,20 @@ pub async fn close_app(process_id: u32) -> Result<()> {
 #[napi(js_name = "closeWindow")]
 pub async fn close_window(window_handle: String) -> Result<()> {
   let hwnd = crate::utils::parse_hwnd(&window_handle)?;
+  unsafe {
+    let _com_init = crate::utils::ComGuard::init();
+    // Try UIA WindowPattern.Close() first — works on UWP/modern windows
+    let uia_result: windows::core::Result<IUIAutomation> = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER);
+    if let Ok(automation) = uia_result {
+      if let Ok(element) = automation.ElementFromHandle(hwnd) {
+        if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationWindowPattern>(UIA_WindowPatternId) {
+          let _ = pattern.Close();
+          return Ok(());
+        }
+      }
+    }
+  }
+  // Fallback: Win32 PostMessage WM_CLOSE
   unsafe {
     let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
   }
@@ -165,15 +186,15 @@ pub fn find_processes_by_name(image_name: String) -> Result<Vec<ProcessEntry>> {
   let mut entries = Vec::new();
 
   unsafe {
-    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if snapshot.is_invalid() {
-      return Ok(entries);
-    }
+    let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+      Ok(s) => s,
+      Err(_) => return Ok(entries),
+    };
 
-    let mut pe = PROCESS_ENTRY_32::default();
-    pe.dwSize = std::mem::size_of::<PROCESS_ENTRY_32>() as u32;
+    let mut pe = PROCESSENTRY32W::default();
+    pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
 
-    if windows::Win32::System::Threading::Process32FirstW(snapshot, &mut pe).is_ok() {
+    if Process32FirstW(snapshot, &mut pe).is_ok() {
       loop {
         let name = String::from_utf16_lossy(&pe.szExeFile)
           .trim_end_matches('\0')
@@ -185,7 +206,7 @@ pub fn find_processes_by_name(image_name: String) -> Result<Vec<ProcessEntry>> {
             image_name: name,
           });
         }
-        if windows::Win32::System::Threading::Process32NextW(snapshot, &mut pe).is_err() {
+        if Process32NextW(snapshot, &mut pe).is_err() {
           break;
         }
       }

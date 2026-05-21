@@ -7,18 +7,24 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 napi = { version = "2", features = ["tokio_rt"] }
 napi-derive = "2"
+image = { version = "0.25", default-features = false, features = ["png"] }
+phf = { version = "0.11", features = ["macros"] }
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_System_Com",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Threading",
   "Win32_UI_Accessibility",
   "Win32_UI_Input",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
   "Win32_Graphics",
-  "Win32_Graphics_Gdi"
+  "Win32_Graphics_Gdi",
+  "Win32_UI_HiDpi"
 ] }
 
 [build-dependencies]

@@ -20,7 +20,7 @@ export class Element {
   }
 
   public async rightClick(): Promise<void> {
-    await this.backend.clickElementRight(this.handle);
+    await this.backend.rightClickElement(this.handle);
     this.events.emitElementRightClicked(this.handle);
   }
 
@@ -32,6 +32,19 @@ export class Element {
   public async hover(): Promise<void> {
     await this.backend.hoverElement(this.handle);
     this.events.emitElementHovered(this.handle);
+  }
+
+  public async scroll(direction: string, amount: number): Promise<void> {
+    await this.backend.scrollElement(this.handle, direction, amount);
+  }
+
+  public async dragDrop(target: Element | string): Promise<void> {
+    const targetHandle = typeof target === "string" ? target : target.handle;
+    await this.backend.dragDrop(this.handle, targetHandle);
+  }
+
+  public async dragTo(target: Element | string): Promise<void> {
+    return this.dragDrop(target);
   }
 
   public async typeText(text: string): Promise<void> {
@@ -108,5 +121,73 @@ export class Element {
   public async screenshotToFile(path: string): Promise<void> {
     await this.backend.captureScreenshotToFile(this.handle, path);
     this.events.emitElementScreenshot(this.handle);
+  }
+
+  public async keyDown(key: string): Promise<void> {
+    await this.backend.keyDown(this.windowHandle, key);
+  }
+
+  public async keyUp(key: string): Promise<void> {
+    await this.backend.keyUp(this.windowHandle, key);
+  }
+
+  public async selectText(): Promise<void> {
+    await this.backend.selectText(this.handle);
+  }
+
+  public async getSelection(): Promise<string> {
+    return this.backend.getSelection(this.handle);
+  }
+
+  public async replaceSelectedText(text: string): Promise<void> {
+    await this.backend.replaceSelectedText(this.handle, text);
+  }
+
+  public async getAttribute(name: string): Promise<string> {
+    return this.backend.getElementAttribute(this.handle, name);
+  }
+
+  public async getProperty(name: string): Promise<string> {
+    return this.getAttribute(name);
+  }
+
+  public async waitForVisible(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<this> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (await this.isVisible()) {
+        return this;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      `Element ${this.handle} did not become visible within ${timeoutMs}ms`,
+    );
+  }
+
+  public async waitForEnabled(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<this> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (await this.isEnabled()) {
+        return this;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      `Element ${this.handle} did not become enabled within ${timeoutMs}ms`,
+    );
   }
 }

@@ -1,10 +1,61 @@
 use napi::Result;
 use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER};
 use windows::core::PWSTR;
 
+const BASE_DPI: u32 = 96;
+
+pub fn get_dpi_for_window(hwnd: HWND) -> u32 {
+  unsafe {
+    let dpi = GetDpiForWindow(hwnd);
+    if dpi > 0 { dpi as u32 } else { BASE_DPI }
+  }
+}
+
+pub fn get_dpi_scale(hwnd: HWND) -> f64 {
+  f64::from(get_dpi_for_window(hwnd)) / f64::from(BASE_DPI)
+}
+
+pub fn logical_to_physical(hwnd: HWND, value: i32) -> i32 {
+  (f64::from(value) * get_dpi_scale(hwnd)).round() as i32
+}
+
+pub fn physical_to_logical(hwnd: HWND, value: i32) -> i32 {
+  let scale = get_dpi_scale(hwnd);
+  if scale > 0.0 {
+    (f64::from(value) / scale).round() as i32
+  } else {
+    value
+  }
+}
+
 use crate::error::napi_error;
+
+/// RAII guard that calls CoInitializeEx on construction and CoUninitialize on drop.
+/// Never fails — RPC_E_CHANGED_MODE (COM already initialized) is treated as success.
+pub struct ComGuard {
+  needs_uninit: bool,
+}
+
+impl ComGuard {
+  pub fn init() -> Self {
+    unsafe {
+      let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+      ComGuard { needs_uninit: hr.is_ok() }
+    }
+  }
+}
+
+impl Drop for ComGuard {
+  fn drop(&mut self) {
+    if self.needs_uninit {
+      unsafe { CoUninitialize(); }
+    }
+  }
+}
 
 pub fn parse_hwnd(handle: &str) -> Result<HWND> {
   let value = handle

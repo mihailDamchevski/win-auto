@@ -1,5 +1,5 @@
 import type { Backend } from "./backend";
-import type { DialogControl, DialogInfo, NativeBindings, ProcessEntry } from "./types";
+import type { DialogControl, DialogInfo, ElementNode, NativeBindings, ProcessEntry } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 
 export class NativeBackend implements Backend {
@@ -155,6 +155,10 @@ export class NativeBackend implements Backend {
     return this.native.setWindowBounds(windowHandle, left, top, width, height);
   }
 
+  async focusWindow(windowHandle: string): Promise<void> {
+    return this.native.focusWindow(windowHandle);
+  }
+
   async maximizeWindow(windowHandle: string): Promise<void> {
     return this.native.maximizeWindow(windowHandle);
   }
@@ -171,7 +175,7 @@ export class NativeBackend implements Backend {
     return this.native.pressKey(windowHandle, keyCombination);
   }
 
-  async clickElementRight(elementHandle: string): Promise<void> {
+  async rightClickElement(elementHandle: string): Promise<void> {
     return this.native.rightClickElement(elementHandle);
   }
 
@@ -185,6 +189,14 @@ export class NativeBackend implements Backend {
 
   async mouseMove(x: number, y: number): Promise<void> {
     return this.native.mouseMove(x, y);
+  }
+
+  async scrollElement(elementHandle: string, direction: string, amount: number): Promise<void> {
+    return this.native.scrollElement(elementHandle, direction, amount);
+  }
+
+  async dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void> {
+    return this.native.dragDrop(fromElementHandle, toElementHandle);
   }
 
   async captureScreenshot(elementHandle: string): Promise<number[]> {
@@ -225,6 +237,34 @@ export class NativeBackend implements Backend {
 
   async killProcess(processId: number): Promise<void> {
     return this.native.killProcess(processId);
+  }
+
+  async getElementAttribute(elementHandle: string, attributeName: string): Promise<string> {
+    return this.native.getElementAttribute(elementHandle, attributeName);
+  }
+
+  async keyDown(windowHandle: string, key: string): Promise<void> {
+    return this.native.keyDown(windowHandle, key);
+  }
+
+  async keyUp(windowHandle: string, key: string): Promise<void> {
+    return this.native.keyUp(windowHandle, key);
+  }
+
+  async selectText(elementHandle: string): Promise<void> {
+    return this.native.selectText(elementHandle);
+  }
+
+  async getSelection(elementHandle: string): Promise<string> {
+    return this.native.getSelection(elementHandle);
+  }
+
+  async replaceSelectedText(elementHandle: string, text: string): Promise<void> {
+    return this.native.replaceSelectedText(elementHandle, text);
+  }
+
+  inspectWindowTree(windowHandle: string, maxDepth?: number): ElementNode[] {
+    return this.native.inspectWindowTree(windowHandle, maxDepth ?? null);
   }
 
   debugDiscovery(processId: number) {

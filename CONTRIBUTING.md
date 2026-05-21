@@ -53,10 +53,20 @@ npm run test:e2e
 npm run test:e2e:real
 ```
 
-### Linting
+### Linting & Formatting
 
 ```powershell
+# ESLint (recommended rules)
 npm run lint
+
+# TypeScript type-check
+npm run lint:tsc
+
+# Prettier formatting
+npm run format
+
+# Check formatting without writing
+npm run format:check
 ```
 
 ### Cleaning
@@ -105,6 +115,29 @@ When reporting issues, include:
 - Actual behavior
 - System information (OS, Node version, etc.)
 - Error messages and logs
+
+## Roadmap
+
+Planned features and improvements (in loose priority order):
+
+### High Priority
+
+- **Full UIA pattern coverage** — `SelectionItemPattern`, `ExpandCollapsePattern`, `ScrollPattern` for richer control interaction
+- **Cross-process UI tree caching** — UIA tree cache requests for faster element discovery on complex UIs
+- **`Element.waitForNotVisible()`, `.waitForDisabled()`** — Inverse wait conditions for modal/busy state detection
+
+### Medium Priority
+
+- **Image-based element finding** — Locate elements by template matching (Screenshot → find coordinates → click)
+- **Remote automation agent** — gRPC server exposing win-auto operations for cross-machine automation
+- **PowerShell module generator** — `win-auto init --ps` that generates PowerShell cmdlet wrappers
+- **macOS/Linux parity** — Basic window/element discovery via platform accessibility APIs (AT-SPI, Accessibility API)
+
+### Low Priority
+
+- **Record-and-playback** — Interactive recorder that generates TypeScript scripts from manual UI interactions
+- **WebView2 / Electron support** — Navigate, read DOM, inject JS into embedded WebView2 controls
+- **Headless automation mode** — Run automation against off-screen or virtual desktops
 
 ## Questions or Need Help?
 

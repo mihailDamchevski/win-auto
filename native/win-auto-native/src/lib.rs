@@ -10,4 +10,6 @@ mod error;
 mod interaction;
 mod process_control;
 mod screenshot;
+mod trace;
 mod utils;
+  

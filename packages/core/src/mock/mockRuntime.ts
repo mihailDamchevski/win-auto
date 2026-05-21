@@ -1,15 +1,34 @@
-import type { ElementSelector, LaunchOptions } from "../api/types";
+import type { ElementSelector, LaunchOptions, WindowBounds } from "../api/types";
 
 export type MockElementRecord = {
   id: string;
   selector: ElementSelector;
   text: string;
+  isSelected: boolean;
+  isToggled: boolean;
+  toggleState: "On" | "Off" | "Indeterminate";
+  isVisible: boolean;
+  isEnabled: boolean;
+  isFocused: boolean;
+  parentHandle: string | null;
+  childHandles: string[];
+};
+
+export type MockDialogRecord = {
+  id: string;
+  title: string;
+  buttons: string[];
+  filePath: string;
 };
 
 export type MockWindowRecord = {
   id: string;
   title: string;
   elements: MockElementRecord[];
+  bounds: WindowBounds;
+  isMaximized: boolean;
+  isMinimized: boolean;
+  isFocused: boolean;
 };
 
 export type MockAppRecord = {
@@ -17,7 +36,46 @@ export type MockAppRecord = {
   executablePath: string;
   title: string;
   windows: MockWindowRecord[];
+  dialogs: MockDialogRecord[];
 };
+
+export function createDefaultElement(id: string, selector?: Partial<ElementSelector>): MockElementRecord {
+  return {
+    id,
+    selector: { automationId: "main-input", name: "Main Input", role: "textbox", ...selector },
+    text: "",
+    isSelected: false,
+    isToggled: false,
+    toggleState: "Off",
+    isVisible: true,
+    isEnabled: true,
+    isFocused: false,
+    parentHandle: null,
+    childHandles: [],
+  };
+}
+
+export function createDefaultWindow(id: string, title: string): MockWindowRecord {
+  return {
+    id,
+    title,
+    elements: [],
+    bounds: { left: 0, top: 0, width: 800, height: 600 },
+    isMaximized: false,
+    isMinimized: false,
+    isFocused: false,
+  };
+}
+
+export function createDefaultApp(id: string, executablePath: string): MockAppRecord {
+  return {
+    id,
+    executablePath,
+    title: "Mock App",
+    windows: [],
+    dialogs: [],
+  };
+}
 
 const DELAY_MS = 15;
 
@@ -49,18 +107,17 @@ export class MockRuntime {
     await wait();
     const appId = `app-${this.appCounter++}`;
     const windowId = `win-${this.windowCounter++}`;
-    const defaultElement: MockElementRecord = {
-      id: `el-${this.elementCounter++}`,
-      selector: { automationId: "main-input", name: "Main Input", role: "textbox" },
-      text: ""
-    };
+    const defaultElement = createDefaultElement(
+      `el-${this.elementCounter++}`,
+      { automationId: "main-input", name: "Main Input", role: "textbox" },
+    );
+    const window = createDefaultWindow(windowId, options.title ?? "Main Window");
+    window.elements.push(defaultElement);
+    defaultElement.parentHandle = windowId;
 
-    const app: MockAppRecord = {
-      id: appId,
-      executablePath: options.executablePath,
-      title: options.title ?? "Mock App",
-      windows: [{ id: windowId, title: options.title ?? "Main Window", elements: [defaultElement] }]
-    };
+    const app = createDefaultApp(appId, options.executablePath);
+    app.title = options.title ?? "Mock App";
+    app.windows.push(window);
     this.apps.set(appId, app);
     return app;
   }

@@ -13,15 +13,23 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 - 🚀 **Simple TypeScript API** - Clean, intuitive interface for desktop automation
 - 🔧 **Native Performance** - Rust + napi-rs backend for fast, reliable automation
 - 🎯 **Element Finding** - Locate UI elements by role, name, automation ID, and other attributes
+- 🏷️ **Element Attributes** - Read arbitrary UIA properties (name, role, value, bounds, isEnabled, and many more)
+- ⌨️ **Modifier Key Hold/Release** - `keyDown("Ctrl")` / `keyUp("Ctrl")` for complex multi-key sequences
+- ✂️ **Text Selection** - Select all text, get current selection, and replace selected text
+- 🔭 **UI Tree Inspection** - Recursively walk the UIA element tree of any window (great for debugging)
+- 🖥️ **CLI Inspector** - `win-auto inspect <pid|imageName>` — browse the UI tree of any running app
 - ⌨️ **User Simulation** - Type text, click buttons, interact with controls, send keyboard shortcuts
 - 🪟 **Window Management** - Maximize, minimize, restore, resize, and move windows
-- 🖱️ **Mouse Operations** - Click, right-click, double-click, hover, and drag-drop on elements
+- 🖱️ **Mouse Operations** - Click, right-click, double-click, hover, scroll, and drag-drop on elements
 - 🗔 **Dialog Handling** - Detect and interact with modal dialogs (file open, message boxes, etc.)
 - 🔍 **Process Management** - Find running processes, connect to them, wait for exit, kill
 - 📸 **Screenshots** - Capture window and element screenshots to buffer or file (BMP format)
 - 📡 **Event System** - Subscribe to automation events (app launched, element clicked, etc.) for logging and debugging
 - 📦 **CLI Tool** - Scaffold new automation projects quickly
 - 🧪 **Testing Integration** - Built-in support for vitest with auto-cleanup via TestAutomation
+- 🧪 **Assertion Helpers** - `expectElement(el).toBeVisible()`, `.toBeEnabled()`, `.toHaveText()`, and more
+- 🧪 **Conditional Runners** - `it.ci()` / `it.realDesktop()` for environment-aware test suites
+- 🧪 **Time Measurement** - `measureTime()` / `measureAsync()` for performance assertions
 - 🎭 **Mock Backend** - Test automation logic without a real Windows desktop
 
 ## Quick Start
@@ -63,6 +71,14 @@ win-auto init my-automation-project
 cd my-automation-project
 npm install
 npm run test
+
+Inspect the UI tree of any running application:
+
+```bash
+win-auto inspect 1234       # by PID
+win-auto inspect notepad    # by image name
+win-auto inspect 1234 10    # with custom max depth
+```
 ```
 
 ## API Reference
@@ -104,6 +120,11 @@ const windows = await app.listWindows();
 // Find elements throughout the app
 const element = await app.find({ role: "button", name: "OK" });
 
+// Wait for elements via the app's main window
+const btn = await app.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
+const visible = await app.waitForVisible({ name: "OK" });
+const enabled = await app.waitForEnabled({ name: "OK" });
+
 // Close the app with optional wait
 await app.close({ timeoutMs: 5000 });
 ```
@@ -137,9 +158,25 @@ await window.restore();
 // Keyboard input
 await window.pressKey("Ctrl+S");
 
+// Hold/release modifier keys for complex sequences
+await window.keyDown("Ctrl");
+await window.pressKey("A");   // select all while Ctrl is held
+await window.keyUp("Ctrl");
+
+// Inspect UI tree (sync, returns structured element tree)
+const tree = window.inspectTree(5); // max depth
+for (const node of tree) {
+  console.log(node.name, node.role, node.automationId);
+}
+
 // Screenshots
 const pixels = await window.screenshot();       // BMP byte array
 await window.screenshotToFile("window.bmp");    // save to file
+
+// Wait for elements to appear or reach a state
+const btn = await window.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
+const visibleBtn = await window.waitForVisible({ name: "OK" });
+const enabledBtn = await window.waitForEnabled({ name: "OK" });
 
 // Close the window
 await window.close();
@@ -156,6 +193,8 @@ await element.click();
 await element.rightClick();
 await element.doubleClick();
 await element.hover();
+await element.scroll("down", 3);       // scroll 3 steps down
+await element.dragDrop(targetElement); // drag onto another element
 await element.select();
 await element.toggle();
 
@@ -170,14 +209,106 @@ const enabled = await element.isEnabled();
 const focused = await element.isFocused();
 const toggleState = await element.getToggleState();
 
+// Read arbitrary UIA attributes
+const name = await element.getAttribute("name");
+const role = await element.getAttribute("role");
+const bounds = await element.getAttribute("bounds");
+const isPassword = await element.getAttribute("isPassword");
+// getProperty is an alias for getAttribute
+const autoId = await element.getProperty("automationId");
+
+// Wait for element state
+await element.waitForVisible({ timeoutMs: 5000 });
+await element.waitForEnabled();
+
 // Tree navigation
 const parent = await element.getParent();
 const children = await element.getChildren();
 const siblings = await element.getSiblings();
 
+// Text selection operations
+await element.selectText();                              // select all text
+const selected = await element.getSelection();            // get selected text
+await element.replaceSelectedText("replacement");          // replace selection
+
+// Keyboard modifier hold/release (via the element's parent window)
+await element.keyDown("Shift");
+await element.keyDown("Ctrl");
+await element.pressKey("End");  // Ctrl+Shift+End — select to end
+await element.keyUp("Shift");
+await element.keyUp("Ctrl");
+
 // Screenshots
 const pixels = await element.screenshot();          // BMP byte array
 await element.screenshotToFile("element.bmp");      // save to file
+```
+
+### UI Tree Inspection
+
+Every `Window` instance has an `inspectTree` method that recursively walks the UIA element tree — useful for debugging, exploration, and writing selectors.
+
+```typescript
+const window = await app.getMainWindow();
+const tree = window.inspectTree(5); // max depth (default 10)
+
+// Recursively walk the tree
+function print(node, indent = 0) {
+  console.log("  ".repeat(indent) + `${node.handle} ${node.name} [${node.role}]`);
+  for (const child of node.children) print(child, indent + 1);
+}
+for (const node of tree) print(node);
+```
+
+The CLI provides the same functionality:
+
+```bash
+win-auto inspect notepad.exe
+# Process: notepad.exe (PID: 1234)
+#   Window: 0x1A0B4
+#     Bounds: 0,0 1200x800
+#     0x1A2C0  | text
+#     0x1A2D0  Edit | document
+#     0x1A2E0  Status Bar | status bar
+```
+
+### Text Selection
+
+`Element` supports text selection operations for editable text controls:
+
+```typescript
+// Select all text in the element
+await element.selectText();
+
+// Get the currently selected text
+const selection = await element.getSelection();
+console.log("Selected:", selection);
+
+// Replace selected text with new content
+await element.replaceSelectedText("new content");
+// This selects all text first, then replaces it
+```
+
+### Keyboard Modifier Hold/Release
+
+For complex keyboard sequences that require holding modifier keys across multiple operations:
+
+```typescript
+// Select text from cursor to end of line
+await element.keyDown("Shift");
+await element.pressKey("End");
+await element.keyUp("Shift");
+
+// Ctrl+A to select all
+await window.keyDown("Ctrl");
+await window.pressKey("A");
+await window.keyUp("Ctrl");
+
+// Complex sequence: Ctrl+Shift+End
+await window.keyDown("Ctrl");
+await window.keyDown("Shift");
+await window.pressKey("End");
+await window.keyUp("Ctrl");
+await window.keyUp("Shift");
 ```
 
 ### Backend
@@ -372,6 +503,39 @@ it("works without a real desktop", async () => {
   await el?.type("Hello");
   expect(await el?.getText()).toBe("Hello");
 });
+
+// Advanced testing with assertion helpers, conditional runners, and mock factories:
+// import { expectElement, expectScreenshot, it, createMockElement } from "@win-auto/core/testing";
+
+it("uses assertion helpers", async () => {
+  const auto = new Automation(new MockBackend());
+  const app = await auto.launch("notepad.exe");
+  const el = await app.find({ role: "textbox" })!;
+
+  await expectElement(el).toBeVisible();
+  await expectElement(el).toBeEnabled();
+  await expectElement(el).toHaveText("");
+
+  // Screenshot matcher
+  const pixels = await el.screenshot();
+  expectScreenshot(pixels).toBeBMP();
+});
+
+it.ci("only runs in CI", () => {
+  // Skipped when not in CI environment
+});
+
+it.realDesktop("only runs on real desktop", async () => {
+  // Skipped when using MockBackend
+});
+
+// Time measurement
+// import { measureTime, measureAsync } from "@win-auto/core/testing";
+const { result, durationMs } = await measureAsync(() => el.getText());
+console.log(`getText took ${durationMs}ms`);
+
+// Mock factories for setting up test state
+// import { createMockElement, createMockWindow, createMockApp } from "@win-auto/core/testing";
 ```
 
 ## Requirements

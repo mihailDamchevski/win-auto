@@ -1,6 +1,13 @@
 import type { Backend } from "../api/backend";
-import type { MockAppRecord, MockWindowRecord, MockElementRecord } from "./mockRuntime";
-import type { DialogControl, DialogInfo, ProcessEntry, WindowDebugInfo } from "../api/types";
+import type {
+  MockAppRecord, MockWindowRecord, MockElementRecord,
+} from "./mockRuntime";
+import {
+  createDefaultElement, createDefaultWindow, createDefaultApp,
+} from "./mockRuntime";
+import type {
+  DialogControl, DialogInfo, ElementNode, ProcessEntry, WindowBounds, WindowDebugInfo,
+} from "../api/types";
 
 const MOCK_DELAY_MS = 5;
 
@@ -24,6 +31,7 @@ export class MockBackend implements Backend {
   private nextPid = 1000;
   private nextWindowHandle = 10000;
   private nextElementHandle = 100000;
+  private nextDialogHandle = 20000;
 
   private pidToApp = new Map<number, MockAppRecord>();
   private windowHandleToWin = new Map<string, MockWindowRecord>();
@@ -31,43 +39,109 @@ export class MockBackend implements Backend {
   private winHandleToPid = new Map<string, number>();
   private elHandleToPid = new Map<string, number>();
 
+  // --- helpers ---
+
   ping(): string {
     return "mock";
   }
 
   setAppConfig(_executable: string, _classNames: string[]): void {}
 
+  private assertWindow(handle: string): MockWindowRecord {
+    const win = this.windowHandleToWin.get(handle);
+    if (!win) throw new Error(`Window not found: ${handle}`);
+    return win;
+  }
+
+  private assertElement(handle: string): MockElementRecord {
+    const el = this.elementHandleToEl.get(handle);
+    if (!el) throw new Error(`Element not found: ${handle}`);
+    return el;
+  }
+
+  private findPidByElementId(elId: string): number {
+    for (const [pid, app] of this.pidToApp) {
+      for (const win of app.windows) {
+        if (win.elements.some((e) => e.id === elId)) return pid;
+      }
+    }
+    return -1;
+  }
+
+  private ensureElementHandle(element: MockElementRecord): string {
+    for (const [handle, el] of this.elementHandleToEl) {
+      if (el.id === element.id) return handle;
+    }
+    const handle = String(this.nextElementHandle++);
+    this.elementHandleToEl.set(handle, element);
+    this.elHandleToPid.set(handle, this.findPidByElementId(element.id));
+    return handle;
+  }
+
+  private removeElementMappings(elId: string): void {
+    for (const [handle, el] of this.elementHandleToEl) {
+      if (el.id === elId) {
+        this.elementHandleToEl.delete(handle);
+        this.elHandleToPid.delete(handle);
+        return;
+      }
+    }
+  }
+
+  private removeWindowMappings(winId: string): void {
+    for (const [handle, win] of this.windowHandleToWin) {
+      if (win.id === winId) {
+        this.windowHandleToWin.delete(handle);
+        this.winHandleToPid.delete(handle);
+        return;
+      }
+    }
+  }
+
+  /** Creates a proper handle -> record entry for an element, maintaining tree links */
+  private registerElement(el: MockElementRecord, parentHandle: string | null): string {
+    const handle = String(this.nextElementHandle++);
+    this.elementHandleToEl.set(handle, el);
+    this.elHandleToPid.set(handle, this.findPidByElementId(el.id));
+    el.parentHandle = parentHandle;
+    return handle;
+  }
+
+  private setFocused(handle: string): void {
+    // Unfocus all elements in the same PID
+    const pid = this.elHandleToPid.get(handle);
+    if (pid != null) {
+      for (const [h, el] of this.elementHandleToEl) {
+        if (this.elHandleToPid.get(h) === pid && h !== handle) {
+          el.isFocused = false;
+        }
+      }
+    }
+    this.assertElement(handle).isFocused = true;
+  }
+
+  // --- lifecycle ---
+
   async launch(executablePath: string | null): Promise<number> {
     const pid = this.nextPid++;
-    const windowId = `mock-win-${pid}`;
-    const elementId = `mock-el-${pid}`;
+    const winId = `mock-win-${pid}`;
+    const elId = `mock-el-${pid}`;
     const winHandle = String(this.nextWindowHandle++);
-    const elHandle = String(this.nextElementHandle++);
 
-    const element: MockElementRecord = {
-      id: elementId,
-      selector: { automationId: "main-input", name: "Main Input", role: "textbox" },
-      text: "",
-    };
+    const element = createDefaultElement(elId, { automationId: "main-input", name: "Main Input", role: "textbox" });
+    const window = createDefaultWindow(winId, "Mock Window");
+    window.elements.push(element);
+    element.parentHandle = winId;
 
-    const window: MockWindowRecord = {
-      id: windowId,
-      title: "Mock Window",
-      elements: [element],
-    };
-
-    const app: MockAppRecord = {
-      id: `mock-app-${pid}`,
-      executablePath: executablePath ?? "mock.exe",
-      title: "Mock App",
-      windows: [window],
-    };
+    const app = createDefaultApp(`mock-app-${pid}`, executablePath ?? "mock.exe");
+    app.windows.push(window);
 
     this.pidToApp.set(pid, app);
     this.windowHandleToWin.set(winHandle, window);
-    this.elementHandleToEl.set(elHandle, element);
     this.winHandleToPid.set(winHandle, pid);
-    this.elHandleToPid.set(elHandle, pid);
+
+    // Register element
+    this.registerElement(element, winHandle);
 
     return pid;
   }
@@ -111,6 +185,8 @@ export class MockBackend implements Backend {
     return this.pidToApp.has(processId);
   }
 
+  // --- element finding ---
+
   async findElement(
     windowHandle: string,
     _classNames?: string[] | null,
@@ -131,99 +207,6 @@ export class MockBackend implements Backend {
     return this.findElement(windowHandle, null, null, name, null);
   }
 
-  async clickElement(elementHandle: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    await delay();
-  }
-
-  async clickElementByName(windowHandle: string, name: string): Promise<void> {
-    const handle = await this.findElementName(windowHandle, name);
-    if (!handle) {
-      throw new Error(`Element with name "${name}" not found in window ${windowHandle}`);
-    }
-    await delay();
-  }
-
-  async clickSequence(windowHandle: string, names: string[]): Promise<void> {
-    for (const name of names) {
-      const handle = await this.findElementName(windowHandle, name);
-      if (!handle) {
-        throw new Error(`Element with name "${name}" not found in clickSequence`);
-      }
-    }
-    await delay();
-  }
-
-  async typeText(elementHandle: string, text: string): Promise<void> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    el.text = text;
-    await delay();
-  }
-
-  async sendKeys(windowHandle: string, text: string): Promise<void> {
-    const win = this.windowHandleToWin.get(windowHandle);
-    if (!win) {
-      throw new Error(`Window not found: ${windowHandle}`);
-    }
-    const textbox = win.elements.find((e) => e.selector.role === "textbox");
-    if (textbox) {
-      textbox.text = text;
-    }
-    await delay();
-  }
-
-  async getText(elementHandle: string): Promise<string> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    return el.text;
-  }
-
-  async getValue(elementHandle: string): Promise<string> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    return el.text;
-  }
-
-  async setValue(elementHandle: string, value: string): Promise<void> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    el.text = value;
-    await delay();
-  }
-
-  async selectElement(elementHandle: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    await delay();
-  }
-
-  async toggleElement(elementHandle: string): Promise<void> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    await delay();
-  }
-
-  async getToggleState(elementHandle: string): Promise<string> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    return "Off";
-  }
-
   async findAll(
     windowHandle: string,
     _classNames?: string[] | null,
@@ -233,76 +216,216 @@ export class MockBackend implements Backend {
   ): Promise<string[]> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return [];
+    let matches = win.elements;
     if (name) {
-      const matching = win.elements.filter((el) =>
+      matches = matches.filter((el) =>
         el.selector.name?.toLowerCase().includes(name.toLowerCase()),
       );
-      return matching.map((el) => this.ensureElementHandle(el));
     }
-    return win.elements.map((el) => this.ensureElementHandle(el));
+    return matches.map((el) => this.ensureElementHandle(el));
   }
 
-  async getParent(elementHandle: string): Promise<string | null> {
-    const el = this.elementHandleToEl.get(elementHandle);
-    if (!el) return null;
-    // Find the window that contains this element
-    for (const [, win] of this.windowHandleToWin) {
-      if (win.elements.some((e) => e.id === el.id)) {
-        // Find the app containing this window and return the first window handle
-        for (const [, app] of this.pidToApp) {
-          if (app.windows.some((w) => w.id === win.id)) {
-            for (const [h] of this.windowHandleToWin) {
-              return h;
-            }
-          }
-        }
-      }
+  // --- interactions (with state tracking) ---
+
+  async clickElement(elementHandle: string): Promise<void> {
+    this.assertElement(elementHandle);
+    this.setFocused(elementHandle);
+    await delay();
+  }
+
+  async rightClickElement(elementHandle: string): Promise<void> {
+    this.assertElement(elementHandle);
+    this.setFocused(elementHandle);
+    await delay();
+  }
+
+  async doubleClickElement(elementHandle: string): Promise<void> {
+    this.assertElement(elementHandle);
+    this.setFocused(elementHandle);
+    await delay();
+  }
+
+  async hoverElement(elementHandle: string): Promise<void> {
+    this.assertElement(elementHandle);
+    await delay();
+  }
+
+  async clickElementByName(windowHandle: string, name: string): Promise<void> {
+    const handle = await this.findElementName(windowHandle, name);
+    if (!handle) {
+      throw new Error(`Element with name "${name}" not found in window ${windowHandle}`);
     }
-    return null;
+    await this.clickElement(handle);
+  }
+
+  async clickSequence(windowHandle: string, names: string[]): Promise<void> {
+    for (const name of names) {
+      const handle = await this.findElementName(windowHandle, name);
+      if (!handle) {
+        throw new Error(`Element with name "${name}" not found in clickSequence`);
+      }
+      await this.clickElement(handle);
+    }
+  }
+
+  async typeText(elementHandle: string, text: string): Promise<void> {
+    const el = this.assertElement(elementHandle);
+    el.text = text;
+    this.setFocused(elementHandle);
+    await delay();
+  }
+
+  async sendKeys(windowHandle: string, text: string): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    const textbox = win.elements.find((e) => e.selector.role === "textbox");
+    if (textbox) {
+      textbox.text = text;
+    }
+    await delay();
+  }
+
+  async getText(elementHandle: string): Promise<string> {
+    return this.assertElement(elementHandle).text;
+  }
+
+  async getValue(elementHandle: string): Promise<string> {
+    return this.assertElement(elementHandle).text;
+  }
+
+  async setValue(elementHandle: string, value: string): Promise<void> {
+    this.assertElement(elementHandle).text = value;
+    await delay();
+  }
+
+  async selectElement(elementHandle: string): Promise<void> {
+    const el = this.assertElement(elementHandle);
+    el.isSelected = true;
+    this.setFocused(elementHandle);
+    await delay();
+  }
+
+  async toggleElement(elementHandle: string): Promise<void> {
+    const el = this.assertElement(elementHandle);
+    el.isToggled = !el.isToggled;
+    el.toggleState = el.isToggled ? "On" : "Off";
+    el.isSelected = true;
+    await delay();
+  }
+
+  async getToggleState(elementHandle: string): Promise<string> {
+    return this.assertElement(elementHandle).toggleState;
+  }
+
+  // --- tree navigation (real parent/child tracking) ---
+
+  async getParent(elementHandle: string): Promise<string | null> {
+    const el = this.assertElement(elementHandle);
+    return el.parentHandle;
   }
 
   async getChildren(elementHandle: string): Promise<string[]> {
+    const el = this.assertElement(elementHandle);
+    if (el.childHandles.length > 0) {
+      return el.childHandles.filter((h) => this.elementHandleToEl.has(h));
+    }
     return [];
   }
 
   async getSiblings(elementHandle: string): Promise<string[]> {
+    const el = this.assertElement(elementHandle);
+    if (!el.parentHandle) return [];
+    const parentId = this.windowHandleToWin.get(el.parentHandle)
+      ? el.parentHandle
+      : this.elementHandleToEl.get(el.parentHandle)?.id;
+    if (!parentId) return [];
+
+    // If parent is a window, siblings are other elements in that window
+    const parentWin = this.windowHandleToWin.get(el.parentHandle);
+    if (parentWin) {
+      return parentWin.elements
+        .filter((e) => e.id !== el.id)
+        .map((e) => this.ensureElementHandle(e));
+    }
+
+    // If parent is an element, siblings are other children of that element
+    const parentEl = this.elementHandleToEl.get(el.parentHandle);
+    if (parentEl) {
+      // Find the window this element belongs to, then scan for elements with same parentHandle
+      const pid = this.elHandleToPid.get(elementHandle);
+      if (pid == null) return [];
+      const app = this.pidToApp.get(pid);
+      if (!app) return [];
+      const handles: string[] = [];
+      for (const [, h] of this.elementHandleToEl) {
+        if (h.parentHandle === el.parentHandle && h.id !== el.id) {
+          const hh = this.ensureElementHandle(h);
+          handles.push(hh);
+        }
+      }
+      return handles;
+    }
+
     return [];
   }
 
+  // --- state queries ---
+
   async isVisible(elementHandle: string): Promise<boolean> {
-    return this.elementHandleToEl.has(elementHandle);
+    return this.assertElement(elementHandle).isVisible;
   }
 
   async isEnabled(elementHandle: string): Promise<boolean> {
-    return this.elementHandleToEl.has(elementHandle);
+    return this.assertElement(elementHandle).isEnabled;
   }
 
   async isFocused(elementHandle: string): Promise<boolean> {
-    return false;
+    return this.assertElement(elementHandle).isFocused;
   }
 
-  async getWindowBounds(windowHandle: string): Promise<{ left: number; top: number; width: number; height: number }> {
-    if (!this.windowHandleToWin.has(windowHandle)) {
-      throw new Error(`Window not found: ${windowHandle}`);
-    }
-    return { left: 100, top: 100, width: 800, height: 600 };
+  // --- window operations (with state tracking) ---
+
+  async getWindowBounds(windowHandle: string): Promise<WindowBounds> {
+    const win = this.assertWindow(windowHandle);
+    return { ...win.bounds };
   }
 
-  async setWindowBounds(_windowHandle: string, _left: number, _top: number, _width: number, _height: number): Promise<void> {
+  async setWindowBounds(
+    windowHandle: string,
+    left: number, top: number, width: number, height: number,
+  ): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    win.bounds = { left, top, width, height };
     await delay();
   }
 
-  async maximizeWindow(_windowHandle: string): Promise<void> {
+  async focusWindow(windowHandle: string): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    win.isFocused = true;
     await delay();
   }
 
-  async minimizeWindow(_windowHandle: string): Promise<void> {
+  async maximizeWindow(windowHandle: string): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    win.isMaximized = true;
+    win.isMinimized = false;
     await delay();
   }
 
-  async restoreWindow(_windowHandle: string): Promise<void> {
+  async minimizeWindow(windowHandle: string): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    win.isMinimized = true;
+    win.isMaximized = false;
     await delay();
   }
+
+  async restoreWindow(windowHandle: string): Promise<void> {
+    const win = this.assertWindow(windowHandle);
+    win.isMaximized = false;
+    win.isMinimized = false;
+    await delay();
+  }
+
+  // --- input ---
 
   async pressKey(_windowHandle: string, _keyCombination: string): Promise<void> {
     await delay();
@@ -312,61 +435,93 @@ export class MockBackend implements Backend {
     await delay();
   }
 
-  async clickElementRight(elementHandle: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
+  async keyDown(_windowHandle: string, _key: string): Promise<void> {
     await delay();
   }
 
-  async doubleClickElement(elementHandle: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
+  async keyUp(_windowHandle: string, _key: string): Promise<void> {
     await delay();
   }
 
-  async hoverElement(elementHandle: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    await delay();
-  }
+  // --- mouse ---
 
   async mouseMove(_x: number, _y: number): Promise<void> {
     await delay();
   }
 
+  async scrollElement(elementHandle: string, _direction: string, _amount: number): Promise<void> {
+    this.assertElement(elementHandle);
+    await delay();
+  }
+
+  async dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void> {
+    this.assertElement(fromElementHandle);
+    this.assertElement(toElementHandle);
+    await delay();
+  }
+
+  // --- screenshots ---
+
   async captureScreenshot(elementHandle: string): Promise<number[]> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
-    return [];
+    this.assertElement(elementHandle);
+    return [0x42, 0x4D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // miniature BMP header
   }
 
   async captureScreenshotToFile(elementHandle: string, _path: string): Promise<void> {
-    if (!this.elementHandleToEl.has(elementHandle)) {
-      throw new Error(`Element not found: ${elementHandle}`);
-    }
+    this.assertElement(elementHandle);
   }
+
+  // --- dialogs (with real tracking) ---
 
   findDialogs(processId: number): DialogInfo[] {
     const app = this.pidToApp.get(processId);
     if (!app) return [];
+    return app.dialogs.map((d, i) => {
+      const handle = String(this.nextDialogHandle + i);
+      return {
+        handle,
+        title: d.title,
+        class_name: "#32770",
+        visible: true,
+      };
+    });
+  }
+
+  getDialogControls(windowHandle: string): DialogControl[] {
+    // Find dialog by handle in all apps
+    const handleNum = Number(windowHandle);
+    for (const [, app] of this.pidToApp) {
+      const idx = handleNum - this.nextDialogHandle;
+      if (idx >= 0 && idx < app.dialogs.length) {
+        return app.dialogs[idx].buttons.map((name, i) => ({
+          handle: `${windowHandle}-btn-${i}`,
+          name,
+          control_type: "Button",
+        }));
+      }
+    }
     return [];
   }
 
-  getDialogControls(_windowHandle: string): DialogControl[] {
-    return [];
+  async clickDialogButton(windowHandle: string, buttonText: string): Promise<void> {
+    const controls = this.getDialogControls(windowHandle);
+    if (!controls.some((c) => c.name === buttonText)) {
+      throw new Error(`Button "${buttonText}" not found in dialog ${windowHandle}`);
+    }
   }
 
-  async clickDialogButton(_windowHandle: string, _buttonText: string): Promise<void> {
-    return;
+  async setDialogFilePath(windowHandle: string, path: string): Promise<void> {
+    const handleNum = Number(windowHandle);
+    for (const [, app] of this.pidToApp) {
+      const idx = handleNum - this.nextDialogHandle;
+      if (idx >= 0 && idx < app.dialogs.length) {
+        app.dialogs[idx].filePath = path;
+        return;
+      }
+    }
   }
 
-  async setDialogFilePath(_windowHandle: string, _path: string): Promise<void> {
-    return;
-  }
+  // --- process management ---
 
   findProcessesByName(imageName: string): ProcessEntry[] {
     const results: ProcessEntry[] = [];
@@ -390,6 +545,76 @@ export class MockBackend implements Backend {
     await this.closeApp(processId);
   }
 
+  // --- attributes ---
+
+  async getElementAttribute(elementHandle: string, attributeName: string): Promise<string> {
+    const el = this.assertElement(elementHandle);
+    const attr = attributeName.toLowerCase().replace(/_/g, "");
+    switch (attr) {
+      case "name": return el.selector.name ?? "";
+      case "automationid": return el.selector.automationId ?? "";
+      case "role":
+      case "ariarole": return el.selector.role ?? "";
+      case "isenabled": return String(el.isEnabled);
+      case "isoffscreen": return String(!el.isVisible);
+      case "haskeyboardfocus": return String(el.isFocused);
+      case "ispassword": return "false";
+      case "iscontrolelement":
+      case "iscontentelement": return "true";
+      case "value":
+      case "text": return el.text;
+      default: return "";
+    }
+  }
+
+  // --- text selection ---
+
+  async selectText(elementHandle: string): Promise<void> {
+    this.assertElement(elementHandle);
+    await delay();
+  }
+
+  async getSelection(elementHandle: string): Promise<string> {
+    return this.assertElement(elementHandle).text;
+  }
+
+  async replaceSelectedText(elementHandle: string, text: string): Promise<void> {
+    this.assertElement(elementHandle).text = text;
+    await delay();
+  }
+
+  // --- tree inspection ---
+
+  inspectWindowTree(windowHandle: string, _maxDepth?: number): ElementNode[] {
+    const win = this.windowHandleToWin.get(windowHandle);
+    if (!win) return [];
+    return win.elements.map((el) => this.elementToNode(el, _maxDepth ?? 5));
+  }
+
+  private elementToNode(el: MockElementRecord, depth: number): ElementNode {
+    const handle = this.ensureElementHandle(el);
+    const children: ElementNode[] = [];
+    if (depth > 0 && el.childHandles.length > 0) {
+      for (const childHandle of el.childHandles) {
+        const childEl = this.elementHandleToEl.get(childHandle);
+        if (childEl) {
+          children.push(this.elementToNode(childEl, depth - 1));
+        }
+      }
+    }
+    return {
+      handle,
+      name: el.selector.name ?? "",
+      role: el.selector.role ?? "",
+      automationId: el.selector.automationId ?? "",
+      isVisible: el.isVisible,
+      isEnabled: el.isEnabled,
+      children,
+    };
+  }
+
+  // --- debug ---
+
   debugDiscovery(processId: number): WindowDebugInfo[] {
     const app = this.pidToApp.get(processId);
     if (!app) return [];
@@ -405,44 +630,5 @@ export class MockBackend implements Backend {
       passesTopLevelVisible: true,
       processImage: app.executablePath,
     }));
-  }
-
-  private ensureElementHandle(element: MockElementRecord): string {
-    for (const [handle, el] of this.elementHandleToEl) {
-      if (el.id === element.id) return handle;
-    }
-    const handle = String(this.nextElementHandle++);
-    this.elementHandleToEl.set(handle, element);
-    this.elHandleToPid.set(handle, this.findPidByElementId(element.id));
-    return handle;
-  }
-
-  private removeElementMappings(elId: string): void {
-    for (const [handle, el] of this.elementHandleToEl) {
-      if (el.id === elId) {
-        this.elementHandleToEl.delete(handle);
-        this.elHandleToPid.delete(handle);
-        return;
-      }
-    }
-  }
-
-  private removeWindowMappings(winId: string): void {
-    for (const [handle, win] of this.windowHandleToWin) {
-      if (win.id === winId) {
-        this.windowHandleToWin.delete(handle);
-        this.winHandleToPid.delete(handle);
-        return;
-      }
-    }
-  }
-
-  private findPidByElementId(elId: string): number {
-    for (const [pid, app] of this.pidToApp) {
-      for (const win of app.windows) {
-        if (win.elements.some((e) => e.id === elId)) return pid;
-      }
-    }
-    return -1;
   }
 }

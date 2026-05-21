@@ -1,6 +1,6 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementSelector, WindowBounds } from "./types";
+import type { ElementNode, ElementSelector, WindowBounds } from "./types";
 import { Element } from "./element";
 import { classNamesForSelector } from "../native/classNames";
 
@@ -37,8 +37,14 @@ export class Window {
   }
 
   public async findElements(selector: ElementSelector): Promise<Element[]> {
-    const element = await this.findElement(selector);
-    return element ? [element] : [];
+    const handles = await this.backend.findAll(
+      this.handle,
+      classNamesForSelector(selector),
+      selector.automationId,
+      selector.name,
+      selector.role,
+    );
+    return handles.map((h) => new Element(h, this.handle, this.backend, this.events));
   }
 
   public async typeText(text: string): Promise<void> {
@@ -114,8 +120,20 @@ export class Window {
     await this.backend.pressKey(this.handle, keyCombination);
   }
 
+  public async keyDown(key: string): Promise<void> {
+    await this.backend.keyDown(this.handle, key);
+  }
+
+  public async keyUp(key: string): Promise<void> {
+    await this.backend.keyUp(this.handle, key);
+  }
+
   public async focus(): Promise<void> {
-    await Promise.resolve();
+    await this.backend.focusWindow(this.handle);
+  }
+
+  public inspectTree(maxDepth?: number): ElementNode[] {
+    return this.backend.inspectWindowTree(this.handle, maxDepth);
   }
 
   public async screenshot(): Promise<number[]> {
@@ -127,5 +145,68 @@ export class Window {
   public async screenshotToFile(path: string): Promise<void> {
     await this.backend.captureScreenshotToFile(this.handle, path);
     this.events.emitElementScreenshot(this.handle);
+  }
+
+  public async waitForElement(
+    selector: ElementSelector,
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const element = await this.findElement(selector);
+      if (element) {
+        return element;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      `Element not found within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
+    );
+  }
+
+  public async waitForVisible(
+    selector: ElementSelector,
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const element = await this.findElement(selector);
+      if (element && (await element.isVisible())) {
+        return element;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      `Element not visible within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
+    );
+  }
+
+  public async waitForEnabled(
+    selector: ElementSelector,
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<Element> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const element = await this.findElement(selector);
+      if (element && (await element.isEnabled())) {
+        return element;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      `Element not enabled within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
+    );
   }
 }
