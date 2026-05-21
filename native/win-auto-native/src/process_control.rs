@@ -121,6 +121,19 @@ pub async fn launch(executable_path: Option<String>) -> Result<u32> {
   Ok(child_pid)
 }
 
+/// Health check function exposed to Node.js.
+#[napi]
+pub fn ping() -> String {
+  "ok".to_string()
+}
+
+/// Discovers windows for a process and returns handles as strings.
+#[napi(js_name = "enumerateWindows")]
+pub async fn enumerate_windows(process_id: u32) -> Result<Vec<String>> {
+  let windows = crate::discovery::discover_windows_for_pid(process_id);
+  Ok(windows.into_iter().map(crate::utils::hwnd_to_string).collect())
+}
+
 #[napi(js_name = "closeApp")]
 pub async fn close_app(process_id: u32) -> Result<()> {
   close_app_internal(process_id)
