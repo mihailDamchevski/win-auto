@@ -1,4 +1,4 @@
-import type { WindowBounds, WindowDebugInfo } from "./types";
+import type { DialogControl, DialogInfo, ProcessEntry, WindowBounds, WindowDebugInfo } from "./types";
 
 export interface Backend {
   ping(): string;
@@ -47,5 +47,19 @@ export interface Backend {
   minimizeWindow(windowHandle: string): Promise<void>;
   restoreWindow(windowHandle: string): Promise<void>;
   pressKey(windowHandle: string, keyCombination: string): Promise<void>;
+  clickElementRight(elementHandle: string): Promise<void>;
+  doubleClickElement(elementHandle: string): Promise<void>;
+  hoverElement(elementHandle: string): Promise<void>;
+  mouseMove(x: number, y: number): Promise<void>;
+  captureScreenshot(elementHandle: string): Promise<number[]>;
+  captureScreenshotToFile(elementHandle: string, path: string): Promise<void>;
+  findDialogs(processId: number): DialogInfo[];
+  getDialogControls(windowHandle: string): DialogControl[];
+  clickDialogButton(windowHandle: string, buttonText: string): Promise<void>;
+  setDialogFilePath(windowHandle: string, path: string): Promise<void>;
+  findProcessesByName(imageName: string): ProcessEntry[];
+  waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean>;
+  getProcessImageName(processId: number): string;
+  killProcess(processId: number): Promise<void>;
   debugDiscovery(processId: number): WindowDebugInfo[];
 }

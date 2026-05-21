@@ -15,6 +15,11 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 - 🎯 **Element Finding** - Locate UI elements by role, name, automation ID, and other attributes
 - ⌨️ **User Simulation** - Type text, click buttons, interact with controls, send keyboard shortcuts
 - 🪟 **Window Management** - Maximize, minimize, restore, resize, and move windows
+- 🖱️ **Mouse Operations** - Click, right-click, double-click, hover, and drag-drop on elements
+- 🗔 **Dialog Handling** - Detect and interact with modal dialogs (file open, message boxes, etc.)
+- 🔍 **Process Management** - Find running processes, connect to them, wait for exit, kill
+- 📸 **Screenshots** - Capture window and element screenshots to buffer or file (BMP format)
+- 📡 **Event System** - Subscribe to automation events (app launched, element clicked, etc.) for logging and debugging
 - 📦 **CLI Tool** - Scaffold new automation projects quickly
 - 🧪 **Testing Integration** - Built-in support for vitest with auto-cleanup via TestAutomation
 - 🎭 **Mock Backend** - Test automation logic without a real Windows desktop
@@ -75,6 +80,14 @@ const app = automation.connectApp({ processId: 1234 });
 
 // Use a mock backend for testing
 const automation = new Automation(new MockBackend());
+
+// Move the mouse cursor to absolute screen coordinates
+await automation.mouseMove(500, 300);
+
+// Subscribe to events
+automation.events.on("app:launched", (data) => console.log("App launched:", data));
+automation.events.on("element:clicked", (data) => console.log("Clicked:", data.handle));
+automation.events.on("debug", (data) => console.debug("[auto]", data.message));
 ```
 
 ### App
@@ -124,6 +137,10 @@ await window.restore();
 // Keyboard input
 await window.pressKey("Ctrl+S");
 
+// Screenshots
+const pixels = await window.screenshot();       // BMP byte array
+await window.screenshotToFile("window.bmp");    // save to file
+
 // Close the window
 await window.close();
 ```
@@ -136,6 +153,9 @@ Represents a UI element (button, textbox, etc.).
 // Interact with elements
 await element.typeText("Hello");
 await element.click();
+await element.rightClick();
+await element.doubleClick();
+await element.hover();
 await element.select();
 await element.toggle();
 
@@ -154,6 +174,10 @@ const toggleState = await element.getToggleState();
 const parent = await element.getParent();
 const children = await element.getChildren();
 const siblings = await element.getSiblings();
+
+// Screenshots
+const pixels = await element.screenshot();          // BMP byte array
+await element.screenshotToFile("element.bmp");      // save to file
 ```
 
 ### Backend
@@ -173,6 +197,100 @@ const el = await app.find({ role: "textbox" });
 await el?.typeText("test");
 console.log(await el?.getText()); // "test"
 ```
+
+### Process Management
+
+Every `Automation` instance has a `processes` manager for finding and inspecting running processes.
+
+```typescript
+// Find running processes by image name
+const notepads = automation.processes.findByName("notepad.exe");
+for (const proc of notepads) {
+  console.log(`PID ${proc.pid}: ${proc.imageName}`);
+  const path = await proc.getImagePath(backend);
+  const running = await proc.isRunning(backend);
+}
+
+// Connect to an already-running application
+const app = await automation.connectProcess("notepad.exe");
+if (app) {
+  const window = await app.getMainWindow();
+  // interact with it...
+}
+
+// Each App has lifecycle management
+await app.waitForExit(5000);   // wait up to 5s for process to exit
+const running = await app.isRunning();
+await app.kill();              // force terminate
+```
+
+### Dialog
+
+Every `App` instance has a `dialogs` property for detecting and interacting with modal dialog boxes.
+
+```typescript
+// List all open dialogs for the app
+const dialogs = app.dialogs.list();
+
+// Find a specific dialog by title
+const dialog = app.dialogs.find("Save As");
+
+// Wait for a dialog to appear (with timeout)
+const dialog = await app.dialogs.waitFor({
+  title: "Open",
+  timeoutMs: 5000,
+});
+
+// Interact with the dialog
+await dialog.clickButton("OK");        // click a button by its text
+await dialog.accept();                 // click "OK"
+await dialog.dismiss();                // click "Cancel"
+
+// For file dialogs, type a path and accept
+await dialog.selectFile("C:\\path\\file.txt");
+await dialog.accept();
+
+// Inspect dialog controls
+const controls = await dialog.getControls();
+for (const ctrl of controls) {
+  console.log(ctrl.name, ctrl.control_type);
+}
+```
+
+### Events
+
+Every `Automation` instance has an `events` property (an EventEmitter) that emits structured events for all operations:
+
+```typescript
+const automation = new Automation();
+
+// Log all events
+automation.events.on("debug", (data) => console.log("[auto]", data.message));
+
+// Track specific events
+automation.events.on("app:launched", (data) => {
+  console.log(`App ${data.executablePath} started (PID: ${data.processId})`);
+});
+
+automation.events.on("element:clicked", (data) => {
+  console.log(`Element ${data.handle} was clicked`);
+});
+
+automation.events.on("element:typed", (data) => {
+  console.log(`Typed "${data.text}" into element ${data.handle}`);
+});
+
+// Window management events
+automation.events.on("window:maximized", (data) => {
+  console.log(`Window ${data.handle} maximized`);
+});
+
+automation.events.on("window:closed", (data) => {
+  console.log(`Window ${data.handle} closed`);
+});
+```
+
+Full list of event types: `app:launched`, `app:closed`, `window:found`, `window:closed`, `window:boundsChanged`, `window:maximized`, `window:minimized`, `window:restored`, `element:found`, `element:clicked`, `element:rightClicked`, `element:doubleClicked`, `element:hovered`, `element:typed`, `element:selected`, `element:toggled`, `element:valueChanged`, `element:screenshot`, `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:connected`, `process:killed`, `process:exited`, `mouse:moved`, `debug`.
 
 ## Supported Elements
 

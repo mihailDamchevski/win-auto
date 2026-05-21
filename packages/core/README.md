@@ -33,17 +33,40 @@ const real = new Automation();
 
 // Mock backend for unit tests
 const mock = new Automation(new MockBackend());
+
+// Move the mouse cursor to absolute coordinates
+await automation.mouseMove(500, 300);
+
+// Find running processes by name
+const notepads = automation.processes.findByName('notepad.exe');
+
+// Connect to an already-running app
+const app = await automation.connectProcess('notepad.exe');
+
+// Subscribe to automation events
+automation.events.on('app:launched', (data) => console.log('PID:', data.processId));
+automation.events.on('element:clicked', (data) => console.log('Clicked:', data.handle));
 ```
 
 ### App
 
-Launched application instance.
+Launched application instance. Provides access to windows, elements, and dialogs.
 
 ```typescript
 const mainWindow = await app.getMainWindow();
 const windows = await app.listWindows();
 const element = await app.find({ role: 'button', name: 'OK' });
 await app.close({ timeoutMs: 5000 });
+
+// Lifecycle management
+const running = await app.isRunning();
+await app.waitForExit(10000);
+await app.kill();
+
+// Dialog handling
+const dialog = await app.dialogs.waitFor({ title: 'Open', timeoutMs: 5000 });
+await dialog.selectFile('C:\\path\\file.txt');
+await dialog.accept();
 ```
 
 ### Window
@@ -67,6 +90,11 @@ await window.restore();
 // Input
 await window.typeText('Hello');
 await window.pressKey('Ctrl+S');
+
+// Screenshots
+const pixels = await window.screenshot();
+await window.screenshotToFile('window.bmp');
+
 await window.close();
 ```
 
@@ -78,6 +106,9 @@ UI element for interaction and inspection.
 // Interaction
 await element.typeText('Hello');
 await element.click();
+await element.rightClick();
+await element.doubleClick();
+await element.hover();
 await element.select();
 await element.toggle();
 
@@ -96,6 +127,28 @@ const toggleState = await element.getToggleState();
 const parent = await element.getParent();
 const children = await element.getChildren();
 const siblings = await element.getSiblings();
+
+// Screenshots
+const pixels = await element.screenshot();
+await element.screenshotToFile('element.bmp');
+```
+
+### Events
+
+Every `Automation` instance exposes an `events` EventEmitter. Subscribe to lifecycle events for logging, debugging, or tracking:
+
+```typescript
+automation.events.on('app:launched', (data) => {
+  console.log(`Launched ${data.executablePath} (PID ${data.processId})`);
+});
+
+automation.events.on('element:clicked', (data) => {
+  console.log(`Element ${data.handle} was clicked`);
+});
+
+automation.events.on('debug', (data) => {
+  console.debug('[auto]', data.message);
+});
 ```
 
 ### Backend

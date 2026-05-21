@@ -10,7 +10,7 @@ use windows::Win32::UI::Accessibility::{
   PropertyConditionFlags_IgnoreCase, TreeScope_Descendants, UIA_InvokePatternId,
   UIA_NamePropertyId, UIA_SelectionItemPatternId, UIA_TogglePatternId, UIA_ValuePatternId,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSE_EVENT_FLAGS};
+use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSE_EVENT_FLAGS};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
 
 use crate::config::get_config;
@@ -935,6 +935,84 @@ fn make_mouse_input(flags: u32) -> INPUT {
       },
     },
   }
+}
+
+fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
+  INPUT {
+    r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE,
+    Anonymous: INPUT_0 {
+      mi: MOUSEINPUT {
+        dx,
+        dy,
+        mouseData: 0,
+        dwFlags: MOUSEEVENTF_MOVE,
+        time: 0,
+        dwExtraInfo: 0,
+      },
+    },
+  }
+}
+
+fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) {
+  unsafe {
+    SendInput(
+      &[make_mouse_input(flags_down.0)],
+      std::mem::size_of::<INPUT>() as i32,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    SendInput(
+      &[make_mouse_input(flags_up.0)],
+      std::mem::size_of::<INPUT>() as i32,
+    );
+  }
+}
+
+#[napi(js_name = "rightClickElement")]
+pub async fn right_click_element(element_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let mut rect = RECT::default();
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+      return Err(napi_error("Failed to get window rectangle"));
+    }
+    let center_x = (rect.left + rect.right) / 2;
+    let center_y = (rect.top + rect.bottom) / 2;
+    SetCursorPos(center_x, center_y)
+      .map_err(|_| napi_error("Failed to set cursor position"))?;
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
+  }
+  Ok(())
+}
+
+#[napi(js_name = "doubleClickElement")]
+pub async fn double_click_element(element_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let mut rect = RECT::default();
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+      return Err(napi_error("Failed to get window rectangle"));
+    }
+    let center_x = (rect.left + rect.right) / 2;
+    let center_y = (rect.top + rect.bottom) / 2;
+    SetCursorPos(center_x, center_y)
+      .map_err(|_| napi_error("Failed to set cursor position"))?;
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Two quick left clicks
+    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+  }
+  Ok(())
+}
+
+#[napi(js_name = "mouseMove")]
+pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
+  unsafe {
+    SetCursorPos(x, y)
+      .map_err(|_| napi_error("Failed to set cursor position"))?;
+  }
+  Ok(())
 }
 
 #[napi(js_name = "dragDrop")]

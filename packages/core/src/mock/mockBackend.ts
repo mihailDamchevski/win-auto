@@ -1,6 +1,6 @@
 import type { Backend } from "../api/backend";
 import type { MockAppRecord, MockWindowRecord, MockElementRecord } from "./mockRuntime";
-import type { WindowDebugInfo } from "../api/types";
+import type { DialogControl, DialogInfo, ProcessEntry, WindowDebugInfo } from "../api/types";
 
 const MOCK_DELAY_MS = 5;
 
@@ -310,6 +310,84 @@ export class MockBackend implements Backend {
 
   async pressKeyCodes(_windowHandle: string, _keyCodes: number[]): Promise<void> {
     await delay();
+  }
+
+  async clickElementRight(elementHandle: string): Promise<void> {
+    if (!this.elementHandleToEl.has(elementHandle)) {
+      throw new Error(`Element not found: ${elementHandle}`);
+    }
+    await delay();
+  }
+
+  async doubleClickElement(elementHandle: string): Promise<void> {
+    if (!this.elementHandleToEl.has(elementHandle)) {
+      throw new Error(`Element not found: ${elementHandle}`);
+    }
+    await delay();
+  }
+
+  async hoverElement(elementHandle: string): Promise<void> {
+    if (!this.elementHandleToEl.has(elementHandle)) {
+      throw new Error(`Element not found: ${elementHandle}`);
+    }
+    await delay();
+  }
+
+  async mouseMove(_x: number, _y: number): Promise<void> {
+    await delay();
+  }
+
+  async captureScreenshot(elementHandle: string): Promise<number[]> {
+    if (!this.elementHandleToEl.has(elementHandle)) {
+      throw new Error(`Element not found: ${elementHandle}`);
+    }
+    return [];
+  }
+
+  async captureScreenshotToFile(elementHandle: string, _path: string): Promise<void> {
+    if (!this.elementHandleToEl.has(elementHandle)) {
+      throw new Error(`Element not found: ${elementHandle}`);
+    }
+  }
+
+  findDialogs(processId: number): DialogInfo[] {
+    const app = this.pidToApp.get(processId);
+    if (!app) return [];
+    return [];
+  }
+
+  getDialogControls(_windowHandle: string): DialogControl[] {
+    return [];
+  }
+
+  async clickDialogButton(_windowHandle: string, _buttonText: string): Promise<void> {
+    return;
+  }
+
+  async setDialogFilePath(_windowHandle: string, _path: string): Promise<void> {
+    return;
+  }
+
+  findProcessesByName(imageName: string): ProcessEntry[] {
+    const results: ProcessEntry[] = [];
+    for (const [pid, app] of this.pidToApp) {
+      if (app.executablePath.toLowerCase().includes(imageName.toLowerCase())) {
+        results.push({ pid, imageName: app.executablePath });
+      }
+    }
+    return results;
+  }
+
+  async waitForProcessExit(processId: number, _timeoutMs: number): Promise<boolean> {
+    return !this.pidToApp.has(processId);
+  }
+
+  getProcessImageName(processId: number): string {
+    return this.pidToApp.get(processId)?.executablePath ?? "";
+  }
+
+  async killProcess(processId: number): Promise<void> {
+    await this.closeApp(processId);
   }
 
   debugDiscovery(processId: number): WindowDebugInfo[] {

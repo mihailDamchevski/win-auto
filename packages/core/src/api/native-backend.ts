@@ -1,5 +1,5 @@
 import type { Backend } from "./backend";
-import type { NativeBindings } from "./types";
+import type { DialogControl, DialogInfo, NativeBindings, ProcessEntry } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 
 export class NativeBackend implements Backend {
@@ -169,6 +169,62 @@ export class NativeBackend implements Backend {
 
   async pressKey(windowHandle: string, keyCombination: string): Promise<void> {
     return this.native.pressKey(windowHandle, keyCombination);
+  }
+
+  async clickElementRight(elementHandle: string): Promise<void> {
+    return this.native.rightClickElement(elementHandle);
+  }
+
+  async doubleClickElement(elementHandle: string): Promise<void> {
+    return this.native.doubleClickElement(elementHandle);
+  }
+
+  async hoverElement(elementHandle: string): Promise<void> {
+    return this.native.hoverElement(elementHandle);
+  }
+
+  async mouseMove(x: number, y: number): Promise<void> {
+    return this.native.mouseMove(x, y);
+  }
+
+  async captureScreenshot(elementHandle: string): Promise<number[]> {
+    return this.native.captureScreenshot(elementHandle);
+  }
+
+  async captureScreenshotToFile(elementHandle: string, path: string): Promise<void> {
+    return this.native.captureScreenshotToFile(elementHandle, path);
+  }
+
+  findDialogs(processId: number): DialogInfo[] {
+    return this.native.findDialogs(processId);
+  }
+
+  getDialogControls(windowHandle: string): DialogControl[] {
+    return this.native.getDialogControls(windowHandle);
+  }
+
+  async clickDialogButton(windowHandle: string, buttonText: string): Promise<void> {
+    return this.native.clickDialogButton(windowHandle, buttonText);
+  }
+
+  async setDialogFilePath(windowHandle: string, path: string): Promise<void> {
+    return this.native.setDialogFilePath(windowHandle, path);
+  }
+
+  findProcessesByName(imageName: string): ProcessEntry[] {
+    return this.native.findProcessesByName(imageName);
+  }
+
+  async waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean> {
+    return this.native.waitForProcessExit(processId, timeoutMs);
+  }
+
+  getProcessImageName(processId: number): string {
+    return this.native.getProcessImageName(processId);
+  }
+
+  async killProcess(processId: number): Promise<void> {
+    return this.native.killProcess(processId);
   }
 
   debugDiscovery(processId: number) {

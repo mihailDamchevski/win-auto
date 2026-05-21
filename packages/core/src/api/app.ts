@@ -1,42 +1,51 @@
 import type { Backend } from "./backend";
 import { Window } from "./window";
 import { Element } from "./element";
+import { DialogManager } from "./dialog";
+import type { AutomationEvents } from "./events";
 
 export class App {
   public readonly processId: number;
   public readonly executablePath: string;
   public readonly title: string;
+  public readonly dialogs: DialogManager;
   private readonly initialMainWindowHandle: string | null;
   private readonly backend: Backend;
+  private readonly events: AutomationEvents;
 
   constructor(
     processId: number,
     executablePath: string,
     title: string,
     backend: Backend,
+    events: AutomationEvents,
     initialMainWindowHandle?: string | null,
   ) {
     this.processId = processId;
     this.executablePath = executablePath;
     this.title = title;
     this.backend = backend;
+    this.events = events;
+    this.dialogs = new DialogManager(processId, backend, events);
     this.initialMainWindowHandle = initialMainWindowHandle ?? null;
   }
 
   public async listWindows(): Promise<Window[]> {
     const handles = await this.backend.enumerateWindows(this.processId);
-    return handles.map((handle) => new Window(handle, this.processId, this.backend));
+    return handles.map((handle) => new Window(handle, this.processId, this.backend, this.events));
   }
 
   public async getMainWindow(): Promise<Window | null> {
     if (this.initialMainWindowHandle) {
-      return new Window(this.initialMainWindowHandle, this.processId, this.backend);
+      this.events.emitWindowFound(this.initialMainWindowHandle, this.processId);
+      return new Window(this.initialMainWindowHandle, this.processId, this.backend, this.events);
     }
 
     const windows = await this.listWindows();
     if (windows.length === 0) {
       return null;
     }
+    this.events.emitWindowFound(windows[0].handle, this.processId);
     return windows[0];
   }
 
@@ -97,6 +106,7 @@ export class App {
         this.processId,
       );
       if (!processRunning) {
+        this.events.emitAppClosed(this.processId);
         return;
       }
 
@@ -111,5 +121,18 @@ export class App {
     throw new Error(
       `App process ${this.processId} still has open windows after close()`,
     );
+  }
+
+  public async waitForExit(timeoutMs?: number): Promise<boolean> {
+    return this.backend.waitForProcessExit(this.processId, timeoutMs ?? 30_000);
+  }
+
+  public async isRunning(): Promise<boolean> {
+    return this.backend.isProcessRunning(this.processId);
+  }
+
+  public async kill(): Promise<void> {
+    await this.backend.killProcess(this.processId);
+    this.events.emitProcessKilled(this.processId);
   }
 }

@@ -4,7 +4,7 @@ use std::time::Duration;
 use napi::{Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::{CloseHandle, WPARAM, LPARAM};
-use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE};
+use windows::Win32::System::Threading::{CreateToolhelp32Snapshot, GetExitCodeProcess, OpenProcess, TerminateProcess, ThreadEntry32, PROCESS_ENTRY_32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TH32CS_SNAPPROCESS};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
 use crate::config::{configured_executable_image_suffix, get_config};
@@ -151,4 +151,74 @@ pub async fn close_window(window_handle: String) -> Result<()> {
 #[napi(js_name = "isProcessRunning")]
 pub fn is_process_running_export(process_id: u32) -> bool {
   is_process_running(process_id)
+}
+
+#[napi(object)]
+pub struct ProcessEntry {
+  pub pid: u32,
+  pub image_name: String,
+}
+
+#[napi(js_name = "findProcessesByName")]
+pub fn find_processes_by_name(image_name: String) -> Result<Vec<ProcessEntry>> {
+  let query_lower = image_name.to_ascii_lowercase();
+  let mut entries = Vec::new();
+
+  unsafe {
+    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if snapshot.is_invalid() {
+      return Ok(entries);
+    }
+
+    let mut pe = PROCESS_ENTRY_32::default();
+    pe.dwSize = std::mem::size_of::<PROCESS_ENTRY_32>() as u32;
+
+    if windows::Win32::System::Threading::Process32FirstW(snapshot, &mut pe).is_ok() {
+      loop {
+        let name = String::from_utf16_lossy(&pe.szExeFile)
+          .trim_end_matches('\0')
+          .to_string();
+        let name_lower = name.to_ascii_lowercase();
+        if name_lower.contains(&query_lower) || query_lower.contains(&name_lower) {
+          entries.push(ProcessEntry {
+            pid: pe.th32ProcessID,
+            image_name: name,
+          });
+        }
+        if windows::Win32::System::Threading::Process32NextW(snapshot, &mut pe).is_err() {
+          break;
+        }
+      }
+    }
+
+    let _ = CloseHandle(snapshot);
+  }
+
+  Ok(entries)
+}
+
+#[napi(js_name = "waitForProcessExit")]
+pub async fn wait_for_process_exit(process_id: u32, timeout_ms: u32) -> Result<bool> {
+  let start = std::time::Instant::now();
+  let timeout = Duration::from_millis(timeout_ms as u64);
+
+  loop {
+    if !is_process_running(process_id) {
+      return Ok(true);
+    }
+    if start.elapsed() >= timeout {
+      return Ok(false);
+    }
+    sleep(Duration::from_millis(50));
+  }
+}
+
+#[napi(js_name = "getProcessImageName")]
+pub fn get_process_image_name(process_id: u32) -> Result<String> {
+  Ok(process_image_for_pid(process_id))
+}
+
+#[napi(js_name = "killProcess")]
+pub fn kill_process(process_id: u32) -> Result<()> {
+  terminate_process(process_id)
 }

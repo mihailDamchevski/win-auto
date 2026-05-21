@@ -4,6 +4,7 @@
 //! through N-API bindings.
 
 mod config;
+mod dialogs;
 mod discovery;
 mod error;
 mod interaction;

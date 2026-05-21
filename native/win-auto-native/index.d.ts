@@ -56,6 +56,9 @@ export declare function maximizeWindow(windowHandle: string): Promise<void>
 export declare function minimizeWindow(windowHandle: string): Promise<void>
 export declare function restoreWindow(windowHandle: string): Promise<void>
 export declare function pressKey(windowHandle: string, keyCombination: string): Promise<void>
+export declare function rightClickElement(elementHandle: string): Promise<void>
+export declare function doubleClickElement(elementHandle: string): Promise<void>
+export declare function mouseMove(x: number, y: number): Promise<void>
 export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
 export declare function launch(executablePath?: string | undefined | null): Promise<number>
 /** Health check function exposed to Node.js. */
@@ -67,3 +70,26 @@ export declare function closeWindow(windowHandle: string): Promise<void>
 export declare function isProcessRunning(processId: number): boolean
 export declare function captureScreenshot(elementHandle: string): Promise<Array<number>>
 export declare function captureScreenshotToFile(elementHandle: string, path: string): Promise<void>
+export interface DialogInfo {
+  handle: string
+  title: string
+  className: string
+  visible: boolean
+}
+export interface DialogControl {
+  handle: string
+  name: string
+  controlType: string
+}
+export declare function findDialogs(processId: number): Array<DialogInfo>
+export declare function getDialogControls(windowHandle: string): Array<DialogControl>
+export declare function clickDialogButton(windowHandle: string, buttonText: string): Promise<void>
+export declare function setDialogFilePath(windowHandle: string, path: string): Promise<void>
+export interface ProcessEntry {
+  pid: number
+  imageName: string
+}
+export declare function findProcessesByName(imageName: string): Array<ProcessEntry>
+export declare function waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean>
+export declare function getProcessImageName(processId: number): string
+export declare function killProcess(processId: number): Promise<void>
