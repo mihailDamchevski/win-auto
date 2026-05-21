@@ -11,7 +11,7 @@
   },
   "homepage": "https://github.com/mihailDamchevski/win-auto#readme",
   "license": "MIT",
-  "author": "Your Name",
+  "author": "Mihail Damchevski",
   "workspaces": [
     "packages/*",
     "native/win-auto-native"

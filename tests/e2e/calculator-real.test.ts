@@ -18,7 +18,6 @@ describe("real Calculator automation", () => {
 
     await window.typeText("1+2=");
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
     const resultText = await window.findElementName("Display");
     expect(resultText).not.toBeNull();
     expect(resultText).toContain("3");
