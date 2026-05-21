@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
@@ -293,9 +294,29 @@ pub fn debug_discovery(process_id: u32) -> Result<Vec<WindowDebugInfo>> {
   Ok(entries)
 }
 
+thread_local! {
+  static UIA_INSTANCE: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
+}
+
 pub unsafe fn create_uia() -> Result<IUIAutomation> {
-  CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
-    .map_err(|err| napi_error(format!("Failed to create UIAutomation instance: {err}")))
+  let mut result: Option<IUIAutomation> = None;
+  let _ = UIA_INSTANCE.try_with(|cell| {
+    let mut guard = cell.borrow_mut();
+    if let Some(ref uia) = *guard {
+      result = Some(IUIAutomation::clone(uia));
+    } else {
+      match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
+        Ok(uia) => {
+          let cloned = IUIAutomation::clone(&uia);
+          *guard = Some(uia);
+          result = Some(cloned);
+        }
+            Err(_err) => {}
+      }
+    }
+  });
+
+  result.ok_or_else(|| napi_error("Failed to create UIAutomation instance"))
 }
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {

@@ -1,30 +1,36 @@
+import type { Backend } from "./backend";
+import { NativeBackend } from "./native-backend";
 import { App } from "./app";
 import type { AppSelector, LaunchOptions } from "./types";
 import { DEFAULT_NOTEPAD_CLASS_NAMES } from "../native/classNames";
-import { loadNativeBindings } from "../native/loadNative";
 
 export class Automation {
+  private readonly backend: Backend;
+
+  constructor(backend?: Backend) {
+    this.backend = backend ?? new NativeBackend();
+  }
+
   public async launch(executablePath: string): Promise<App> {
     return this.launchApp({ executablePath });
   }
 
   public async launchApp(options: LaunchOptions): Promise<App> {
-    const native = loadNativeBindings();
-    if (native.setAppConfig) {
-      const classNames = options.executablePath
-        .toLowerCase()
-        .includes("notepad.exe")
-        ? DEFAULT_NOTEPAD_CLASS_NAMES
-        : [];
-      native.setAppConfig(options.executablePath, classNames);
-    }
-    const processId = await native.launch(options.executablePath);
-    const windows = await native.enumerateWindows(processId);
+    const classNames = options.executablePath
+      .toLowerCase()
+      .includes("notepad.exe")
+      ? DEFAULT_NOTEPAD_CLASS_NAMES
+      : [];
+    this.backend.setAppConfig(options.executablePath, classNames);
+
+    const processId = await this.backend.launch(options.executablePath);
+    const windows = await this.backend.enumerateWindows(processId);
     const initialMainWindowHandle = windows.length > 0 ? windows[0] : undefined;
     return new App(
       processId,
       options.executablePath,
       options.title ?? "Launched App",
+      this.backend,
       initialMainWindowHandle,
     );
   }
@@ -40,20 +46,15 @@ export class Automation {
       selector.processId,
       selector.executablePath ?? "unknown",
       selector.title ?? "Connected App",
+      this.backend,
     );
   }
 
   public pingNative(): string {
-    return loadNativeBindings().ping();
+    return this.backend.ping();
   }
 
   public debugDiscovery(processId: number) {
-    const native = loadNativeBindings();
-    if (!native.debugDiscovery) {
-      throw new Error(
-        "debugDiscovery is not available in the loaded native module.",
-      );
-    }
-    return native.debugDiscovery(processId);
+    return this.backend.debugDiscovery(processId);
   }
 }

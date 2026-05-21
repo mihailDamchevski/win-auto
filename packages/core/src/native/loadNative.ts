@@ -27,7 +27,29 @@ export function loadNativeBindings(): NativeBindings {
         typeof mod.closeApp === "function" &&
         typeof mod.isProcessRunning === "function" &&
         typeof mod.getText === "function" &&
-        typeof mod.findElementName === "function"
+        typeof mod.findElementName === "function" &&
+        typeof mod.clickElement === "function" &&
+        typeof mod.clickElementByName === "function" &&
+        typeof mod.clickSequence === "function" &&
+        typeof mod.pressKeyCodes === "function" &&
+        typeof mod.getValue === "function" &&
+        typeof mod.setValue === "function" &&
+        typeof mod.selectElement === "function" &&
+        typeof mod.toggleElement === "function" &&
+        typeof mod.getToggleState === "function" &&
+        typeof mod.findAll === "function" &&
+        typeof mod.getParent === "function" &&
+        typeof mod.getChildren === "function" &&
+        typeof mod.getSiblings === "function" &&
+        typeof mod.isVisible === "function" &&
+        typeof mod.isEnabled === "function" &&
+        typeof mod.isFocused === "function" &&
+        typeof mod.getWindowBounds === "function" &&
+        typeof mod.setWindowBounds === "function" &&
+        typeof mod.maximizeWindow === "function" &&
+        typeof mod.minimizeWindow === "function" &&
+        typeof mod.restoreWindow === "function" &&
+        typeof mod.pressKey === "function"
       ) {
         return mod;
       }

@@ -16,6 +16,13 @@ export type ElementSelector = {
   role?: string;
 };
 
+export type WindowBounds = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 export type WindowDebugInfo = {
   hwnd: string;
   pid: number;
@@ -51,4 +58,32 @@ export type NativeBindings = {
     windowHandle: string,
     name: string,
   ) => Promise<string | null>;
+  clickElement: (elementHandle: string) => Promise<void>;
+  clickElementByName: (windowHandle: string, name: string) => Promise<void>;
+  clickSequence: (windowHandle: string, names: string[]) => Promise<void>;
+  pressKeyCodes: (windowHandle: string, keyCodes: number[]) => Promise<void>;
+  getValue: (elementHandle: string) => Promise<string>;
+  setValue: (elementHandle: string, value: string) => Promise<void>;
+  selectElement: (elementHandle: string) => Promise<void>;
+  toggleElement: (elementHandle: string) => Promise<void>;
+  getToggleState: (elementHandle: string) => Promise<string>;
+  findAll: (
+    windowHandle: string,
+    classNames?: string[] | null,
+    automationId?: string | null,
+    name?: string | null,
+    role?: string | null,
+  ) => Promise<string[]>;
+  getParent: (elementHandle: string) => Promise<string | null>;
+  getChildren: (elementHandle: string) => Promise<string[]>;
+  getSiblings: (elementHandle: string) => Promise<string[]>;
+  isVisible: (elementHandle: string) => Promise<boolean>;
+  isEnabled: (elementHandle: string) => Promise<boolean>;
+  isFocused: (elementHandle: string) => Promise<boolean>;
+  getWindowBounds: (windowHandle: string) => Promise<{ left: number; top: number; width: number; height: number }>;
+  setWindowBounds: (windowHandle: string, left: number, top: number, width: number, height: number) => Promise<void>;
+  maximizeWindow: (windowHandle: string) => Promise<void>;
+  minimizeWindow: (windowHandle: string) => Promise<void>;
+  restoreWindow: (windowHandle: string) => Promise<void>;
+  pressKey: (windowHandle: string, keyCombination: string) => Promise<void>;
 };

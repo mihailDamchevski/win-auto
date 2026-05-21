@@ -1,33 +1,36 @@
+import type { Backend } from "./backend";
 import { Window } from "./window";
 import { Element } from "./element";
-import { loadNativeBindings } from "../native/loadNative";
 
 export class App {
   public readonly processId: number;
   public readonly executablePath: string;
   public readonly title: string;
   private readonly initialMainWindowHandle: string | null;
+  private readonly backend: Backend;
 
   constructor(
     processId: number,
     executablePath: string,
     title: string,
+    backend: Backend,
     initialMainWindowHandle?: string | null,
   ) {
     this.processId = processId;
     this.executablePath = executablePath;
     this.title = title;
+    this.backend = backend;
     this.initialMainWindowHandle = initialMainWindowHandle ?? null;
   }
 
   public async listWindows(): Promise<Window[]> {
-    const handles = await loadNativeBindings().enumerateWindows(this.processId);
-    return handles.map((handle) => new Window(handle, this.processId));
+    const handles = await this.backend.enumerateWindows(this.processId);
+    return handles.map((handle) => new Window(handle, this.processId, this.backend));
   }
 
   public async getMainWindow(): Promise<Window | null> {
     if (this.initialMainWindowHandle) {
-      return new Window(this.initialMainWindowHandle, this.processId);
+      return new Window(this.initialMainWindowHandle, this.processId, this.backend);
     }
 
     const windows = await this.listWindows();
@@ -83,14 +86,14 @@ export class App {
       }
     }
 
-    await loadNativeBindings().closeApp(this.processId);
+    await this.backend.closeApp(this.processId);
 
     const timeoutMs = options?.timeoutMs ?? 5_000;
     const intervalMs = options?.intervalMs ?? 100;
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const processRunning = loadNativeBindings().isProcessRunning(
+      const processRunning = this.backend.isProcessRunning(
         this.processId,
       );
       if (!processRunning) {

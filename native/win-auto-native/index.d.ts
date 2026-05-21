@@ -16,6 +16,47 @@ export interface WindowDebugInfo {
   processImage: string
 }
 export declare function debugDiscovery(processId: number): Array<WindowDebugInfo>
+export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null): Promise<string | null>
+export declare function typeText(elementHandle: string, text: string): Promise<void>
+export declare function sendKeys(elementHandle: string, text: string): Promise<void>
+export declare function pressKeyCodes(windowHandle: string, keyCodes: Array<number>): Promise<void>
+export declare function getText(elementHandle: string): Promise<string>
+export declare function findElementName(windowHandle: string, name: string): Promise<string | null>
+export declare function clickElement(elementHandle: string): Promise<void>
+export declare function clickElementByName(windowHandle: string, name: string): Promise<void>
+/**
+ * Clicks a sequence of elements by name in a single UIA tree traversal.
+ * This is much faster than calling clickElementByName N times because
+ * it only enumerates the UIA tree once instead of N times.
+ */
+export declare function clickSequence(windowHandle: string, names: Array<string>): Promise<void>
+export declare function hoverElement(elementHandle: string): Promise<void>
+export declare function scrollElement(elementHandle: string, direction: string, amount: number): Promise<void>
+export declare function getValue(elementHandle: string): Promise<string>
+export declare function setValue(elementHandle: string, value: string): Promise<void>
+export declare function selectElement(elementHandle: string): Promise<void>
+export declare function toggleElement(elementHandle: string): Promise<void>
+export declare function getToggleState(elementHandle: string): Promise<string>
+export declare function findAll(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null): Promise<Array<string>>
+export declare function getParent(elementHandle: string): Promise<string | null>
+export declare function getChildren(elementHandle: string): Promise<Array<string>>
+export declare function getSiblings(elementHandle: string): Promise<Array<string>>
+export declare function isVisible(elementHandle: string): Promise<boolean>
+export declare function isEnabled(elementHandle: string): Promise<boolean>
+export declare function isFocused(elementHandle: string): Promise<boolean>
+export interface WindowBounds {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+export declare function getWindowBounds(windowHandle: string): Promise<WindowBounds>
+export declare function setWindowBounds(windowHandle: string, left: number, top: number, width: number, height: number): Promise<void>
+export declare function maximizeWindow(windowHandle: string): Promise<void>
+export declare function minimizeWindow(windowHandle: string): Promise<void>
+export declare function restoreWindow(windowHandle: string): Promise<void>
+export declare function pressKey(windowHandle: string, keyCombination: string): Promise<void>
+export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
 export declare function launch(executablePath?: string | undefined | null): Promise<number>
 /** Health check function exposed to Node.js. */
 export declare function ping(): string
@@ -24,13 +65,5 @@ export declare function enumerateWindows(processId: number): Promise<Array<strin
 export declare function closeApp(processId: number): Promise<void>
 export declare function closeWindow(windowHandle: string): Promise<void>
 export declare function isProcessRunning(processId: number): boolean
-export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null): Promise<string | null>
-export declare function typeText(elementHandle: string, text: string): Promise<void>
-export declare function sendKeys(elementHandle: string, text: string): Promise<void>
-export declare function getText(elementHandle: string): Promise<string>
-export declare function findElementName(windowHandle: string, name: string): Promise<string | null>
-export declare function hoverElement(elementHandle: string): Promise<void>
-export declare function scrollElement(elementHandle: string, direction: string, amount: number): Promise<void>
-export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
 export declare function captureScreenshot(elementHandle: string): Promise<Array<number>>
 export declare function captureScreenshotToFile(elementHandle: string, path: string): Promise<void>

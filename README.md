@@ -12,10 +12,12 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 
 - 🚀 **Simple TypeScript API** - Clean, intuitive interface for desktop automation
 - 🔧 **Native Performance** - Rust + napi-rs backend for fast, reliable automation
-- 🎯 **Element Finding** - Locate UI elements by role, name, and other attributes
-- ⌨️ **User Simulation** - Type text, click buttons, interact with controls
+- 🎯 **Element Finding** - Locate UI elements by role, name, automation ID, and other attributes
+- ⌨️ **User Simulation** - Type text, click buttons, interact with controls, send keyboard shortcuts
+- 🪟 **Window Management** - Maximize, minimize, restore, resize, and move windows
 - 📦 **CLI Tool** - Scaffold new automation projects quickly
-- 🧪 **Testing Integration** - Built-in support for vitest testing
+- 🧪 **Testing Integration** - Built-in support for vitest with auto-cleanup via TestAutomation
+- 🎭 **Mock Backend** - Test automation logic without a real Windows desktop
 
 ## Quick Start
 
@@ -62,16 +64,17 @@ npm run test
 
 ### Automation
 
-Main entry point for desktop automation.
-
 ```typescript
 const automation = new Automation();
 
-// Launch an application and get an App instance
+// Launch an application
 const app = await automation.launch(executablePath);
 
-// Or use the lower-level API
-const app = await automation.launchApp({ executablePath });
+// Or connect to an already-running app
+const app = automation.connectApp({ processId: 1234 });
+
+// Use a mock backend for testing
+const automation = new Automation(new MockBackend());
 ```
 
 ### App
@@ -82,8 +85,14 @@ Represents a launched application.
 // Get the main window
 const mainWindow = await app.getMainWindow();
 
-// Find elements in the app
+// List all windows
+const windows = await app.listWindows();
+
+// Find elements throughout the app
 const element = await app.find({ role: "button", name: "OK" });
+
+// Close the app with optional wait
+await app.close({ timeoutMs: 5000 });
 ```
 
 ### Window
@@ -91,11 +100,32 @@ const element = await app.find({ role: "button", name: "OK" });
 Represents a window in the application.
 
 ```typescript
-// Find elements within a window
+// Find a single element
 const element = await window.findElement({ role: "textbox" });
+const el = await window.find({ name: "OK" });
 
-// Get window properties
-const title = await window.getTitle();
+// Find all matching elements
+const allButtons = await window.findAll({ role: "button" });
+
+// Click elements by name or in sequence
+await window.clickElementByName("Save");
+await window.clickSequence(["File", "Save As"]);
+
+// Type text directly into a window
+await window.typeText("Hello");
+
+// Window management
+const bounds = await window.getBounds();
+await window.setBounds({ left: 0, top: 0, width: 800, height: 600 });
+await window.maximize();
+await window.minimize();
+await window.restore();
+
+// Keyboard input
+await window.pressKey("Ctrl+S");
+
+// Close the window
+await window.close();
 ```
 
 ### Element
@@ -106,10 +136,42 @@ Represents a UI element (button, textbox, etc.).
 // Interact with elements
 await element.typeText("Hello");
 await element.click();
+await element.select();
+await element.toggle();
 
-// Get element properties
-const name = await element.getName();
-const role = await element.getRole();
+// Get/set value
+const value = await element.getValue();
+await element.setValue("new value");
+const text = await element.getText();
+
+// Element state
+const visible = await element.isVisible();
+const enabled = await element.isEnabled();
+const focused = await element.isFocused();
+const toggleState = await element.getToggleState();
+
+// Tree navigation
+const parent = await element.getParent();
+const children = await element.getChildren();
+const siblings = await element.getSiblings();
+```
+
+### Backend
+
+The automation engine uses a pluggable backend:
+
+- **`NativeBackend`** (default) - Real Windows automation via Rust/napi-rs
+- **`MockBackend`** - In-memory simulation for unit tests without a desktop
+
+```typescript
+import { Automation, MockBackend } from "@win-auto/core";
+
+// Use mock backend for testing
+const automation = new Automation(new MockBackend());
+const app = await automation.launch("notepad.exe");
+const el = await app.find({ role: "textbox" });
+await el?.typeText("test");
+console.log(await el?.getText()); // "test"
 ```
 
 ## Supported Elements
@@ -160,18 +222,37 @@ const saveButton = await app.find({ role: "button", name: "Save" });
 ### Testing with vitest
 
 ```typescript
-import { describe, it, expect } from "vitest";
-import { Automation } from "win-auto-core/testing";
+import { describe, it, expect, afterAll } from "vitest";
+import { Automation } from "@win-auto/core";
+import { TestAutomation, closeTrackedApps } from "@win-auto/core";
+// Or using the testing subpath:
+// import { TestAutomation, closeTrackedApps } from "@win-auto/core/testing";
 
 describe("Notepad Automation", () => {
+  afterAll(async () => {
+    await closeTrackedApps();
+  });
+
   it("should type text in notepad", async () => {
-    const automation = new Automation();
+    // TestAutomation automatically tracks launched apps for cleanup
+    const automation = new TestAutomation();
     const app = await automation.launch("notepad.exe");
     const textbox = await app.find({ role: "textbox" });
 
     await textbox?.type("Test message");
     expect(textbox).toBeDefined();
   });
+});
+
+// Or use the MockBackend to test without real Windows:
+import { MockBackend } from "@win-auto/core";
+
+it("works without a real desktop", async () => {
+  const automation = new Automation(new MockBackend());
+  const app = await automation.launch("notepad.exe");
+  const el = await app.find({ role: "textbox" });
+  await el?.type("Hello");
+  expect(await el?.getText()).toBe("Hello");
 });
 ```
 
@@ -277,12 +358,3 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 ---
 
 **Note:** This package is optimized for Windows platforms. Cross-platform support for macOS and Linux is not currently planned.
-
-## CLI usage
-
-```powershell
-node packages/cli/dist/index.js init demo-project
-cd demo-project
-npm install
-npm test
-```

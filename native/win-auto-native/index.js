@@ -310,23 +310,45 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { setAppConfig, debugDiscovery, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findElement, typeText, sendKeys, getText, findElementName, hoverElement, scrollElement, dragDrop, captureScreenshot, captureScreenshotToFile } = nativeBinding
+const { setAppConfig, debugDiscovery, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, getWindowBounds, setWindowBounds, maximizeWindow, minimizeWindow, restoreWindow, pressKey, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, captureScreenshot, captureScreenshotToFile } = nativeBinding
 
 module.exports.setAppConfig = setAppConfig
 module.exports.debugDiscovery = debugDiscovery
+module.exports.findElement = findElement
+module.exports.typeText = typeText
+module.exports.sendKeys = sendKeys
+module.exports.pressKeyCodes = pressKeyCodes
+module.exports.getText = getText
+module.exports.findElementName = findElementName
+module.exports.clickElement = clickElement
+module.exports.clickElementByName = clickElementByName
+module.exports.clickSequence = clickSequence
+module.exports.hoverElement = hoverElement
+module.exports.scrollElement = scrollElement
+module.exports.getValue = getValue
+module.exports.setValue = setValue
+module.exports.selectElement = selectElement
+module.exports.toggleElement = toggleElement
+module.exports.getToggleState = getToggleState
+module.exports.findAll = findAll
+module.exports.getParent = getParent
+module.exports.getChildren = getChildren
+module.exports.getSiblings = getSiblings
+module.exports.isVisible = isVisible
+module.exports.isEnabled = isEnabled
+module.exports.isFocused = isFocused
+module.exports.getWindowBounds = getWindowBounds
+module.exports.setWindowBounds = setWindowBounds
+module.exports.maximizeWindow = maximizeWindow
+module.exports.minimizeWindow = minimizeWindow
+module.exports.restoreWindow = restoreWindow
+module.exports.pressKey = pressKey
+module.exports.dragDrop = dragDrop
 module.exports.launch = launch
 module.exports.ping = ping
 module.exports.enumerateWindows = enumerateWindows
 module.exports.closeApp = closeApp
 module.exports.closeWindow = closeWindow
 module.exports.isProcessRunning = isProcessRunning
-module.exports.findElement = findElement
-module.exports.typeText = typeText
-module.exports.sendKeys = sendKeys
-module.exports.getText = getText
-module.exports.findElementName = findElementName
-module.exports.hoverElement = hoverElement
-module.exports.scrollElement = scrollElement
-module.exports.dragDrop = dragDrop
 module.exports.captureScreenshot = captureScreenshot
 module.exports.captureScreenshotToFile = captureScreenshotToFile
