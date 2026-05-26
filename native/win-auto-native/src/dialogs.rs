@@ -53,6 +53,7 @@ pub fn get_dialog_controls(window_handle: String) -> Result<Vec<DialogControl>> 
   let hwnd = parse_hwnd(&window_handle)?;
   let mut controls = Vec::new();
 
+  // SAFETY: hwnd is a valid dialog HWND from parse_hwnd; FindWindowExW enumerates child windows.
   unsafe {
     let mut child = FindWindowExW(hwnd, HWND(null_mut()), None, None).ok();
     while let Some(current) = child {
@@ -113,11 +114,13 @@ pub fn get_dialog_controls(window_handle: String) -> Result<Vec<DialogControl>> 
 pub async fn click_dialog_button(window_handle: String, button_text: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
 
+  // SAFETY: hwnd is a valid window handle; ShowWindow and SetForegroundWindow may fail
+  // silently (returns ignored) for windows from other security contexts.
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(100));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
   let controls = get_dialog_controls(window_handle)?;
   let query_lower = button_text.to_ascii_lowercase();
@@ -141,11 +144,12 @@ pub async fn click_dialog_button(window_handle: String, button_text: String) -> 
 pub async fn set_dialog_file_path(window_handle: String, path: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
 
+  // SAFETY: hwnd is a valid window handle; ShowWindow and SetForegroundWindow may fail silently.
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(200));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
   let controls = get_dialog_controls(window_handle.clone())?;
 

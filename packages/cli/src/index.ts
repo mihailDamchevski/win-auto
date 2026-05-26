@@ -15,19 +15,20 @@ async function runCli(): Promise<void> {
   if (command === "inspect") {
     const target = args[0];
     if (!target) {
-      process.stderr.write("Usage: win-auto inspect <pid|imageName> [maxDepth]\n");
+      process.stderr.write("Usage: win-auto inspect <pid|imageName> [maxDepth] [--hwnd]\n");
       process.exitCode = 1;
       return;
     }
-    const maxDepth = args[1] ? Number(args[1]) : undefined;
-    await inspectCommand(target, maxDepth);
+    const maxDepth = args[1] && !args[1].startsWith("--") ? Number(args[1]) : undefined;
+    const hwnd = args.includes("--hwnd");
+    await inspectCommand(target, maxDepth, hwnd);
     return;
   }
 
   process.stdout.write("win-auto CLI\n");
   process.stdout.write("Usage:\n");
   process.stdout.write("  win-auto init <project-name>\n");
-  process.stdout.write("  win-auto inspect <pid|imageName> [maxDepth]\n");
+  process.stdout.write("  win-auto inspect <pid|imageName> [maxDepth] [--hwnd]\n");
 }
 
 if (require.main === module) {

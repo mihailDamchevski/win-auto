@@ -5,5 +5,5 @@ export default defineConfig({
     globals: true,
     setupFiles: ["packages/core/src/testing/setup.ts"],
     include: ["tests/**/*.test.ts", "packages/**/src/**/*.test.ts"]
-  }
+  },
 });

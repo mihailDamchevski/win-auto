@@ -1,17 +1,27 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
+import type { ElementSelector } from "./types";
+import { classNamesForSelector } from "../native/classNames";
 
 export class Element {
   public readonly handle: string;
   private readonly windowHandle: string;
   private readonly backend: Backend;
   private readonly events: AutomationEvents;
+  private readonly originalSelector?: ElementSelector;
 
-  constructor(handle: string, windowHandle: string, backend: Backend, events: AutomationEvents) {
+  constructor(
+    handle: string,
+    windowHandle: string,
+    backend: Backend,
+    events: AutomationEvents,
+    originalSelector?: ElementSelector,
+  ) {
     this.handle = handle;
     this.windowHandle = windowHandle;
     this.backend = backend;
     this.events = events;
+    this.originalSelector = originalSelector;
   }
 
   public async click(): Promise<void> {
@@ -61,6 +71,19 @@ export class Element {
   }
 
   public async exists(): Promise<boolean> {
+    if (this.originalSelector) {
+      const candidate = await this.backend.findElement(
+        this.windowHandle,
+        classNamesForSelector(this.originalSelector),
+        this.originalSelector.automationId ?? null,
+        this.originalSelector.name ?? null,
+        this.originalSelector.role ?? null,
+        this.originalSelector.className ?? null,
+        this.originalSelector.text ?? null,
+        this.originalSelector.matchMode ?? null,
+      );
+      return candidate === this.handle;
+    }
     const candidate = await this.backend.findElement(this.windowHandle);
     return candidate === this.handle;
   }

@@ -1,5 +1,5 @@
 import type { Backend } from "./backend";
-import type { DialogControl, DialogInfo, ElementNode, NativeBindings, ProcessEntry } from "./types";
+import type { DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, NativeBindings, ProcessEntry } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 
 export class NativeBackend implements Backend {
@@ -19,12 +19,12 @@ export class NativeBackend implements Backend {
     }
   }
 
-  async launch(executablePath: string | null): Promise<number> {
-    return this.native.launch(executablePath);
+  async launch(executablePath: string | null, classNames?: string[] | null): Promise<number> {
+    return this.native.launch(executablePath, classNames ?? null);
   }
 
-  async enumerateWindows(processId: number): Promise<string[]> {
-    return this.native.enumerateWindows(processId);
+  async enumerateWindows(processId: number, executable?: string | null): Promise<string[]> {
+    return this.native.enumerateWindows(processId, executable ?? null);
   }
 
   async closeApp(processId: number): Promise<void> {
@@ -45,6 +45,9 @@ export class NativeBackend implements Backend {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string | null> {
     return this.native.findElement(
       windowHandle,
@@ -52,6 +55,9 @@ export class NativeBackend implements Backend {
       automationId ?? null,
       name ?? null,
       role ?? null,
+      className ?? null,
+      text ?? null,
+      matchMode ?? null,
     );
   }
 
@@ -113,6 +119,9 @@ export class NativeBackend implements Backend {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string[]> {
     return this.native.findAll(
       windowHandle,
@@ -120,6 +129,9 @@ export class NativeBackend implements Backend {
       automationId ?? null,
       name ?? null,
       role ?? null,
+      className ?? null,
+      text ?? null,
+      matchMode ?? null,
     );
   }
 
@@ -207,6 +219,20 @@ export class NativeBackend implements Backend {
     return this.native.captureScreenshotToFile(elementHandle, path);
   }
 
+  async findImage(windowHandle: string, template: number[]): Promise<ImageMatch | null> {
+    if (!this.native.findImage) {
+      throw new Error("findImage is not available in the loaded native module.");
+    }
+    return this.native.findImage(windowHandle, template);
+  }
+
+  async clickAt(x: number, y: number): Promise<void> {
+    if (!this.native.clickAt) {
+      throw new Error("clickAt is not available in the loaded native module.");
+    }
+    return this.native.clickAt(x, y);
+  }
+
   findDialogs(processId: number): DialogInfo[] {
     return this.native.findDialogs(processId);
   }
@@ -265,6 +291,13 @@ export class NativeBackend implements Backend {
 
   inspectWindowTree(windowHandle: string, maxDepth?: number): ElementNode[] {
     return this.native.inspectWindowTree(windowHandle, maxDepth ?? null);
+  }
+
+  inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[] {
+    if (!this.native.inspectHwndTree) {
+      throw new Error("inspectHwndTree is not available in the loaded native module.");
+    }
+    return this.native.inspectHwndTree(windowHandle, maxDepth ?? null);
   }
 
   debugDiscovery(processId: number) {

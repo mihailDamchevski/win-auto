@@ -1,8 +1,12 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementNode, ElementSelector, WindowBounds } from "./types";
+import type { ElementNode, ElementSelector, FindFirstOptions, HwndNode, ImageMatch, LocatorFilter, WindowBounds } from "./types";
 import { Element } from "./element";
+import { Locator } from "./locator";
 import { classNamesForSelector } from "../native/classNames";
+import { buildElementNotFoundError } from "./errors";
+
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 export class Window {
   public readonly handle: string;
@@ -17,6 +21,50 @@ export class Window {
     this.events = events;
   }
 
+  /** Create a fluent locator for chained queries. */
+  public locator(selector: ElementSelector): Locator {
+    return new Locator(this.handle, this.backend, this.events, [{ type: "selector", selector }]);
+  }
+
+  /** Try multiple selectors, return the first match. */
+  public async findFirst(
+    selectors: ElementSelector[],
+    options?: FindFirstOptions,
+  ): Promise<Element | null> {
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const intervalMs = options?.intervalMs ?? 100;
+    const parallel = options?.parallel ?? true;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    const start = Date.now();
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (parallel) {
+        const results = await Promise.all(
+          selectors.map((s) => this.findElement(s)),
+        );
+        for (const el of results) {
+          if (el) return el;
+        }
+      } else {
+        for (const selector of selectors) {
+          const el = await this.findElement(selector);
+          if (el) return el;
+        }
+      }
+      if (Date.now() - start < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      } else {
+        break;
+      }
+    }
+    return null;
+  }
+
+  /** Find an element by image template matching. */
+  public async findImage(template: number[]): Promise<ImageMatch | null> {
+    return this.backend.findImage(this.handle, template);
+  }
+
   public async findElement(selector: ElementSelector): Promise<Element | null> {
     const elementHandle = await this.backend.findElement(
       this.handle,
@@ -24,12 +72,15 @@ export class Window {
       selector.automationId,
       selector.name,
       selector.role,
+      selector.className,
+      selector.text,
+      selector.matchMode,
     );
     if (!elementHandle) {
       return null;
     }
     this.events.emitElementFound(elementHandle, selector as Record<string, unknown>);
-    return new Element(elementHandle, this.handle, this.backend, this.events);
+    return new Element(elementHandle, this.handle, this.backend, this.events, selector);
   }
 
   public async find(selector: ElementSelector): Promise<Element | null> {
@@ -43,8 +94,11 @@ export class Window {
       selector.automationId,
       selector.name,
       selector.role,
+      selector.className,
+      selector.text,
+      selector.matchMode,
     );
-    return handles.map((h) => new Element(h, this.handle, this.backend, this.events));
+    return handles.map((h) => new Element(h, this.handle, this.backend, this.events, selector));
   }
 
   public async typeText(text: string): Promise<void> {
@@ -79,6 +133,9 @@ export class Window {
       selector.automationId,
       selector.name,
       selector.role,
+      selector.className,
+      selector.text,
+      selector.matchMode,
     );
   }
 
@@ -136,6 +193,10 @@ export class Window {
     return this.backend.inspectWindowTree(this.handle, maxDepth);
   }
 
+  public inspectHwndTree(maxDepth?: number): HwndNode[] {
+    return this.backend.inspectHwndTree(this.handle, maxDepth);
+  }
+
   public async screenshot(): Promise<number[]> {
     const result = await this.backend.captureScreenshot(this.handle);
     this.events.emitElementScreenshot(this.handle);
@@ -163,9 +224,8 @@ export class Window {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(
-      `Element not found within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
-    );
+    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw new Error(msg);
   }
 
   public async waitForVisible(
@@ -184,9 +244,8 @@ export class Window {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(
-      `Element not visible within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
-    );
+    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw new Error(msg);
   }
 
   public async waitForEnabled(
@@ -205,8 +264,7 @@ export class Window {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(
-      `Element not enabled within ${timeoutMs}ms for selector: ${JSON.stringify(selector)}`,
-    );
+    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw new Error(msg);
   }
 }

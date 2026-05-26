@@ -9,6 +9,7 @@ use windows::core::PWSTR;
 const BASE_DPI: u32 = 96;
 
 pub fn get_dpi_for_window(hwnd: HWND) -> u32 {
+  // SAFETY: hwnd is a valid window handle from the system; GetDpiForWindow accepts null/invalid handles gracefully.
   unsafe {
     let dpi = GetDpiForWindow(hwnd);
     if dpi > 0 { dpi as u32 } else { BASE_DPI }
@@ -42,6 +43,8 @@ pub struct ComGuard {
 
 impl ComGuard {
   pub fn init() -> Self {
+    // SAFETY: CoInitializeEx with COINIT_APARTMENTTHREADED is safe to call; RPC_E_CHANGED_MODE
+    // (already initialized) is handled by treating it as success per MSDN.
     unsafe {
       let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
       ComGuard { needs_uninit: hr.is_ok() }
@@ -52,6 +55,7 @@ impl ComGuard {
 impl Drop for ComGuard {
   fn drop(&mut self) {
     if self.needs_uninit {
+      // SAFETY: needs_uninit is only true if CoInitializeEx succeeded in init().
       unsafe { CoUninitialize(); }
     }
   }
@@ -61,6 +65,8 @@ pub fn parse_hwnd(handle: &str) -> Result<HWND> {
   let value = handle
     .parse::<isize>()
     .map_err(|_| napi_error(format!("Invalid window/element handle: {handle}")))?;
+  // SAFETY: reinterpretation of an isize as a raw pointer; HWND is only used
+  // with Windows APIs that validate the handle internally.
   Ok(HWND(value as *mut core::ffi::c_void))
 }
 
@@ -73,6 +79,7 @@ pub fn to_wide_null_terminated(value: &str) -> Vec<u16> {
 }
 
 pub fn get_class_name(hwnd: HWND) -> String {
+  // SAFETY: buffer is a valid 256-element u16 array; GetClassNameW writes at most 256 chars.
   unsafe {
     let mut buffer = vec![0u16; 256];
     let copied = GetClassNameW(hwnd, &mut buffer);
@@ -84,6 +91,8 @@ pub fn get_class_name(hwnd: HWND) -> String {
 }
 
 pub fn get_window_title(hwnd: HWND) -> String {
+  // SAFETY: GetWindowTextLengthW returns the required buffer size; buffer is sized
+  // correctly to hold the title + null terminator; GetWindowTextW writes into it.
   unsafe {
     let length = GetWindowTextLengthW(hwnd);
     if length <= 0 {
@@ -100,6 +109,7 @@ pub fn get_window_title(hwnd: HWND) -> String {
 
 pub fn window_pid(hwnd: HWND) -> u32 {
   let mut pid = 0u32;
+  // SAFETY: &mut pid is a valid u32 pointer; GetWindowThreadProcessId writes the PID on success.
   unsafe {
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
   }
@@ -111,6 +121,7 @@ pub fn process_image_for_pid(pid: u32) -> String {
     return String::new();
   }
 
+  // SAFETY: pid is validated non-zero; OpenProcess returns invalid handle on failure.
   let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) };
   let Ok(handle) = process else {
     return String::new();
@@ -118,6 +129,8 @@ pub fn process_image_for_pid(pid: u32) -> String {
 
   let mut buffer = vec![0u16; 1024];
   let mut size = buffer.len() as u32;
+  // SAFETY: handle is a valid process handle; buffer is sized for MAX_PATH; PWSTR casts
+  // from valid mutable buffer pointer.
   let query = unsafe {
     QueryFullProcessImageNameW(
       handle,
@@ -126,6 +139,7 @@ pub fn process_image_for_pid(pid: u32) -> String {
       &mut size,
     )
   };
+  // SAFETY: handle is still valid and owned by this function.
   let _ = unsafe { CloseHandle(handle) };
   if query.is_err() || size == 0 {
     return String::new();
@@ -145,37 +159,27 @@ pub fn window_process_ends_with(hwnd: HWND, image_suffix: &str) -> bool {
 }
 
 pub fn is_visible(hwnd: HWND) -> bool {
+  // SAFETY: IsWindowVisible accepts any HWND; invalid handles return false gracefully.
   unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
 pub fn is_top_level_visible(hwnd: HWND) -> bool {
+  // SAFETY: GetWindow with GW_OWNER is safe; the window hierarchy is managed by the OS.
   unsafe { GetWindow(hwnd, GW_OWNER) }
     .ok()
     .map_or(false, |owner| owner.is_invalid())
     && is_visible(hwnd)
 }
 
-pub fn is_probable_notepad_window(hwnd: HWND) -> bool {
-  let class_name = get_class_name(hwnd);
-  if class_name.eq_ignore_ascii_case("Notepad") {
-    return true;
-  }
-
-  if class_name.eq_ignore_ascii_case("ApplicationFrameWindow") {
-    let title = get_window_title(hwnd).to_ascii_lowercase();
-    return title.contains("notepad");
-  }
-
-  false
+pub fn matches_window_by_class_or_title(_hwnd: HWND) -> bool {
+  // Class-name based filtering during discovery was removed with global config.
+  // Filtering is now done per-query in findElement/findAll via the class_names parameter.
+  true
 }
 
-pub fn hwnd_priority(class_name: &str) -> i32 {
-  if class_name.eq_ignore_ascii_case("Notepad") {
-    return 0;
-  }
-  if class_name.eq_ignore_ascii_case("ApplicationFrameWindow") {
-    return 1;
-  }
+pub fn hwnd_priority(_class_name: &str) -> i32 {
+  // Priority-based sorting was removed with global config.
+  // All windows are treated equally during discovery.
   2
 }
 

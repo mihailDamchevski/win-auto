@@ -10,9 +10,11 @@ crate-type = ["cdylib"]
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 napi = { version = "2", features = ["tokio_rt"] }
+tokio = { version = "1", features = ["time"] }
 napi-derive = "2"
 image = { version = "0.25", default-features = false, features = ["png"] }
 phf = { version = "0.11", features = ["macros"] }
+regex = "1"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_System_Com",

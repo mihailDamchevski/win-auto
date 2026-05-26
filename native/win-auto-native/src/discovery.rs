@@ -7,14 +7,15 @@ use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children, TreeScope_Descendants};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetWindow, GetWindowThreadProcessId, GW_OWNER};
 
-use crate::config::configured_executable_image_suffix;
 use crate::error::napi_error;
-use crate::utils::{get_class_name, get_window_title, is_probable_notepad_window, is_top_level_visible, is_visible, process_image_for_pid, window_pid, hwnd_to_string, sort_windows_for_selection, dedupe_hwnds, to_wide_null_terminated, window_process_ends_with};
+use crate::utils::{get_class_name, get_window_title, matches_window_by_class_or_title, is_top_level_visible, is_visible, process_image_for_pid, window_pid, hwnd_to_string, sort_windows_for_selection, dedupe_hwnds, to_wide_null_terminated, window_process_ends_with};
 
 struct AllWindowsContext {
   windows: Vec<HWND>,
 }
 
+// SAFETY: Called by EnumWindows as a callback; lparam is a valid pointer to
+// AllWindowsContext that outlives the EnumWindows call (stack-allocated in caller).
 unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
   let context_ptr = lparam.0 as *mut AllWindowsContext;
   if context_ptr.is_null() {
@@ -27,6 +28,8 @@ unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> B
 
 pub fn collect_all_top_level_windows() -> Vec<HWND> {
   let mut context = AllWindowsContext { windows: Vec::new() };
+  // SAFETY: context is stack-allocated and outlives EnumWindows; the raw pointer
+  // passed as LPARAM is valid for the callback's entire execution.
   unsafe {
     let _ = EnumWindows(
       Some(enum_all_windows_proc),
@@ -42,6 +45,8 @@ pub fn collect_windows_for_pid(process_id: u32) -> Vec<HWND> {
     windows: Vec<HWND>,
   }
 
+  // SAFETY: Called by EnumWindows as a callback; lparam is a valid pointer to
+  // EnumContext that outlives the EnumWindows call (stack-allocated in caller).
   unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let context_ptr = lparam.0 as *mut EnumContext;
     if context_ptr.is_null() {
@@ -60,6 +65,8 @@ pub fn collect_windows_for_pid(process_id: u32) -> Vec<HWND> {
     process_id,
     windows: Vec::new(),
   };
+  // SAFETY: context is stack-allocated and outlives EnumWindows; the raw pointer
+  // passed as LPARAM is valid for the callback's entire execution.
   unsafe {
     let _ = EnumWindows(
       Some(enum_windows_proc),
@@ -90,6 +97,7 @@ fn class_name_matches(class_name: &str, configured: &str) -> bool {
 
 pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> {
   fn recurse_children(parent: HWND, classes: &[String]) -> Option<HWND> {
+    // SAFETY: FindWindowExW enumerates child windows; parent is a valid HWND from the caller.
     unsafe {
       let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
       while let Some(current) = child {
@@ -114,6 +122,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
   }
 
   for class in classes {
+    // SAFETY: wide_class is a null-terminated wide string; window_hwnd is a valid HWND.
     unsafe {
       let wide_class = to_wide_null_terminated(class);
       let element = FindWindowExW(window_hwnd, HWND(null_mut()), windows::core::PCWSTR(wide_class.as_ptr()), None).ok();
@@ -128,6 +137,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
 }
 
 pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND> {
+  // SAFETY: FindWindowExW enumerates child windows; window_hwnd is valid from caller.
   unsafe {
     let mut child = FindWindowExW(window_hwnd, HWND(null_mut()), None, None).ok();
     while let Some(current) = child {
@@ -151,6 +161,7 @@ pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND>
 }
 
 pub fn find_element_uia(window_hwnd: HWND, query: &str) -> Option<HWND> {
+  // SAFETY: COM initialized via ComGuard; UIA COM calls follow the ABI with valid HWND.
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia().ok()?;
@@ -192,7 +203,6 @@ pub fn enumerate_windows_by_image_suffix(image_suffix: &str) -> Vec<HWND> {
     .into_iter()
     .filter(|hwnd| is_visible(*hwnd))
     .filter(|hwnd| window_process_ends_with(*hwnd, image_suffix))
-    .filter(|hwnd| is_probable_notepad_window(*hwnd))
     .collect()
 }
 
@@ -210,17 +220,15 @@ pub fn enumerate_windows_by_class_names(class_names: &[&str]) -> Vec<HWND> {
 }
 
 pub fn finalize_discovered_windows(handles: Vec<HWND>) -> Vec<HWND> {
-  let mut filtered = handles;
-  if configured_executable_image_suffix().as_deref() == Some("notepad.exe") {
-    filtered.retain(|hwnd| is_probable_notepad_window(*hwnd));
-  }
+  let mut filtered: Vec<HWND> = handles;
+  filtered.retain(|hwnd| matches_window_by_class_or_title(*hwnd));
   if filtered.is_empty() {
     return filtered;
   }
   dedupe_hwnds(sort_windows_for_selection(&filtered))
 }
 
-pub fn discover_windows_for_pid(process_id: u32) -> Vec<HWND> {
+pub fn discover_windows_for_pid(process_id: u32, executable: Option<&str>) -> Vec<HWND> {
   if let Ok(uia_strict) = uia_windows_for_pid(process_id, true) {
     if !uia_strict.is_empty() {
       return finalize_discovered_windows(uia_strict);
@@ -243,16 +251,15 @@ pub fn discover_windows_for_pid(process_id: u32) -> Vec<HWND> {
     return finalize_discovered_windows(visible_pid);
   }
 
-  if let Some(image_suffix) = configured_executable_image_suffix() {
-    let by_image = enumerate_windows_by_image_suffix(&image_suffix);
-    if !by_image.is_empty() {
-      return finalize_discovered_windows(by_image);
+  // Try finding windows by process image name suffix if executable is provided
+  if let Some(exe) = executable {
+    if let Some(file_name) = std::path::Path::new(exe).file_name() {
+      let suffix = file_name.to_string_lossy().to_ascii_lowercase();
+      let by_image = enumerate_windows_by_image_suffix(&suffix);
+      if !by_image.is_empty() {
+        return finalize_discovered_windows(by_image);
+      }
     }
-  }
-
-  let by_class = enumerate_windows_by_class_names(&["Notepad", "ApplicationFrameWindow"]);
-  if !by_class.is_empty() {
-    return finalize_discovered_windows(by_class);
   }
 
   Vec::new()
@@ -276,6 +283,7 @@ pub fn debug_discovery(process_id: u32) -> Result<Vec<WindowDebugInfo>> {
   let mut entries = Vec::new();
   for hwnd in collect_all_top_level_windows() {
     let pid = window_pid(hwnd);
+    // SAFETY: GetWindow with GW_OWNER is safe; hwnd is from EnumWindows so it's valid.
     let owner = unsafe { GetWindow(hwnd, GW_OWNER) };
     let owner_invalid = owner.is_ok_and(|h| h.is_invalid());
     let visible = is_visible(hwnd);
@@ -298,6 +306,8 @@ thread_local! {
   static UIA_INSTANCE: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
 }
 
+/// SAFETY: CoCreateInstance with CUIAutomation is safe when COM is initialized
+/// (caller must use ComGuard). The thread-local cache avoids repeated allocations.
 pub unsafe fn create_uia() -> Result<IUIAutomation> {
   let mut result: Option<IUIAutomation> = None;
   let _ = UIA_INSTANCE.try_with(|cell| {
@@ -320,6 +330,7 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
 }
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
+  // SAFETY: COM initialized via ComGuard; UIA COM calls follow the ABI.
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
@@ -359,4 +370,55 @@ pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Ve
     }
     Ok(windows)
   }
+}
+
+/// HWND tree node for the legacy/raw Win32 hierarchy inspector
+#[napi(object)]
+pub struct HwndNode {
+  pub handle: String,
+  pub class_name: String,
+  pub title: String,
+  pub visible: bool,
+  pub children: Vec<HwndNode>,
+}
+
+fn build_hwnd_tree(parent: HWND, max_depth: i32) -> Vec<HwndNode> {
+  if max_depth <= 0 {
+    return Vec::new();
+  }
+
+  let mut nodes = Vec::new();
+  // SAFETY: FindWindowExW recursively enumerates child windows; parent is a valid HWND.
+  unsafe {
+    let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
+    while let Some(current) = child {
+      if current.is_invalid() {
+        break;
+      }
+      let class_name = get_class_name(current);
+      let title = get_window_title(current);
+      let visible = is_visible(current);
+      let children = build_hwnd_tree(current, max_depth - 1);
+      nodes.push(HwndNode {
+        handle: hwnd_to_string(current),
+        class_name,
+        title,
+        visible,
+        children,
+      });
+      child = FindWindowExW(parent, current, None, None).ok();
+    }
+  }
+  nodes
+}
+
+/// Inspects the raw Win32 HWND tree under a given window handle.
+/// Unlike inspectWindowTree (which uses UIA), this shows the real HWND
+/// hierarchy with class names and window text — essential for legacy app debugging.
+#[napi(js_name = "inspectHwndTree")]
+pub fn inspect_hwnd_tree(window_handle: String, max_depth: Option<i32>) -> Result<Vec<HwndNode>> {
+  let hwnd = crate::utils::parse_hwnd(&window_handle)?;
+  let depth = max_depth.unwrap_or(10);
+  let children = build_hwnd_tree(hwnd, depth);
+  Ok(children)
 }

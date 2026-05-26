@@ -6,7 +6,7 @@ import {
   createDefaultElement, createDefaultWindow, createDefaultApp,
 } from "./mockRuntime";
 import type {
-  DialogControl, DialogInfo, ElementNode, ProcessEntry, WindowBounds, WindowDebugInfo,
+  DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, MatchMode, ProcessEntry, WindowBounds, WindowDebugInfo,
 } from "../api/types";
 
 const MOCK_DELAY_MS = 5;
@@ -15,15 +15,42 @@ function delay(): Promise<void> {
   return new Promise((r) => setTimeout(r, MOCK_DELAY_MS));
 }
 
+function matchesValue(
+  actual: string | undefined,
+  query: string | null | undefined,
+  mode: MatchMode | undefined | null,
+): boolean {
+  if (query == null || query === "") return true;
+  if (actual == null) return false;
+  const m = mode ?? "substring";
+  switch (m) {
+    case "exact":
+      return actual === query;
+    case "regex":
+      try {
+        return new RegExp(query, "i").test(actual);
+      } catch {
+        return false;
+      }
+    case "substring":
+    default:
+      return actual.toLowerCase().includes(query.toLowerCase());
+  }
+}
+
 function selectorMatches(
-  recordSelector: { automationId?: string; name?: string; role?: string },
+  recordSelector: { automationId?: string; name?: string; role?: string; className?: string; text?: string },
   automationId?: string | null,
   name?: string | null,
   role?: string | null,
+  className?: string | null,
+  _text?: string | null,
+  matchMode?: MatchMode | string | null,
 ): boolean {
-  if (automationId && recordSelector.automationId !== automationId) return false;
-  if (name && recordSelector.name !== name) return false;
-  if (role && recordSelector.role !== role) return false;
+  if (!matchesValue(recordSelector.automationId, automationId, matchMode as MatchMode | undefined | null)) return false;
+  if (!matchesValue(recordSelector.name, name, matchMode as MatchMode | undefined | null)) return false;
+  if (!matchesValue(recordSelector.role, role, matchMode as MatchMode | undefined | null)) return false;
+  if (!matchesValue(recordSelector.className, className, matchMode as MatchMode | undefined | null)) return false;
   return true;
 }
 
@@ -78,6 +105,145 @@ export class MockBackend implements Backend {
     return handle;
   }
 
+  /** Add a child element to a parent element (for building element trees) */
+  public addChildElement(
+    parentHandle: string,
+    selector: { automationId?: string; name?: string; role?: string; className?: string; text?: string },
+    elementId?: string,
+  ): string {
+    const parentEl = this.elementHandleToEl.get(parentHandle);
+    if (!parentEl) {
+      throw new Error(`Parent element not found: ${parentHandle}`);
+    }
+
+    const childId = elementId ?? `mock-el-child-${this.nextElementHandle}`;
+    const childEl: MockElementRecord = {
+      id: childId,
+      selector: { automationId: "child-input", name: "Child Input", role: "textbox", ...selector },
+      text: "",
+      isSelected: false,
+      isToggled: false,
+      toggleState: "Off",
+      isVisible: true,
+      isEnabled: true,
+      isFocused: false,
+      parentHandle: parentHandle,
+      childHandles: [],
+    };
+
+    const childHandle = this.registerElement(childEl, parentHandle);
+    parentEl.childHandles.push(childHandle);
+
+    // Find which window owns the parent, add the child to its element list
+    for (const [, win] of this.windowHandleToWin) {
+      if (win.elements.some((e) => e.id === parentEl.id)) {
+        win.elements.push(childEl);
+        break;
+      }
+    }
+
+    return childHandle;
+  }
+
+  /** Add a child window to an app (for multi-window tests) */
+  public addWindow(
+    processId: number,
+    title?: string,
+    windowId?: string,
+  ): string {
+    const app = this.pidToApp.get(processId);
+    if (!app) {
+      throw new Error(`App not found: ${processId}`);
+    }
+
+    const winId = windowId ?? `mock-win-child-${this.nextWindowHandle}`;
+    const winHandle = String(this.nextWindowHandle++);
+    const window = createDefaultWindow(winId, title ?? "Child Window");
+    const element = createDefaultElement(`mock-el-child-win-${this.nextElementHandle}`, {
+      automationId: "default-input",
+      name: "Default Input",
+      role: "textbox",
+    });
+    element.parentHandle = winId;
+    window.elements.push(element);
+
+    app.windows.push(window);
+    this.windowHandleToWin.set(winHandle, window);
+    this.winHandleToPid.set(winHandle, processId);
+    this.registerElement(element, winHandle);
+
+    return winHandle;
+  }
+
+  /** Setup a complete element tree for testing. Returns the root window handle. */
+  public setupElementTree(
+    processId: number,
+    tree: MockTreeElement,
+    windowTitle?: string,
+  ): string {
+    const app = this.pidToApp.get(processId);
+    if (!app) {
+      throw new Error(`App not found: ${processId}`);
+    }
+
+    const winId = `mock-win-tree-${this.nextWindowHandle}`;
+    const winHandle = String(this.nextWindowHandle++);
+    const window = createDefaultWindow(winId, windowTitle ?? "Tree Window");
+    this.windowHandleToWin.set(winHandle, window);
+    this.winHandleToPid.set(winHandle, processId);
+
+    const buildTree = (
+      node: MockTreeElement,
+      parentHandle: string | null,
+    ): string => {
+      const elId = node.id ?? `mock-el-${this.nextElementHandle}`;
+      const el: MockElementRecord = {
+        id: elId,
+        selector: {
+          automationId: node.automationId ?? null!,
+          name: node.name ?? null!,
+          role: node.role ?? null!,
+          className: node.className ?? null!,
+          text: node.text ?? null!,
+        },
+        text: node.text ?? "",
+        isSelected: false,
+        isToggled: false,
+        toggleState: "Off",
+        isVisible: node.visible ?? true,
+        isEnabled: node.enabled ?? true,
+        isFocused: false,
+        parentHandle: parentHandle,
+        childHandles: [],
+      };
+      // Clean up nulls from selector
+      el.selector = {
+        ...(node.automationId ? { automationId: node.automationId } : {}),
+        ...(node.name ? { name: node.name } : {}),
+        ...(node.role ? { role: node.role } : {}),
+        ...(node.className ? { className: node.className } : {}),
+        ...(node.text ? { text: node.text } : {}),
+      };
+
+      const handle = this.registerElement(el, parentHandle);
+      window.elements.push(el);
+
+      if (node.children) {
+        for (const child of node.children) {
+          const childHandle = buildTree(child, handle);
+          el.childHandles.push(childHandle);
+        }
+      }
+
+      return handle;
+    };
+
+    buildTree(tree, null);
+    app.windows.push(window);
+
+    return winHandle;
+  }
+
   private removeElementMappings(elId: string): void {
     for (const [handle, el] of this.elementHandleToEl) {
       if (el.id === elId) {
@@ -122,7 +288,7 @@ export class MockBackend implements Backend {
 
   // --- lifecycle ---
 
-  async launch(executablePath: string | null): Promise<number> {
+  async launch(executablePath: string | null, _classNames?: string[] | null): Promise<number> {
     const pid = this.nextPid++;
     const winId = `mock-win-${pid}`;
     const elId = `mock-el-${pid}`;
@@ -146,7 +312,7 @@ export class MockBackend implements Backend {
     return pid;
   }
 
-  async enumerateWindows(processId: number): Promise<string[]> {
+  async enumerateWindows(processId: number, _executable?: string | null): Promise<string[]> {
     await delay();
     return [...this.winHandleToPid.entries()]
       .filter(([, pid]) => pid === processId)
@@ -193,11 +359,14 @@ export class MockBackend implements Backend {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string | null> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return null;
     const match = win.elements.find((el) =>
-      selectorMatches(el.selector, automationId, name, role),
+      selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
     );
     if (!match) return null;
     return this.ensureElementHandle(match);
@@ -210,16 +379,19 @@ export class MockBackend implements Backend {
   async findAll(
     windowHandle: string,
     _classNames?: string[] | null,
-    _automationId?: string | null,
+    automationId?: string | null,
     name?: string | null,
-    _role?: string | null,
+    role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string[]> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return [];
     let matches = win.elements;
-    if (name) {
+    if (automationId || name || role || className || text) {
       matches = matches.filter((el) =>
-        el.selector.name?.toLowerCase().includes(name.toLowerCase()),
+        selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
       );
     }
     return matches.map((el) => this.ensureElementHandle(el));
@@ -319,12 +491,14 @@ export class MockBackend implements Backend {
   // --- tree navigation (real parent/child tracking) ---
 
   async getParent(elementHandle: string): Promise<string | null> {
-    const el = this.assertElement(elementHandle);
+    const el = this.elementHandleToEl.get(elementHandle);
+    if (!el) return null;
     return el.parentHandle;
   }
 
   async getChildren(elementHandle: string): Promise<string[]> {
-    const el = this.assertElement(elementHandle);
+    const el = this.elementHandleToEl.get(elementHandle);
+    if (!el) return [];
     if (el.childHandles.length > 0) {
       return el.childHandles.filter((h) => this.elementHandleToEl.has(h));
     }
@@ -332,8 +506,8 @@ export class MockBackend implements Backend {
   }
 
   async getSiblings(elementHandle: string): Promise<string[]> {
-    const el = this.assertElement(elementHandle);
-    if (!el.parentHandle) return [];
+    const el = this.elementHandleToEl.get(elementHandle);
+    if (!el || !el.parentHandle) return [];
     const parentId = this.windowHandleToWin.get(el.parentHandle)
       ? el.parentHandle
       : this.elementHandleToEl.get(el.parentHandle)?.id;
@@ -371,15 +545,18 @@ export class MockBackend implements Backend {
   // --- state queries ---
 
   async isVisible(elementHandle: string): Promise<boolean> {
-    return this.assertElement(elementHandle).isVisible;
+    const el = this.elementHandleToEl.get(elementHandle);
+    return el?.isVisible ?? false;
   }
 
   async isEnabled(elementHandle: string): Promise<boolean> {
-    return this.assertElement(elementHandle).isEnabled;
+    const el = this.elementHandleToEl.get(elementHandle);
+    return el?.isEnabled ?? false;
   }
 
   async isFocused(elementHandle: string): Promise<boolean> {
-    return this.assertElement(elementHandle).isFocused;
+    const el = this.elementHandleToEl.get(elementHandle);
+    return el?.isFocused ?? false;
   }
 
   // --- window operations (with state tracking) ---
@@ -469,6 +646,16 @@ export class MockBackend implements Backend {
 
   async captureScreenshotToFile(elementHandle: string, _path: string): Promise<void> {
     this.assertElement(elementHandle);
+  }
+
+  // --- image finding ---
+
+  async findImage(_windowHandle: string, _template: number[]): Promise<ImageMatch | null> {
+    return { x: 100, y: 100, width: 32, height: 32, confidence: 0.95 };
+  }
+
+  async clickAt(x: number, y: number): Promise<void> {
+    await delay();
   }
 
   // --- dialogs (with real tracking) ---
@@ -585,10 +772,31 @@ export class MockBackend implements Backend {
 
   // --- tree inspection ---
 
+  inspectHwndTree(windowHandle: string, _maxDepth?: number): HwndNode[] {
+    const win = this.windowHandleToWin.get(windowHandle);
+    if (!win) return [];
+    return win.elements.map((el) => {
+      const handle = this.ensureElementHandle(el);
+      return {
+        handle,
+        class_name: el.selector.className ?? "",
+        title: el.selector.name ?? "",
+        visible: el.isVisible,
+        children: [],
+      };
+    });
+  }
+
   inspectWindowTree(windowHandle: string, _maxDepth?: number): ElementNode[] {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return [];
-    return win.elements.map((el) => this.elementToNode(el, _maxDepth ?? 5));
+
+    // Find top-level elements (those whose parent is the window itself)
+    const topLevel = win.elements.filter(
+      (el) => el.parentHandle === null || el.parentHandle === windowHandle,
+    );
+
+    return topLevel.map((el) => this.elementToNode(el, _maxDepth ?? 5));
   }
 
   private elementToNode(el: MockElementRecord, depth: number): ElementNode {

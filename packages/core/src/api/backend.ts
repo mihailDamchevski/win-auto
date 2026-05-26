@@ -1,10 +1,10 @@
-import type { DialogControl, DialogInfo, ElementNode, ProcessEntry, WindowBounds, WindowDebugInfo } from "./types";
+import type { DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, ProcessEntry, WindowBounds, WindowDebugInfo } from "./types";
 
 export interface Backend {
   ping(): string;
   setAppConfig(executable: string, classNames: string[]): void;
-  launch(executablePath: string | null): Promise<number>;
-  enumerateWindows(processId: number): Promise<string[]>;
+  launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
+  enumerateWindows(processId: number, executable?: string | null): Promise<string[]>;
   closeApp(processId: number): Promise<void>;
   closeWindow(windowHandle: string): Promise<void>;
   isProcessRunning(processId: number): boolean;
@@ -14,6 +14,9 @@ export interface Backend {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string | null>;
   findElementName(windowHandle: string, name: string): Promise<string | null>;
   clickElement(elementHandle: string): Promise<void>;
@@ -34,6 +37,9 @@ export interface Backend {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ): Promise<string[]>;
   getParent(elementHandle: string): Promise<string | null>;
   getChildren(elementHandle: string): Promise<string[]>;
@@ -56,6 +62,8 @@ export interface Backend {
   dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>;
   captureScreenshot(elementHandle: string): Promise<number[]>;
   captureScreenshotToFile(elementHandle: string, path: string): Promise<void>;
+  findImage(windowHandle: string, template: number[]): Promise<ImageMatch | null>;
+  clickAt(x: number, y: number): Promise<void>;
   findDialogs(processId: number): DialogInfo[];
   getDialogControls(windowHandle: string): DialogControl[];
   clickDialogButton(windowHandle: string, buttonText: string): Promise<void>;
@@ -71,5 +79,6 @@ export interface Backend {
   getSelection(elementHandle: string): Promise<string>;
   replaceSelectedText(elementHandle: string, text: string): Promise<void>;
   inspectWindowTree(windowHandle: string, maxDepth?: number): ElementNode[];
+  inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[];
   debugDiscovery(processId: number): WindowDebugInfo[];
 }

@@ -6,47 +6,149 @@ use windows::core::{BSTR, VARIANT};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, WPARAM};
 
 use windows::Win32::UI::Accessibility::{
-  IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern, IUIAutomationSelectionItemPattern,
+  IUIAutomation, IUIAutomationCondition, IUIAutomationElement, IUIAutomationInvokePattern,
+  IUIAutomationSelectionItemPattern,
   IUIAutomationTogglePattern, IUIAutomationTextPattern, IUIAutomationValuePattern,
   PropertyConditionFlags, PropertyConditionFlags_MatchSubstring, PropertyConditionFlags_IgnoreCase,
+  UIA_PROPERTY_ID,
   TreeScope_Children, TreeScope_Descendants,
+  UIA_AutomationIdPropertyId, UIA_AriaRolePropertyId,
   UIA_InvokePatternId, UIA_NamePropertyId, UIA_SelectionItemPatternId,
   UIA_TextPatternId, UIA_TogglePatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSE_EVENT_FLAGS};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, SW_SHOW, WM_GETTEXT, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
 
-use crate::config::get_config;
 use crate::discovery::{create_uia, find_child_window_by_text, find_element_hwnd, find_element_uia};
 use crate::error::napi_error;
 
-use crate::utils::{hwnd_to_string, is_probable_notepad_window, logical_to_physical, parse_hwnd, physical_to_logical, to_wide_null_terminated};
+use crate::utils::{hwnd_to_string, logical_to_physical, parse_hwnd, physical_to_logical, to_wide_null_terminated};
+
+fn match_mode_matches(actual: &str, query: &str, mode: &str) -> bool {
+  match mode {
+    "exact" => actual.eq_ignore_ascii_case(query),
+    "regex" => {
+      if let Ok(re) = regex::Regex::new(&format!("(?i){}", query)) {
+        re.is_match(actual)
+      } else {
+        false
+      }
+    }
+    _ => actual.to_ascii_lowercase().contains(&query.to_ascii_lowercase()),
+  }
+}
+
+unsafe fn try_build_uia_condition(
+  automation: &IUIAutomation,
+  property_id: UIA_PROPERTY_ID,
+  value: &str,
+  match_mode: &str,
+) -> Option<IUIAutomationCondition> {
+  let variant: VARIANT = BSTR::from(value).into();
+  match match_mode {
+    "exact" => automation
+      .CreatePropertyConditionEx(
+        property_id,
+        &variant,
+        PropertyConditionFlags(PropertyConditionFlags_IgnoreCase.0),
+      )
+      .ok(),
+    "substring" => automation
+      .CreatePropertyConditionEx(
+        property_id,
+        &variant,
+        PropertyConditionFlags(
+          PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
+        ),
+      )
+      .ok(),
+    _ => None,
+  }
+}
+
+unsafe fn combine_and_conditions(
+  automation: &IUIAutomation,
+  mut conditions: Vec<IUIAutomationCondition>,
+) -> Option<IUIAutomationCondition> {
+  if conditions.is_empty() {
+    return None;
+  }
+  let mut combined = conditions.remove(0);
+  for cond in conditions {
+    if let Ok(and_cond) = automation.CreateAndCondition(&combined, &cond) {
+      combined = and_cond;
+    }
+  }
+  Some(combined)
+}
 
 fn find_element_uia_by_conditions(
   hwnd: HWND,
   automation_id: Option<&str>,
   name: Option<&str>,
   role: Option<&str>,
+  match_mode: Option<&str>,
 ) -> Option<HWND> {
   unsafe {
+    // SAFETY: COM initialized via ComGuard; hwnd is a valid window handle from the caller.
+    // UIA COM calls follow the COM ABI and operate on the initialized automation object.
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia().ok()?;
     let root = automation.ElementFromHandle(hwnd).ok()?;
+    let mm = match_mode.unwrap_or("substring");
+
+    // Fast path: use native UIA PropertyCondition + FindFirst (O(log n))
+    // Only for non-regex modes where UIA can filter natively.
+    if mm != "regex" {
+      let conditions: Vec<IUIAutomationCondition> = [
+        name.map(|v| (UIA_NamePropertyId, v)),
+        role.map(|v| (UIA_AriaRolePropertyId, v)),
+        automation_id.map(|v| (UIA_AutomationIdPropertyId, v)),
+      ]
+      .into_iter()
+      .flatten()
+      .filter_map(|(pid, val)| try_build_uia_condition(&automation, pid, val, mm))
+      .collect();
+
+      if !conditions.is_empty() {
+        let composite = combine_and_conditions(&automation, conditions);
+        if let Some(ref condition) = composite {
+          if let Ok(element) = root.FindFirst(TreeScope_Descendants, condition) {
+            if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
+              if !hwnd_raw.is_invalid() {
+                // Verify the match (UIA substring conditions can return near-matches).
+                if let Ok(current_name) = element.CurrentName() {
+                  if name.map_or(true, |q| {
+                    match_mode_matches(
+                      &current_name.to_string(),
+                      q,
+                      mm,
+                    )
+                  }) {
+                    return Some(hwnd_raw);
+                  }
+                } else if name.is_none() {
+                  return Some(hwnd_raw);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Slow path: full enumeration for regex or if FindFirst missed.
     let true_condition = automation.CreateTrueCondition().ok()?;
     let all = root.FindAll(TreeScope_Descendants, &true_condition).ok()?;
     let length = all.Length().ok()?;
 
-    let name_lower = name.map(|n| n.to_ascii_lowercase());
-    let role_lower = role.map(|r| r.to_ascii_lowercase());
-    let auto_id_lower = automation_id.map(|a| a.to_ascii_lowercase());
-
     for i in 0..length {
       let element = all.GetElement(i).ok()?;
 
-      if let Some(ref query_name) = name_lower {
+      if let Some(query_name) = name {
         if let Ok(current_name) = element.CurrentName() {
-          let current_lower = current_name.to_string().to_ascii_lowercase();
-          if !current_lower.contains(query_name) {
+          let current_name = current_name.to_string();
+          if !match_mode_matches(&current_name, query_name, mm) {
             continue;
           }
         } else {
@@ -54,10 +156,10 @@ fn find_element_uia_by_conditions(
         }
       }
 
-      if let Some(ref query_role) = role_lower {
+      if let Some(query_role) = role {
         if let Ok(current_role) = element.CurrentAriaRole() {
-          let current_lower = current_role.to_string().to_ascii_lowercase();
-          if !current_lower.contains(query_role) {
+          let current_role = current_role.to_string();
+          if !match_mode_matches(&current_role, query_role, mm) {
             continue;
           }
         } else {
@@ -65,10 +167,10 @@ fn find_element_uia_by_conditions(
         }
       }
 
-      if let Some(ref query_auto_id) = auto_id_lower {
+      if let Some(query_auto_id) = automation_id {
         if let Ok(current_auto_id) = element.CurrentAutomationId() {
-          let current_lower = current_auto_id.to_string().to_ascii_lowercase();
-          if !current_lower.contains(query_auto_id) {
+          let current_auto_id = current_auto_id.to_string();
+          if !match_mode_matches(&current_auto_id, query_auto_id, mm) {
             continue;
           }
         } else {
@@ -93,27 +195,52 @@ pub async fn find_element(
   automation_id: Option<String>,
   name: Option<String>,
   role: Option<String>,
+  class_name: Option<String>,
+  text: Option<String>,
+  match_mode: Option<String>,
 ) -> Result<Option<String>> {
-  debug!("findElement hwnd={window_handle} automation_id={automation_id:?} name={name:?} role={role:?}");
-  let classes = if let Some(c) = class_names {
-    c
-  } else {
-    get_config()
-      .map(|config| config.class_names)
-      .unwrap_or_default()
-  };
+  debug!("findElement hwnd={window_handle} automation_id={automation_id:?} name={name:?} role={role:?} class_name={class_name:?} text={text:?} match_mode={match_mode:?}");
+  let mut classes = class_names.unwrap_or_default();
+
+  // If className is provided directly, append it to the class names list
+  if let Some(ref cn) = class_name {
+    if !classes.iter().any(|c| c.eq_ignore_ascii_case(cn)) {
+      classes.push(cn.clone());
+    }
+  }
 
   let hwnd = parse_hwnd(&window_handle)?;
+  let mm = match_mode.as_deref().unwrap_or("substring");
 
-  // If we have UIA-specific selectors (automationId, role, or no class_names), search via UIA first
-  let has_uia_selector = automation_id.is_some() || role.is_some() || (!classes.is_empty() && name.is_some());
+  // Determine search strategy based on available selectors
+  let has_uia_selector = automation_id.is_some() || role.is_some()
+    || (name.is_some() && classes.is_empty())
+    || text.is_some();
 
+  // If we have className but no UIA-specific selectors, try HWND class-based search first
+  if class_name.is_some() && !has_uia_selector {
+    if !classes.is_empty() {
+      if let Some(element_hwnd) = find_element_hwnd(hwnd, &classes) {
+        return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
+      }
+    }
+    // Also try text-based search on class-matched elements
+    if let Some(ref query_text) = text {
+      if let Some(element_hwnd) = find_child_window_by_text(hwnd, query_text) {
+        return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
+      }
+    }
+    return Ok(None);
+  }
+
+  // UIA search path (for automationId, role, or name-based with no class names)
   if has_uia_selector {
     if let Some(element_hwnd) = find_element_uia_by_conditions(
       hwnd,
       automation_id.as_deref(),
       name.as_deref(),
       role.as_deref(),
+      Some(mm),
     ) {
       return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
     }
@@ -126,18 +253,23 @@ pub async fn find_element(
     }
   }
 
-  // Fallback: name-based search
+  // Fallback: name-based search (with match mode)
   if let Some(ref query_name) = name {
+    // HWND text search
     if let Some(element_hwnd) = find_child_window_by_text(hwnd, query_name) {
       return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
     }
+    // UIA name search
     if let Some(element_hwnd) = find_element_uia(hwnd, query_name) {
       return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
     }
   }
 
-  if is_probable_notepad_window(hwnd) {
-    return Ok(Some(window_handle));
+  // Fallback: text-based search
+  if let Some(ref query_text) = text {
+    if let Some(element_hwnd) = find_child_window_by_text(hwnd, query_text) {
+      return Ok(Some(crate::utils::hwnd_to_string(element_hwnd)));
+    }
   }
 
   Ok(None)
@@ -149,6 +281,7 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   // UIA ValuePattern.SetValue() — works on UWP/WPF/modern controls
   unsafe {
+    // SAFETY: COM initialized via ComGuard; hwnd is a valid window handle from parse_hwnd.
     let _com_init = crate::utils::ComGuard::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
@@ -162,6 +295,7 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
   }
   // Fallback: Win32 WM_SETTEXT
   let wide = to_wide_null_terminated(&text);
+  // SAFETY: SendMessageW with WM_SETTEXT is safe; hwnd is valid, wide buffer is null-terminated.
   unsafe {
     SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
   }
@@ -171,10 +305,12 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
 #[napi(js_name = "sendKeys")]
 pub async fn send_keys(element_handle: String, text: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
+  // SAFETY: hwnd is a valid window handle; SetForegroundWindow may fail silently for windows
+  // from other security contexts (return value ignored).
   unsafe {
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(10));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
   let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
   for code_point in text.encode_utf16() {
@@ -220,38 +356,42 @@ pub async fn press_key_codes(window_handle: String, key_codes: Vec<i32>) -> Resu
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+  }
+  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-    for &vk in &key_codes {
-      let input_down = INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-          ki: KEYBDINPUT {
-            wVk: VIRTUAL_KEY(vk as u16),
-            wScan: 0,
-            dwFlags: KEYBD_EVENT_FLAGS(0),
-            time: 0,
-            dwExtraInfo: 0,
-          },
+  for &vk in &key_codes {
+    let input_down = INPUT {
+      r#type: INPUT_KEYBOARD,
+      Anonymous: INPUT_0 {
+        ki: KEYBDINPUT {
+          wVk: VIRTUAL_KEY(vk as u16),
+          wScan: 0,
+          dwFlags: KEYBD_EVENT_FLAGS(0),
+          time: 0,
+          dwExtraInfo: 0,
         },
-      };
+      },
+    };
+    unsafe {
       SendInput(&[input_down], std::mem::size_of::<INPUT>() as i32);
-      std::thread::sleep(std::time::Duration::from_millis(10));
-      let input_up = INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-          ki: KEYBDINPUT {
-            wVk: VIRTUAL_KEY(vk as u16),
-            wScan: 0,
-            dwFlags: KEYEVENTF_KEYUP,
-            time: 0,
-            dwExtraInfo: 0,
-          },
-        },
-      };
-      SendInput(&[input_up], std::mem::size_of::<INPUT>() as i32);
-      std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let input_up = INPUT {
+      r#type: INPUT_KEYBOARD,
+      Anonymous: INPUT_0 {
+        ki: KEYBDINPUT {
+          wVk: VIRTUAL_KEY(vk as u16),
+          wScan: 0,
+          dwFlags: KEYEVENTF_KEYUP,
+          time: 0,
+          dwExtraInfo: 0,
+        },
+      },
+    };
+    unsafe {
+      SendInput(&[input_up], std::mem::size_of::<INPUT>() as i32);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
   }
   Ok(())
 }
@@ -366,6 +506,7 @@ fn invoke_uia_element(element: &windows::Win32::UI::Accessibility::IUIAutomation
 pub async fn click_element(element_handle: String) -> Result<()> {
   info!("clickElement hwnd={element_handle}");
   let hwnd = parse_hwnd(&element_handle)?;
+  let mut cursor_set = false;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     if let Ok(automation) = create_uia() {
@@ -380,27 +521,27 @@ pub async fn click_element(element_handle: String) -> Result<()> {
           let cx = (rect.left + rect.right) / 2;
           let cy = (rect.top + rect.bottom) / 2;
           SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
-          std::thread::sleep(std::time::Duration::from_millis(30));
-          send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
-          return Ok(());
+          cursor_set = true;
         }
       }
     }
   }
-  // Last resort: Win32 center-of-window click
-  let mut rect = RECT::default();
-  unsafe {
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rect"));
+  if !cursor_set {
+    // Last resort: Win32 center-of-window click
+    let mut rect = RECT::default();
+    unsafe {
+      if GetWindowRect(hwnd, &mut rect).is_err() {
+        return Err(napi_error("Failed to get window rect"));
+      }
+    }
+    let cx = (rect.left + rect.right) / 2;
+    let cy = (rect.top + rect.bottom) / 2;
+    unsafe {
+      SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
     }
   }
-  let cx = (rect.left + rect.right) / 2;
-  let cy = (rect.top + rect.bottom) / 2;
-  unsafe {
-    SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
-  }
+  tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
   Ok(())
 }
 
@@ -705,14 +846,27 @@ pub async fn get_toggle_state(element_handle: String) -> Result<String> {
 pub async fn find_all(
   window_handle: String,
   class_names: Option<Vec<String>>,
-  _automation_id: Option<String>,
+  automation_id: Option<String>,
   name: Option<String>,
-  _role: Option<String>,
+  role: Option<String>,
+  class_name: Option<String>,
+  text: Option<String>,
+  match_mode: Option<String>,
 ) -> Result<Vec<String>> {
   let hwnd = parse_hwnd(&window_handle)?;
   let mut results: Vec<HWND> = Vec::new();
+  let mm = match_mode.as_deref().unwrap_or("substring");
 
-  if let Some(classes) = class_names {
+  // Build the class list from class_names and className
+  let mut classes = class_names.unwrap_or_default();
+  if let Some(ref cn) = class_name {
+    if !classes.iter().any(|c| c.eq_ignore_ascii_case(cn)) {
+      classes.push(cn.clone());
+    }
+  }
+
+  // HWND class-based collection
+  if !classes.is_empty() {
     fn collect_by_class(parent: HWND, classes: &[String], out: &mut Vec<HWND>) {
       unsafe {
         let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
@@ -732,22 +886,46 @@ pub async fn find_all(
     collect_by_class(hwnd, &classes, &mut results);
   }
 
-  if let Some(ref query_name) = name {
-    unsafe {
-      let _com_init = crate::utils::ComGuard::init();
-      if let Ok(automation) = create_uia() {
-        if let Ok(root) = automation.ElementFromHandle(hwnd) {
-          if let Ok(true_condition) = automation.CreateTrueCondition() {
-            if let Ok(all) = root.FindAll(TreeScope_Descendants, &true_condition) {
-              if let Ok(length) = all.Length() {
-                let query_lower = query_name.to_ascii_lowercase();
-                for i in 0..length {
-                  if let Ok(element) = all.GetElement(i) {
-                    if let Ok(current_name) = element.CurrentName() {
-                      let current_name = current_name.to_string();
-                      if !current_name.is_empty()
-                        && current_name.to_ascii_lowercase().contains(&query_lower)
-                      {
+  // UIA-based search for automationId, role, name, text
+  unsafe {
+    let _com_init = crate::utils::ComGuard::init();
+    if let Ok(automation) = create_uia() {
+      if let Ok(root) = automation.ElementFromHandle(hwnd) {
+        // Fast path: try native PropertyConditions (non-regex modes only)
+        if mm != "regex" {
+          let mut cond_pairs: Vec<(UIA_PROPERTY_ID, &str)> = Vec::new();
+          if let Some(ref val) = name {
+            cond_pairs.push((UIA_NamePropertyId, val.as_str()));
+          }
+          if let Some(ref val) = role {
+            cond_pairs.push((UIA_AriaRolePropertyId, val.as_str()));
+          }
+          if let Some(ref val) = automation_id {
+            cond_pairs.push((UIA_AutomationIdPropertyId, val.as_str()));
+          }
+          // text maps to CurrentName() — add only if name is not already querying the same property
+          if let Some(ref val) = text {
+            if name.is_none() || name.as_deref() != Some(val.as_str()) {
+              cond_pairs.push((UIA_NamePropertyId, val.as_str()));
+            }
+          }
+
+          if !cond_pairs.is_empty() {
+            let conditions: Vec<IUIAutomationCondition> = cond_pairs
+              .into_iter()
+              .filter_map(|(pid, val)| try_build_uia_condition(&automation, pid, val, mm))
+              .collect();
+
+            if !conditions.is_empty() {
+              let composite = combine_and_conditions(&automation, conditions);
+              if let Some(ref condition) = composite {
+                if let Ok(all) = root.FindAll(TreeScope_Descendants, condition) {
+                  if let Ok(length) = all.Length() {
+                    for i in 0..length {
+                      if let Ok(element) = all.GetElement(i) {
+                        if !check_element_matches(&element, &automation_id, &name, &role, &text, mm) {
+                          continue;
+                        }
                         if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
                           if !hwnd_raw.is_invalid() {
                             if !results.iter().any(|h| h.0 == hwnd_raw.0) {
@@ -763,11 +941,90 @@ pub async fn find_all(
             }
           }
         }
+
+        // Slow path: FindAll(TrueCondition) + manual filter.
+        // Needed for regex mode, or when all fast-path conditions failed to build,
+        // or when no UIA-filterable properties were provided.
+        if let Ok(true_condition) = automation.CreateTrueCondition() {
+          if let Ok(all) = root.FindAll(TreeScope_Descendants, &true_condition) {
+            if let Ok(length) = all.Length() {
+              for i in 0..length {
+                if let Ok(element) = all.GetElement(i) {
+                  if !check_element_matches(&element, &automation_id, &name, &role, &text, mm) {
+                    continue;
+                  }
+                  if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
+                    if !hwnd_raw.is_invalid() {
+                      if !results.iter().any(|h| h.0 == hwnd_raw.0) {
+                        results.push(hwnd_raw);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
 
   Ok(results.into_iter().map(|h| hwnd_to_string(h)).collect())
+}
+
+unsafe fn check_element_matches(
+  element: &IUIAutomationElement,
+  automation_id: &Option<String>,
+  name: &Option<String>,
+  role: &Option<String>,
+  text: &Option<String>,
+  mm: &str,
+) -> bool {
+  if let Some(query_name) = name {
+    if let Ok(current_name) = element.CurrentName() {
+      let current_name = current_name.to_string();
+      if current_name.is_empty() || !match_mode_matches(&current_name, query_name, mm) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  if let Some(query_role) = role {
+    if let Ok(current_role) = element.CurrentAriaRole() {
+      let current_role = current_role.to_string();
+      if current_role.is_empty() || !match_mode_matches(&current_role, query_role, mm) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  if let Some(query_aid) = automation_id {
+    if let Ok(current_aid) = element.CurrentAutomationId() {
+      let current_aid = current_aid.to_string();
+      if current_aid.is_empty() || !match_mode_matches(&current_aid, query_aid, mm) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  if let Some(query_text) = text {
+    if let Ok(current_name) = element.CurrentName() {
+      let current_name = current_name.to_string();
+      if current_name.is_empty() || !match_mode_matches(&current_name, query_text, mm) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  true
 }
 
 #[napi(js_name = "getParent")]
@@ -1079,9 +1336,9 @@ fn send_key_up(vk: u16) {
   send_key_code(vk, KEYEVENTF_KEYUP);
 }
 
-fn send_char_key(vk: u16) {
+async fn send_char_key(vk: u16) {
   send_key_down(vk);
-  std::thread::sleep(std::time::Duration::from_millis(5));
+  tokio::time::sleep(std::time::Duration::from_millis(5)).await;
   send_key_up(vk);
 }
 
@@ -1092,8 +1349,8 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(50));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
   let parts: Vec<&str> = key_combination.split('+').map(|s| s.trim()).collect();
   if parts.is_empty() {
@@ -1115,9 +1372,9 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
   for &vk in &modifier_keys {
     send_key_down(vk);
   }
-  std::thread::sleep(std::time::Duration::from_millis(10));
-  send_char_key(main_vk);
-  std::thread::sleep(std::time::Duration::from_millis(10));
+  tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+  send_char_key(main_vk).await;
+  tokio::time::sleep(std::time::Duration::from_millis(10)).await;
   for &vk in modifier_keys.iter().rev() {
     send_key_up(vk);
   }
@@ -1157,13 +1414,15 @@ fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
   }
 }
 
-fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) {
+async fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) {
   unsafe {
     SendInput(
       &[make_mouse_input(flags_down.0)],
       std::mem::size_of::<INPUT>() as i32,
     );
-    std::thread::sleep(std::time::Duration::from_millis(10));
+  }
+  tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+  unsafe {
     SendInput(
       &[make_mouse_input(flags_up.0)],
       std::mem::size_of::<INPUT>() as i32,
@@ -1174,8 +1433,8 @@ fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) 
 #[napi(js_name = "rightClickElement")]
 pub async fn right_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
+  let mut rect = RECT::default();
   unsafe {
-    let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
       return Err(napi_error("Failed to get window rectangle"));
     }
@@ -1183,17 +1442,17 @@ pub async fn right_click_element(element_handle: String) -> Result<()> {
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
       .map_err(|_| napi_error("Failed to set cursor position"))?;
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await;
   Ok(())
 }
 
 #[napi(js_name = "doubleClickElement")]
 pub async fn double_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
+  let mut rect = RECT::default();
   unsafe {
-    let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
       return Err(napi_error("Failed to get window rectangle"));
     }
@@ -1201,12 +1460,12 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
       .map_err(|_| napi_error("Failed to set cursor position"))?;
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    // Two quick left clicks
-    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  // Two quick left clicks
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
   Ok(())
 }
 
@@ -1219,6 +1478,17 @@ pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
   Ok(())
 }
 
+#[napi(js_name = "clickAt")]
+pub async fn click_at(x: i32, y: i32) -> Result<()> {
+  unsafe {
+    SetCursorPos(x, y)
+      .map_err(|_| napi_error("Failed to set cursor position"))?;
+  }
+  tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  Ok(())
+}
+
 #[napi(js_name = "keyDown")]
 pub async fn key_down(window_handle: String, key: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
@@ -1226,8 +1496,8 @@ pub async fn key_down(window_handle: String, key: String) -> Result<()> {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(50));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| napi_error(format!("Unknown key: {key}")))?;
   send_key_down(vk);
@@ -1241,8 +1511,8 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(50));
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| napi_error(format!("Unknown key: {key}")))?;
   send_key_up(vk);
@@ -1265,15 +1535,17 @@ pub async fn select_text(element_handle: String) -> Result<()> {
         }
       }
     }
-    // Fallback: focus + Ctrl+A
+  }
+  // Fallback: focus + Ctrl+A
+  unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    send_key_down(0x11); // VK_CONTROL
-    send_char_key(0x41); // 'A'
-    send_key_up(0x11); // VK_CONTROL
   }
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  send_key_down(0x11); // VK_CONTROL
+  send_char_key(0x41).await; // 'A'
+  send_key_up(0x11); // VK_CONTROL
   Ok(())
 }
 
@@ -1316,8 +1588,12 @@ pub async fn replace_selected_text(element_handle: String, text: String) -> Resu
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, BOOL(1));
     let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let wide = to_wide_null_terminated(&text);
+  }
+  let _ = hwnd;
+  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  let hwnd = parse_hwnd(&element_handle)?;
+  let wide = to_wide_null_terminated(&text);
+  unsafe {
     SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
   }
   Ok(())
@@ -1464,27 +1740,35 @@ pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -
   let from_hwnd = parse_hwnd(&from_element_handle)?;
   let to_hwnd = parse_hwnd(&to_element_handle)?;
 
+  let mut from_rect = RECT::default();
   unsafe {
-    let mut from_rect = RECT::default();
     if GetWindowRect(from_hwnd, &mut from_rect).is_err() {
       return Err(napi_error("Failed to get source window rectangle"));
     }
-    let from_x = (from_rect.left + from_rect.right) / 2;
-    let from_y = (from_rect.top + from_rect.bottom) / 2;
+  }
+  let from_x = (from_rect.left + from_rect.right) / 2;
+  let from_y = (from_rect.top + from_rect.bottom) / 2;
 
-    let mut to_rect = RECT::default();
+  let mut to_rect = RECT::default();
+  unsafe {
     if GetWindowRect(to_hwnd, &mut to_rect).is_err() {
       return Err(napi_error("Failed to get target window rectangle"));
     }
-    let to_x = (to_rect.left + to_rect.right) / 2;
-    let to_y = (to_rect.top + to_rect.bottom) / 2;
+  }
+  let to_x = (to_rect.left + to_rect.right) / 2;
+  let to_y = (to_rect.top + to_rect.bottom) / 2;
 
+  unsafe {
     SetCursorPos(from_x, from_y).map_err(|_| napi_error("Failed to position cursor"))?;
     SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTDOWN.0)], std::mem::size_of::<INPUT>() as i32);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+  }
+  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+  unsafe {
     SetCursorPos(to_x, to_y).map_err(|_| napi_error("Failed to position cursor"))?;
     SendInput(&[make_mouse_input(MOUSEEVENTF_MOVE.0)], std::mem::size_of::<INPUT>() as i32);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+  }
+  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+  unsafe {
     SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTUP.0)], std::mem::size_of::<INPUT>() as i32);
   }
 

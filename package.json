@@ -1,5 +1,5 @@
 {
-  "name": "win-auto-workspace",
+  "name": "win-auto-monorepo",
   "version": "0.1.2",
   "description": "Windows desktop automation framework skeleton with TS API, CLI, and napi-rs native addon.",
   "repository": {
@@ -30,18 +30,20 @@
     "lint:tsc": "tsc -b --pretty false",
     "format": "prettier --write \"packages/**/*.{ts,json,md}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,json,md}\"",
+    "coverage": "vitest run --coverage",
     "clean": "rimraf packages/*/dist tests/.tmp"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.15.3",
-    "@win-auto/core": "0.1.0",
+    "@win-auto/core": "0.1.4",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.59.4",
+    "@vitest/coverage-v8": "^3.1.1",
     "vitest": "^3.1.1"
   }
 }

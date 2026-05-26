@@ -1,8 +1,13 @@
 import type { Backend } from "./backend";
 import { Window } from "./window";
 import { Element } from "./element";
+import { Locator } from "./locator";
 import { DialogManager } from "./dialog";
 import type { AutomationEvents } from "./events";
+import type { ElementSelector, FindFirstOptions } from "./types";
+import { buildWindowNotFoundError } from "./errors";
+
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 export class App {
   public readonly processId: number;
@@ -30,8 +35,26 @@ export class App {
     this.initialMainWindowHandle = initialMainWindowHandle ?? null;
   }
 
+  /** Create a fluent locator on the main window. */
+  public async locator(selector: ElementSelector): Promise<Locator> {
+    const mainWindow = await this.getMainWindow();
+    if (!mainWindow) {
+      throw new Error("App.locator: no main window found");
+    }
+    return mainWindow.locator(selector);
+  }
+
+  /** Try multiple selectors on the main window, return first match. */
+  public async findFirst(
+    selectors: ElementSelector[],
+    options?: FindFirstOptions,
+  ): Promise<Element | null> {
+    const mainWindow = await this.waitForMainWindow({ timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    return mainWindow.findFirst(selectors, options);
+  }
+
   public async listWindows(): Promise<Window[]> {
-    const handles = await this.backend.enumerateWindows(this.processId);
+    const handles = await this.backend.enumerateWindows(this.processId, this.executablePath);
     return handles.map((handle) => new Window(handle, this.processId, this.backend, this.events));
   }
 
@@ -65,9 +88,8 @@ export class App {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(
-      `No top-level window found for process ${this.processId} within ${timeoutMs}ms.`,
-    );
+    const msg = await buildWindowNotFoundError(this.processId, timeoutMs, this.backend);
+    throw new Error(msg);
   }
 
   public async find(selector: {

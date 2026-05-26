@@ -1,4 +1,27 @@
-import type { ElementSelector, LaunchOptions, WindowBounds } from "../api/types";
+import type { ElementSelector, LaunchOptions, MatchMode, WindowBounds } from "../api/types";
+
+function matchesValue(
+  actual: string | undefined,
+  query: string | undefined | null,
+  mode: MatchMode | undefined | null,
+): boolean {
+  if (query == null || query === "") return true;
+  if (actual == null) return false;
+  const m = mode ?? "substring";
+  switch (m) {
+    case "exact":
+      return actual === query;
+    case "regex":
+      try {
+        return new RegExp(query, "i").test(actual);
+      } catch {
+        return false;
+      }
+    case "substring":
+    default:
+      return actual.toLowerCase().includes(query.toLowerCase());
+  }
+}
 
 export type MockElementRecord = {
   id: string;
@@ -39,6 +62,19 @@ export type MockAppRecord = {
   dialogs: MockDialogRecord[];
 };
 
+/** Tree structure for MockBackend.setupElementTree() */
+export type MockTreeElement = {
+  id?: string;
+  automationId?: string;
+  name?: string;
+  role?: string;
+  className?: string;
+  text?: string;
+  visible?: boolean;
+  enabled?: boolean;
+  children?: MockTreeElement[];
+};
+
 export function createDefaultElement(id: string, selector?: Partial<ElementSelector>): MockElementRecord {
   return {
     id,
@@ -60,7 +96,7 @@ export function createDefaultWindow(id: string, title: string): MockWindowRecord
     id,
     title,
     elements: [],
-    bounds: { left: 0, top: 0, width: 800, height: 600 },
+    bounds: { left: 100, top: 50, width: 800, height: 600 },
     isMaximized: false,
     isMinimized: false,
     isFocused: false,
@@ -84,15 +120,12 @@ function wait(): Promise<void> {
 }
 
 function selectorMatches(recordSelector: ElementSelector, query: ElementSelector): boolean {
-  if (query.automationId && recordSelector.automationId !== query.automationId) {
-    return false;
-  }
-  if (query.name && recordSelector.name !== query.name) {
-    return false;
-  }
-  if (query.role && recordSelector.role !== query.role) {
-    return false;
-  }
+  const mode = query.matchMode;
+  if (!matchesValue(recordSelector.automationId, query.automationId, mode)) return false;
+  if (!matchesValue(recordSelector.name, query.name, mode)) return false;
+  if (!matchesValue(recordSelector.role, query.role, mode)) return false;
+  if (!matchesValue(recordSelector.className, query.className, mode)) return false;
+  if (!matchesValue(recordSelector.text, query.text, mode)) return false;
   return true;
 }
 

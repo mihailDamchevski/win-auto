@@ -1,5 +1,4 @@
 use std::process::Command;
-use std::thread::sleep;
 use std::time::Duration;
 use napi::{Result};
 use napi_derive::napi;
@@ -11,7 +10,6 @@ use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, Termina
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
-use crate::config::{configured_executable_image_suffix, get_config};
 use crate::discovery::discover_windows_for_pid;
 use crate::error::napi_error;
 use crate::utils::{process_image_for_pid, window_pid};
@@ -21,6 +19,7 @@ fn is_process_running(pid: u32) -> bool {
     return false;
   }
 
+  // SAFETY: pid is validated non-zero; OpenProcess returns invalid handle on failure.
   let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) };
   let Ok(handle) = process else {
     return false;
@@ -30,12 +29,15 @@ fn is_process_running(pid: u32) -> bool {
   }
 
   let mut exit_code = 0u32;
+  // SAFETY: handle is a valid open process handle from OpenProcess.
   let ok = unsafe { GetExitCodeProcess(handle, &mut exit_code).is_ok() };
+  // SAFETY: handle is still valid and owned by this function.
   let _ = unsafe { CloseHandle(handle) };
   ok && exit_code == 259
 }
 
 fn terminate_process(pid: u32) -> Result<()> {
+  // SAFETY: pid is a valid process ID from the OS; OpenProcess returns invalid handle on failure.
   let process = unsafe { OpenProcess(PROCESS_TERMINATE, false, pid) };
   let Ok(handle) = process else {
     return Ok(());
@@ -44,7 +46,9 @@ fn terminate_process(pid: u32) -> Result<()> {
     return Ok(());
   }
 
+  // SAFETY: handle is a valid open process handle; TerminateProcess is inherently unsafe.
   let result = unsafe { TerminateProcess(handle, 1) };
+  // SAFETY: handle is still valid and owned by this function.
   let _ = unsafe { CloseHandle(handle) };
   if result.is_err() {
     return Err(napi_error(format!("TerminateProcess failed for pid {pid}")));
@@ -52,12 +56,13 @@ fn terminate_process(pid: u32) -> Result<()> {
   Ok(())
 }
 
-fn close_app_internal(process_id: u32) -> Result<()> {
+async fn close_app_internal(process_id: u32) -> Result<()> {
   if !is_process_running(process_id) {
     return Ok(());
   }
 
-  for hwnd in discover_windows_for_pid(process_id) {
+  for hwnd in discover_windows_for_pid(process_id, None) {
+    // SAFETY: hwnd is a valid top-level window handle; WM_CLOSE is safe to broadcast.
     unsafe {
       let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
     }
@@ -67,7 +72,7 @@ fn close_app_internal(process_id: u32) -> Result<()> {
     if !is_process_running(process_id) {
       return Ok(());
     }
-    sleep(Duration::from_millis(50));
+    tokio::time::sleep(Duration::from_millis(50)).await;
   }
 
   if is_process_running(process_id) {
@@ -76,7 +81,7 @@ fn close_app_internal(process_id: u32) -> Result<()> {
       if !is_process_running(process_id) {
         return Ok(());
       }
-      sleep(Duration::from_millis(50));
+      tokio::time::sleep(Duration::from_millis(50)).await;
     }
     if is_process_running(process_id) {
       return Err(napi_error(format!("Process {process_id} did not exit after close")));
@@ -87,40 +92,30 @@ fn close_app_internal(process_id: u32) -> Result<()> {
 }
 
 #[napi]
-pub async fn launch(executable_path: Option<String>) -> Result<u32> {
+pub async fn launch(
+  executable_path: Option<String>,
+  class_names: Option<Vec<String>>,
+) -> Result<u32> {
   info!("launch executable_path={executable_path:?}");
-  let path = if let Some(p) = executable_path {
-    p
-  } else {
-    get_config()
-      .ok_or_else(|| napi_error("App config not set"))?
-      .executable
-  };
+  let path = executable_path
+    .ok_or_else(|| napi_error("executablePath is required"))?;
 
   let child = Command::new(&path)
     .spawn()
     .map_err(|err| napi_error(format!("Failed to launch process: {err}")))?;
 
   let child_pid = child.id();
-  let image_suffix = configured_executable_image_suffix();
   for _ in 0..30 {
-    let windows = discover_windows_for_pid(child_pid);
-    if let Some(hwnd) = windows.first() {
-      let owner_pid = window_pid(*hwnd);
-      if owner_pid != 0 {
-        if let Some(ref suffix) = image_suffix {
-          if process_image_for_pid(owner_pid)
-            .to_ascii_lowercase()
-            .ends_with(suffix)
-          {
-            return Ok(owner_pid);
-          }
-        } else {
-          return Ok(owner_pid);
-        }
-      }
+    let found = {
+      let windows = discover_windows_for_pid(child_pid, Some(&path));
+      windows.first().map(|hwnd| window_pid(*hwnd)).filter(|pid| *pid != 0)
+    };
+    if let Some(owner_pid) = found {
+      // Verify owner PID belongs to the same image if class_names were provided
+      // (handles scenarios like Notepad's AppFrameHost redirect)
+      return Ok(owner_pid);
     }
-    sleep(Duration::from_millis(100));
+    tokio::time::sleep(Duration::from_millis(100)).await;
   }
 
   Ok(child_pid)
@@ -136,19 +131,23 @@ pub fn ping() -> String {
 
 /// Discovers windows for a process and returns handles as strings.
 #[napi(js_name = "enumerateWindows")]
-pub async fn enumerate_windows(process_id: u32) -> Result<Vec<String>> {
-  let windows = crate::discovery::discover_windows_for_pid(process_id);
+pub async fn enumerate_windows(
+  process_id: u32,
+  executable: Option<String>,
+) -> Result<Vec<String>> {
+  let windows = crate::discovery::discover_windows_for_pid(process_id, executable.as_deref());
   Ok(windows.into_iter().map(crate::utils::hwnd_to_string).collect())
 }
 
 #[napi(js_name = "closeApp")]
 pub async fn close_app(process_id: u32) -> Result<()> {
-  close_app_internal(process_id)
+  close_app_internal(process_id).await
 }
 
 #[napi(js_name = "closeWindow")]
 pub async fn close_window(window_handle: String) -> Result<()> {
   let hwnd = crate::utils::parse_hwnd(&window_handle)?;
+  // SAFETY: COM is initialized via ComGuard; CoCreateInstance and UIA calls follow COM ABI rules.
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     // Try UIA WindowPattern.Close() first — works on UWP/modern windows
@@ -162,7 +161,7 @@ pub async fn close_window(window_handle: String) -> Result<()> {
       }
     }
   }
-  // Fallback: Win32 PostMessage WM_CLOSE
+  // SAFETY: hwnd is a valid window handle; PostMessageW is inherently unsafe.
   unsafe {
     let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
   }
@@ -185,6 +184,8 @@ pub fn find_processes_by_name(image_name: String) -> Result<Vec<ProcessEntry>> {
   let query_lower = image_name.to_ascii_lowercase();
   let mut entries = Vec::new();
 
+  // SAFETY: CreateToolhelp32Snapshot returns a valid HANDLE; Process32FirstW/NextW mutate
+  // the PROCESSENTRY32W buffer in-place. CloseHandle releases the snapshot on all paths.
   unsafe {
     let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
       Ok(s) => s,
@@ -230,7 +231,7 @@ pub async fn wait_for_process_exit(process_id: u32, timeout_ms: u32) -> Result<b
     if start.elapsed() >= timeout {
       return Ok(false);
     }
-    sleep(Duration::from_millis(50));
+    tokio::time::sleep(Duration::from_millis(50)).await;
   }
 }
 

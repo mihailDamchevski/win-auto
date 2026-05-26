@@ -1,6 +1,7 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { DialogControl, DialogInfo } from "./types";
+import type { DialogControl, DialogInfo, ElementSelector } from "./types";
+import { Element } from "./element";
 
 export class Dialog {
   public readonly handle: string;
@@ -35,6 +36,21 @@ export class Dialog {
   public async selectFile(path: string): Promise<void> {
     this.events.emitDebug(`Setting file path in dialog: ${path}`, { dialog: this.handle });
     await this.backend.setDialogFilePath(this.handle, path);
+  }
+
+  public async findElement(selector: ElementSelector): Promise<Element | null> {
+    const found = await this.backend.findElement(
+      this.handle,
+      null,
+      selector.automationId ?? null,
+      selector.name ?? null,
+      selector.role ?? null,
+      selector.className ?? null,
+      selector.text ?? null,
+      selector.matchMode ?? null,
+    );
+    if (!found) return null;
+    return new Element(found, this.handle, this.backend, this.events, selector);
   }
 }
 

@@ -10,10 +10,15 @@ export type LaunchOptions = {
   title?: string;
 };
 
+export type MatchMode = "substring" | "exact" | "regex";
+
 export type ElementSelector = {
   automationId?: string;
   name?: string;
   role?: string;
+  className?: string;
+  text?: string;
+  matchMode?: MatchMode;
 };
 
 export type WindowBounds = {
@@ -63,8 +68,8 @@ export type ElementAttributeName =
 export type NativeBindings = {
   ping: () => string;
   setAppConfig?: (executable: string, classNames: string[]) => void;
-  launch: (executablePath?: string | null) => Promise<number>;
-  enumerateWindows: (processId: number) => Promise<string[]>;
+  launch: (executablePath?: string | null, classNames?: string[] | null) => Promise<number>;
+  enumerateWindows: (processId: number, executable?: string | null) => Promise<string[]>;
   debugDiscovery?: (processId: number) => WindowDebugInfo[];
   findElement: (
     windowHandle: string,
@@ -72,6 +77,9 @@ export type NativeBindings = {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ) => Promise<string | null>;
   typeText: (elementHandle: string, text: string) => Promise<void>;
   sendKeys: (elementHandle: string, text: string) => Promise<void>;
@@ -98,6 +106,9 @@ export type NativeBindings = {
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
+    className?: string | null,
+    text?: string | null,
+    matchMode?: string | null,
   ) => Promise<string[]>;
   getParent: (elementHandle: string) => Promise<string | null>;
   getChildren: (elementHandle: string) => Promise<string[]>;
@@ -120,6 +131,8 @@ export type NativeBindings = {
   dragDrop: (fromElementHandle: string, toElementHandle: string) => Promise<void>;
   captureScreenshot: (elementHandle: string) => Promise<number[]>;
   captureScreenshotToFile: (elementHandle: string, path: string) => Promise<void>;
+  findImage?: (elementHandle: string, template: number[]) => Promise<ImageMatch | null>;
+  clickAt?: (x: number, y: number) => Promise<void>;
   findDialogs: (processId: number) => DialogInfo[];
   getDialogControls: (windowHandle: string) => DialogControl[];
   clickDialogButton: (windowHandle: string, buttonText: string) => Promise<void>;
@@ -135,6 +148,7 @@ export type NativeBindings = {
   getSelection: (elementHandle: string) => Promise<string>;
   replaceSelectedText: (elementHandle: string, text: string) => Promise<void>;
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
+  inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
 };
 
 export type ProcessEntry = {
@@ -147,6 +161,35 @@ export type DialogInfo = {
   title: string;
   class_name: string;
   visible: boolean;
+};
+
+export type ImageMatch = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+};
+
+export type LocatorFilter = {
+  visible?: boolean;
+  enabled?: boolean;
+  focused?: boolean;
+  hasText?: string;
+  className?: string;
+  automationId?: string;
+  role?: string;
+};
+
+export type WaitOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+};
+
+export type FindFirstOptions = WaitOptions & {
+  /** If true, all selectors are checked on each poll cycle (default true).
+   *  If false, selectors are tried sequentially until one succeeds. */
+  parallel?: boolean;
 };
 
 export type DialogControl = {
@@ -163,4 +206,12 @@ export type ElementNode = {
   isVisible: boolean;
   isEnabled: boolean;
   children: ElementNode[];
+};
+
+export type HwndNode = {
+  handle: string;
+  class_name: string;
+  title: string;
+  visible: boolean;
+  children: HwndNode[];
 };

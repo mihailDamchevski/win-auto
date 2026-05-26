@@ -1,5 +1,26 @@
+import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NativeBindings } from "../api/types";
+
+// CJS-compatible import.meta shim — in ESM builds import.meta is available,
+// in CJS builds the try block throws and we fall back to __dirname / require.
+function getModuleUrl(): string {
+  // @ts-ignore — import.meta is only valid with --module es2022+
+  try { return (import.meta as { url: string }).url; }
+  catch { return ""; }
+}
+
+function getNodeRequire(): NodeRequire {
+  // @ts-ignore — import.meta is only valid with --module es2022+
+  try { return createRequire((import.meta as { url: string }).url); }
+  catch { return require; }
+}
+
+function getModuleDirname(): string {
+  const url = getModuleUrl();
+  return url ? path.dirname(fileURLToPath(url)) : __dirname;
+}
 
 const CORE_FUNCTIONS: (keyof NativeBindings)[] = [
   "ping",
@@ -74,11 +95,13 @@ const nativeSearchPaths = [
 ];
 
 export function loadNativeBindings(): NativeBindings {
+  const _require = getNodeRequire();
+  const _dirname = getModuleDirname();
+
   for (const relativePath of nativeSearchPaths) {
-    const resolvedPath = path.resolve(__dirname, relativePath);
+    const resolvedPath = path.resolve(_dirname, relativePath);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require(resolvedPath) as Record<string, unknown>;
+      const mod = _require(resolvedPath) as Record<string, unknown>;
       if (CORE_FUNCTIONS.every((fn) => typeof mod[fn] === "function")) {
         for (const fn of EXTENDED_FUNCTIONS) {
           if (typeof mod[fn] !== "function") {

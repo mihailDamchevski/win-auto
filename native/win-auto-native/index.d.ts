@@ -31,7 +31,21 @@ export interface WindowDebugInfo {
   processImage: string
 }
 export declare function debugDiscovery(processId: number): Array<WindowDebugInfo>
-export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null): Promise<string | null>
+/** HWND tree node for the legacy/raw Win32 hierarchy inspector */
+export interface HwndNode {
+  handle: string
+  className: string
+  title: string
+  visible: boolean
+  children: Array<HwndNode>
+}
+/**
+ * Inspects the raw Win32 HWND tree under a given window handle.
+ * Unlike inspectWindowTree (which uses UIA), this shows the real HWND
+ * hierarchy with class names and window text — essential for legacy app debugging.
+ */
+export declare function inspectHwndTree(windowHandle: string, maxDepth?: number | undefined | null): Array<HwndNode>
+export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
 export declare function typeText(elementHandle: string, text: string): Promise<void>
 export declare function sendKeys(elementHandle: string, text: string): Promise<void>
 export declare function pressKeyCodes(windowHandle: string, keyCodes: Array<number>): Promise<void>
@@ -52,7 +66,7 @@ export declare function setValue(elementHandle: string, value: string): Promise<
 export declare function selectElement(elementHandle: string): Promise<void>
 export declare function toggleElement(elementHandle: string): Promise<void>
 export declare function getToggleState(elementHandle: string): Promise<string>
-export declare function findAll(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null): Promise<Array<string>>
+export declare function findAll(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<Array<string>>
 export declare function getParent(elementHandle: string): Promise<string | null>
 export declare function getChildren(elementHandle: string): Promise<Array<string>>
 export declare function getSiblings(elementHandle: string): Promise<Array<string>>
@@ -75,6 +89,7 @@ export declare function pressKey(windowHandle: string, keyCombination: string): 
 export declare function rightClickElement(elementHandle: string): Promise<void>
 export declare function doubleClickElement(elementHandle: string): Promise<void>
 export declare function mouseMove(x: number, y: number): Promise<void>
+export declare function clickAt(x: number, y: number): Promise<void>
 export declare function keyDown(windowHandle: string, key: string): Promise<void>
 export declare function keyUp(windowHandle: string, key: string): Promise<void>
 export declare function selectText(elementHandle: string): Promise<void>
@@ -92,11 +107,11 @@ export interface ElementNode {
 export declare function inspectWindowTree(windowHandle: string, maxDepth?: number | undefined | null): Array<ElementNode>
 export declare function getElementAttribute(elementHandle: string, attributeName: string): Promise<string>
 export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
-export declare function launch(executablePath?: string | undefined | null): Promise<number>
+export declare function launch(executablePath?: string | undefined | null, classNames?: Array<string> | undefined | null): Promise<number>
 /** Health check function exposed to Node.js. */
 export declare function ping(): string
 /** Discovers windows for a process and returns handles as strings. */
-export declare function enumerateWindows(processId: number): Promise<Array<string>>
+export declare function enumerateWindows(processId: number, executable?: string | undefined | null): Promise<Array<string>>
 export declare function closeApp(processId: number): Promise<void>
 export declare function closeWindow(windowHandle: string): Promise<void>
 export declare function isProcessRunning(processId: number): boolean
@@ -110,3 +125,11 @@ export declare function getProcessImageName(processId: number): string
 export declare function killProcess(processId: number): void
 export declare function captureScreenshot(elementHandle: string): Promise<Array<number>>
 export declare function captureScreenshotToFile(elementHandle: string, path: string): Promise<void>
+export interface ImageMatch {
+  x: number
+  y: number
+  width: number
+  height: number
+  confidence: number
+}
+export declare function findImage(elementHandle: string, template: Array<number>): Promise<ImageMatch | null>

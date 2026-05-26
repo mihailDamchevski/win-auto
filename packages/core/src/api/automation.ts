@@ -4,7 +4,7 @@ import { App } from "./app";
 import { AutomationEvents } from "./events";
 import { ProcessManager } from "./process";
 import type { AppSelector, LaunchOptions } from "./types";
-import { DEFAULT_NOTEPAD_CLASS_NAMES } from "../native/classNames";
+
 
 export class Automation {
   public readonly events: AutomationEvents;
@@ -22,15 +22,8 @@ export class Automation {
   }
 
   public async launchApp(options: LaunchOptions): Promise<App> {
-    const classNames = options.executablePath
-      .toLowerCase()
-      .includes("notepad.exe")
-      ? DEFAULT_NOTEPAD_CLASS_NAMES
-      : [];
-    this.backend.setAppConfig(options.executablePath, classNames);
-
     const processId = await this.backend.launch(options.executablePath);
-    const windows = await this.backend.enumerateWindows(processId);
+    const windows = await this.backend.enumerateWindows(processId, options.executablePath);
     const initialMainWindowHandle = windows.length > 0 ? windows[0] : undefined;
     const app = new App(
       processId,
