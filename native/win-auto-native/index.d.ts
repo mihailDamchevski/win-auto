@@ -45,6 +45,11 @@ export interface HwndNode {
  * hierarchy with class names and window text — essential for legacy app debugging.
  */
 export declare function inspectHwndTree(windowHandle: string, maxDepth?: number | undefined | null): Array<HwndNode>
+/**
+ * Blocks for up to `timeout_ms` waiting for a UI focus-change event.
+ * Returns `true` if a change was detected, `false` on timeout.
+ */
+export declare function waitForUiChange(timeoutMs: number): Promise<boolean>
 export declare function highlightElement(elementHandle: string, color?: string | undefined | null, durationMs?: number | undefined | null): Promise<void>
 export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
 export declare function typeText(elementHandle: string, text: string): Promise<void>
