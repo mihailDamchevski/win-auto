@@ -27,11 +27,11 @@
     "debug:notepad": "node scripts/debug-notepad-discovery.js",
     "example:notepad": "node -e \"require('./packages/core/dist').Automation && console.log('Build complete. Run examples/notepad.ts with your TS runner.')\"",
     "lint": "eslint packages/",
-    "lint:tsc": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false",
     "format": "prettier --write \"packages/**/*.{ts,json,md}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,json,md}\"",
     "coverage": "vitest run --coverage",
-    "clean": "rimraf packages/*/dist tests/.tmp"
+    "clean": "rimraf packages/*/dist"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

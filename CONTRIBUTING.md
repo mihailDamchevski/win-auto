@@ -60,7 +60,7 @@ npm run test:e2e:real
 npm run lint
 
 # TypeScript type-check
-npm run lint:tsc
+npm run typecheck
 
 # Prettier formatting
 npm run format
