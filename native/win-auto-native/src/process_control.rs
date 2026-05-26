@@ -64,7 +64,7 @@ async fn close_app_internal(process_id: u32) -> Result<()> {
   for hwnd in discover_windows_for_pid(process_id, None) {
     // SAFETY: hwnd is a valid top-level window handle; WM_CLOSE is safe to broadcast.
     unsafe {
-      let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+      let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
     }
   }
 
@@ -164,7 +164,7 @@ pub async fn close_window(window_handle: String) -> Result<()> {
   tracing::warn!("UIA WindowPattern.Close failed for hwnd={window_handle}, falling back to PostMessageW WM_CLOSE");
   // SAFETY: hwnd is a valid window handle; PostMessageW is inherently unsafe.
   unsafe {
-    let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+    let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
   }
   Ok(())
 }

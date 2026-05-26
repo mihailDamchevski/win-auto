@@ -1,6 +1,6 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementSelector } from "./types";
+import type { ElementPath, ElementSelector } from "./types";
 import { classNamesForSelector } from "../native/classNames";
 
 export class Element {
@@ -285,6 +285,12 @@ export class Element {
 
   public async highlight(color?: string, durationMs?: number): Promise<void> {
     await this.backend.highlightElement(this.handle, color ?? null, durationMs ?? null);
+  }
+
+  /** Build a stable, serializable path from the root window to this element.
+   *  The path survives app restarts as long as the UI structure remains stable. */
+  public getPath(): ElementPath {
+    return this.backend.buildElementPath(this.handle);
   }
 
   public async waitForVisible(options?: {

@@ -150,6 +150,8 @@ export type NativeBindings = {
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
   inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
   highlightElement?: (elementHandle: string, color?: string | null, durationMs?: number | null) => Promise<void>;
+  buildElementPath?: (elementHandle: string) => ElementPathStep[];
+  resolveElementPath?: (windowHandle: string, path: ElementPathStep[]) => Promise<string | null>;
 };
 
 export type ProcessEntry = {
@@ -216,3 +218,13 @@ export type HwndNode = {
   visible: boolean;
   children: HwndNode[];
 };
+
+export type ElementPathStep = {
+  role: string;
+  name: string;
+  automationId: string;
+  className: string;
+  siblingIndex: number;
+};
+
+export type ElementPath = ElementPathStep[];

@@ -1,4 +1,4 @@
-import type { DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, ProcessEntry, WindowBounds, WindowDebugInfo } from "./types";
+import type { DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, ProcessEntry, WindowBounds, WindowDebugInfo } from "./types";
 
 export interface Backend {
   ping(): string;
@@ -82,4 +82,6 @@ export interface Backend {
   inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[];
   debugDiscovery(processId: number): WindowDebugInfo[];
   highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void>;
+  buildElementPath(elementHandle: string): ElementPathStep[];
+  resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null>;
 }

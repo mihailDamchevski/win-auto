@@ -1,8 +1,7 @@
 use std::cell::RefCell;
-use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children, TreeScope_Descendants};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetWindow, GetWindowThreadProcessId, GW_OWNER};
@@ -16,14 +15,14 @@ struct AllWindowsContext {
 
 // SAFETY: Called by EnumWindows as a callback; lparam is a valid pointer to
 // AllWindowsContext that outlives the EnumWindows call (stack-allocated in caller).
-unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
   let context_ptr = lparam.0 as *mut AllWindowsContext;
   if context_ptr.is_null() {
-    return BOOL(0);
+    return windows::core::BOOL(0);
   }
   let context = &mut *context_ptr;
   context.windows.push(hwnd);
-  BOOL(1)
+  windows::core::BOOL(1)
 }
 
 pub fn collect_all_top_level_windows() -> Vec<HWND> {
@@ -47,10 +46,10 @@ pub fn collect_windows_for_pid(process_id: u32) -> Vec<HWND> {
 
   // SAFETY: Called by EnumWindows as a callback; lparam is a valid pointer to
   // EnumContext that outlives the EnumWindows call (stack-allocated in caller).
-  unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+  unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
     let context_ptr = lparam.0 as *mut EnumContext;
     if context_ptr.is_null() {
-      return BOOL(0);
+      return windows::core::BOOL(0);
     }
     let context = &mut *context_ptr;
     let mut pid = 0u32;
@@ -58,7 +57,7 @@ pub fn collect_windows_for_pid(process_id: u32) -> Vec<HWND> {
     if pid == context.process_id {
       context.windows.push(hwnd);
     }
-    BOOL(1)
+    windows::core::BOOL(1)
   }
 
   let mut context = EnumContext {
@@ -99,7 +98,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
   fn recurse_children(parent: HWND, classes: &[String]) -> Option<HWND> {
     // SAFETY: FindWindowExW enumerates child windows; parent is a valid HWND from the caller.
     unsafe {
-      let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
+      let mut child = FindWindowExW(Some(parent), None, windows::core::PCWSTR::null(), windows::core::PCWSTR::null()).ok();
       while let Some(current) = child {
         if current.is_invalid() {
           break;
@@ -111,7 +110,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
         if let Some(found_nested) = recurse_children(current, classes) {
           return Some(found_nested);
         }
-        child = FindWindowExW(parent, current, None, None).ok();
+        child = FindWindowExW(Some(parent), Some(current), windows::core::PCWSTR::null(), windows::core::PCWSTR::null()).ok();
       }
     }
     None
@@ -125,7 +124,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
     // SAFETY: wide_class is a null-terminated wide string; window_hwnd is a valid HWND.
     unsafe {
       let wide_class = to_wide_null_terminated(class);
-      let element = FindWindowExW(window_hwnd, HWND(null_mut()), windows::core::PCWSTR(wide_class.as_ptr()), None).ok();
+      let element = FindWindowExW(Some(window_hwnd), None, windows::core::PCWSTR(wide_class.as_ptr()), windows::core::PCWSTR::null()).ok();
       if let Some(element_hwnd) = element {
         if !element_hwnd.is_invalid() {
           return Some(element_hwnd);
@@ -139,7 +138,7 @@ pub fn find_element_hwnd(window_hwnd: HWND, classes: &[String]) -> Option<HWND> 
 pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND> {
   // SAFETY: FindWindowExW enumerates child windows; window_hwnd is valid from caller.
   unsafe {
-    let mut child = FindWindowExW(window_hwnd, HWND(null_mut()), None, None).ok();
+    let mut child = FindWindowExW(Some(window_hwnd), None, windows::core::PCWSTR::null(), windows::core::PCWSTR::null()).ok();
     while let Some(current) = child {
       if current.is_invalid() {
         break;
@@ -154,7 +153,7 @@ pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND>
         return Some(found_nested);
       }
 
-      child = FindWindowExW(window_hwnd, current, None, None).ok();
+      child = FindWindowExW(Some(window_hwnd), Some(current), windows::core::PCWSTR::null(), windows::core::PCWSTR::null()).ok();
     }
   }
   None
@@ -391,7 +390,7 @@ fn build_hwnd_tree(parent: HWND, max_depth: i32) -> Vec<HwndNode> {
   let mut nodes = Vec::new();
   // SAFETY: FindWindowExW recursively enumerates child windows; parent is a valid HWND.
   unsafe {
-    let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
+    let mut child = FindWindowExW(Some(parent), None, None, None).ok();
     while let Some(current) = child {
       if current.is_invalid() {
         break;
@@ -407,7 +406,7 @@ fn build_hwnd_tree(parent: HWND, max_depth: i32) -> Vec<HwndNode> {
         visible,
         children,
       });
-      child = FindWindowExW(parent, current, None, None).ok();
+      child = FindWindowExW(Some(parent), Some(current), None, None).ok();
     }
   }
   nodes

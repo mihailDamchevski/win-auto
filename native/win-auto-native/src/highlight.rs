@@ -3,16 +3,16 @@ use tokio::sync::oneshot;
 use napi::{Result};
 use napi_derive::napi;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
   BeginPaint, CreateSolidBrush, EndPaint, FillRect, HDC, HBRUSH, PAINTSTRUCT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-  CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+  CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
   GetWindowRect, PeekMessageW, RegisterClassW, ShowWindow, TranslateMessage,
-  CS_HREDRAW, CS_VREDRAW, HMENU, HINSTANCE, MSG, PM_REMOVE, SW_SHOWNOACTIVATE,
-  WINDOW_EX_STYLE, WINDOW_STYLE, WindowMessage, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-  WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP,
+  CS_HREDRAW, CS_VREDRAW, HMENU, MSG, PM_REMOVE, SW_SHOWNOACTIVATE,
+  WINDOW_EX_STYLE, WINDOW_STYLE, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+  WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
   WS_VISIBLE,
 };
 
@@ -61,8 +61,8 @@ unsafe extern "system" fn highlight_wndproc(
       rect.right = width;
       rect.bottom = height;
 
-      let brush = CreateSolidBrush(0x0000FF); // red
-      let border_brush = CreateSolidBrush(0x0000FF); // red border
+      let brush = CreateSolidBrush(COLORREF(0x0000FF));
+      let border_brush = CreateSolidBrush(COLORREF(0x0000FF));
 
       // Fill border: top, bottom, left, right stripes
       let border_thickness = 3;
@@ -92,7 +92,7 @@ fn run_message_loop_for(hwnd: HWND, duration_ms: u32) {
     loop {
       let mut msg = MSG::default();
       if PeekMessageW(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
-        TranslateMessage(&msg);
+        let _ = TranslateMessage(&msg);
         DispatchMessageW(&msg);
       }
       if msg.message == 0x0012 { // WM_QUIT
@@ -146,22 +146,21 @@ pub async fn highlight_element(
       top,
       width,
       height,
-      HWND::default(),
-      HMENU::default(),
-      HINSTANCE::default(),
       None,
-    );
-    if h.is_invalid() {
-      return Err(napi_error("Failed to create highlight overlay window"));
-    }
-    ShowWindow(h, SW_SHOWNOACTIVATE);
+      None::<HMENU>,
+      None::<HINSTANCE>,
+      None::<*const std::ffi::c_void>,
+    )
+    .map_err(|_| napi_error("Failed to create highlight overlay window"))?;
+    let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
     h
   };
 
   let (tx, rx) = oneshot::channel::<()>();
-  let overlay_for_thread = overlay;
+  let overlay_raw = overlay.0 as usize;
 
   tokio::task::spawn_blocking(move || {
+    let overlay_for_thread = HWND(overlay_raw as *mut core::ffi::c_void);
     run_message_loop_for(overlay_for_thread, duration);
     unsafe {
       let _ = DestroyWindow(overlay_for_thread);

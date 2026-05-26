@@ -1,5 +1,5 @@
 import type { Backend } from "./backend";
-import type { DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, NativeBindings, ProcessEntry } from "./types";
+import type { DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, NativeBindings, ProcessEntry } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 
 export class NativeBackend implements Backend {
@@ -312,5 +312,19 @@ export class NativeBackend implements Backend {
       throw new Error("highlightElement is not available in the loaded native module.");
     }
     return this.native.highlightElement(elementHandle, color ?? null, durationMs ?? null);
+  }
+
+  buildElementPath(elementHandle: string): ElementPathStep[] {
+    if (!this.native.buildElementPath) {
+      throw new Error("buildElementPath is not available in the loaded native module.");
+    }
+    return this.native.buildElementPath(elementHandle);
+  }
+
+  async resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null> {
+    if (!this.native.resolveElementPath) {
+      throw new Error("resolveElementPath is not available in the loaded native module.");
+    }
+    return this.native.resolveElementPath(windowHandle, path);
   }
 }

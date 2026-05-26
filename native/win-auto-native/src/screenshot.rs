@@ -2,7 +2,7 @@ use napi::{Result};
 use napi_derive::napi;
 use image::{ImageBuffer, ImageEncoder, Rgba};
 use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
+use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HGDIOBJ, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
 
 use crate::error::napi_error;
 use crate::utils::parse_hwnd;
@@ -30,37 +30,37 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
       return Err(napi_error("Invalid window bounds for screenshot"));
     }
 
-    let hdc_window = GetWindowDC(hwnd);
+    let hdc_window = GetWindowDC(Some(hwnd));
     if hdc_window.is_invalid() {
       return Err(napi_error("Failed to get window device context"));
     }
 
-    let hdc_mem = CreateCompatibleDC(hdc_window);
+    let hdc_mem = CreateCompatibleDC(Some(hdc_window));
     if hdc_mem.is_invalid() {
-      ReleaseDC(hwnd, hdc_window);
+      ReleaseDC(Some(hwnd), hdc_window);
       return Err(napi_error("Failed to create compatible DC"));
     }
 
     let hbitmap = CreateCompatibleBitmap(hdc_window, width, height);
     if hbitmap.is_invalid() {
       let _ = DeleteDC(hdc_mem);
-      let _ = ReleaseDC(hwnd, hdc_window);
+      let _ = ReleaseDC(Some(hwnd), hdc_window);
       return Err(napi_error("Failed to create compatible bitmap"));
     }
 
-    let old_obj = SelectObject(hdc_mem, hbitmap);
+    let old_obj = SelectObject(hdc_mem, HGDIOBJ::from(hbitmap));
     if old_obj.is_invalid() {
-      let _ = DeleteObject(hbitmap);
+      let _ = DeleteObject(HGDIOBJ::from(hbitmap));
       let _ = DeleteDC(hdc_mem);
-      let _ = ReleaseDC(hwnd, hdc_window);
+      let _ = ReleaseDC(Some(hwnd), hdc_window);
       return Err(napi_error("Failed to select bitmap into DC"));
     }
 
-    if BitBlt(hdc_mem, 0, 0, width, height, hdc_window, 0, 0, SRCCOPY).is_err() {
+    if BitBlt(hdc_mem, 0, 0, width, height, Some(hdc_window), 0, 0, SRCCOPY).is_err() {
       let _ = SelectObject(hdc_mem, old_obj);
-      let _ = DeleteObject(hbitmap);
+      let _ = DeleteObject(HGDIOBJ::from(hbitmap));
       let _ = DeleteDC(hdc_mem);
-      let _ = ReleaseDC(hwnd, hdc_window);
+      let _ = ReleaseDC(Some(hwnd), hdc_window);
       return Err(napi_error("Failed to capture window bitmap"));
     }
 
@@ -97,9 +97,9 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
     );
 
     let _ = SelectObject(hdc_mem, old_obj);
-    let _ = DeleteObject(hbitmap);
+    let _ = DeleteObject(HGDIOBJ::from(hbitmap));
     let _ = DeleteDC(hdc_mem);
-    let _ = ReleaseDC(hwnd, hdc_window);
+    let _ = ReleaseDC(Some(hwnd), hdc_window);
 
     if result == 0 {
       return Err(napi_error("Failed to read bitmap pixels"));

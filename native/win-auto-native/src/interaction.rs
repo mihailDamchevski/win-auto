@@ -1,9 +1,9 @@
-use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
 use tracing::{info, debug};
-use windows::core::{BSTR, VARIANT};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, WPARAM};
+use windows::core::BSTR;
+use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::System::Variant::VARIANT;
 
 use windows::Win32::UI::Accessibility::{
   IUIAutomation, IUIAutomationCondition, IUIAutomationElement, IUIAutomationInvokePattern,
@@ -298,7 +298,7 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
   let wide = to_wide_null_terminated(&text);
   // SAFETY: SendMessageW with WM_SETTEXT is safe; hwnd is valid, wide buffer is null-terminated.
   unsafe {
-    SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
+    SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
   }
   Ok(())
 }
@@ -358,7 +358,7 @@ pub async fn press_key_codes(window_handle: String, key_codes: Vec<i32>) -> Resu
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -424,14 +424,14 @@ pub async fn get_text(element_handle: String) -> Result<String> {
   // Fallback: WM_GETTEXT for standard Windows controls
   tracing::warn!("UIA ValuePattern.CurrentValue failed for hwnd={element_handle}, falling back to WM_GETTEXT");
   unsafe {
-    let len = SendMessageW(hwnd, WM_GETTEXT, WPARAM(0), LPARAM(0)).0;
+    let len = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(0)), Some(LPARAM(0))).0;
     if len > 0 {
       let mut buffer = vec![0u16; (len + 1) as usize];
       let copied = SendMessageW(
         hwnd,
         WM_GETTEXT,
-        WPARAM(buffer.len() as _),
-        LPARAM(buffer.as_mut_ptr() as isize),
+        Some(WPARAM(buffer.len() as _)),
+        Some(LPARAM(buffer.as_mut_ptr() as isize)),
       );
       if copied.0 > 0 {
         return Ok(String::from_utf16_lossy(&buffer[..copied.0 as usize]));
@@ -713,8 +713,166 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
         )));
       }
     }
+  }
 
-    Ok(())
+  Ok(())
+}
+
+#[napi(object)]
+pub struct ElementPathStep {
+  pub role: String,
+  pub name: String,
+  pub automation_id: String,
+  pub class_name: String,
+  pub sibling_index: i32,
+}
+
+#[napi(js_name = "buildElementPath")]
+pub fn build_element_path(element_handle: String) -> Result<Vec<ElementPathStep>> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let _com_init = crate::utils::ComGuard::init();
+    let automation = create_uia()?;
+    let true_condition = automation.CreateTrueCondition()
+      .map_err(|err| napi_error(format!("CreateTrueCondition failed: {err}")))?;
+    let walker = automation.CreateTreeWalker(&true_condition)
+      .map_err(|err| napi_error(format!("CreateTreeWalker failed: {err}")))?;
+
+    let mut path: Vec<ElementPathStep> = Vec::new();
+    let mut current = automation.ElementFromHandle(hwnd)
+      .map_err(|err| napi_error(format!("ElementFromHandle failed: {err}")))?;
+
+    loop {
+      // Read properties of current element
+      let role = current.CurrentAriaRole()
+        .ok().map(|s| s.to_string()).unwrap_or_default();
+      let name = current.CurrentName()
+        .ok().map(|s| s.to_string()).unwrap_or_default();
+      let automation_id = current.CurrentAutomationId()
+        .ok().map(|s| s.to_string()).unwrap_or_default();
+      let class_name = current.CurrentClassName()
+        .ok().map(|s| s.to_string()).unwrap_or_default();
+
+      // Get parent
+      let parent = walker.GetParentElement(&current);
+      match parent {
+        Ok(parent_element) => {
+          // Find sibling index by enumerating all parent's children
+          let mut sibling_index = 0i32;
+          if let Ok(children) = parent_element.FindAll(TreeScope_Children, &true_condition) {
+            if let Ok(length) = children.Length() {
+              for i in 0..length {
+                if let Ok(child) = children.GetElement(i) {
+                  // Compare handles
+                  if let Ok(child_hwnd) = child.CurrentNativeWindowHandle() {
+                    if let Ok(current_hwnd) = current.CurrentNativeWindowHandle() {
+                      if child_hwnd == current_hwnd {
+                        sibling_index = i as i32;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          path.push(ElementPathStep {
+            role,
+            name,
+            automation_id,
+            class_name,
+            sibling_index,
+          });
+
+          current = parent_element;
+        }
+        Err(_) => {
+          // No parent — add final step and stop
+          path.push(ElementPathStep {
+            role,
+            name,
+            automation_id,
+            class_name,
+            sibling_index: 0,
+          });
+          break;
+        }
+      }
+
+      if path.len() > 100 {
+        break; // Safety limit
+      }
+    }
+
+    // Path is built from target up to root — reverse for root→target order
+    path.reverse();
+    Ok(path)
+  }
+}
+
+#[napi(js_name = "resolveElementPath")]
+pub async fn resolve_element_path(window_handle: String, path: Vec<ElementPathStep>) -> Result<Option<String>> {
+  let hwnd = parse_hwnd(&window_handle)?;
+  unsafe {
+    let _com_init = crate::utils::ComGuard::init();
+    let automation = create_uia()?;
+    let true_condition = automation.CreateTrueCondition()
+      .map_err(|err| napi_error(format!("CreateTrueCondition failed: {err}")))?;
+
+    let mut current = automation.ElementFromHandle(hwnd)
+      .map_err(|err| napi_error(format!("ElementFromHandle failed: {err}")))?;
+
+    for step in &path {
+      let mut found = false;
+      if let Ok(children) = current.FindAll(TreeScope_Children, &true_condition) {
+        if let Ok(length) = children.Length() {
+          for i in 0..length {
+            if let Ok(child) = children.GetElement(i) {
+              // Match by properties
+              let matches = {
+                let child_role = child.CurrentAriaRole()
+                  .ok().map(|s| s.to_string()).unwrap_or_default();
+                let child_name = child.CurrentName()
+                  .ok().map(|s| s.to_string()).unwrap_or_default();
+                let child_aid = child.CurrentAutomationId()
+                  .ok().map(|s| s.to_string()).unwrap_or_default();
+                let child_class = child.CurrentClassName()
+                  .ok().map(|s| s.to_string()).unwrap_or_default();
+
+                // Use sibling index if properties are ambiguous
+                if !step.role.is_empty() && child_role != step.role { continue; }
+                if !step.name.is_empty() && child_name != step.name { continue; }
+                if !step.automation_id.is_empty() && child_aid != step.automation_id { continue; }
+                if !step.class_name.is_empty() && child_class != step.class_name { continue; }
+
+                // If all properties match, check sibling index
+                if i as i32 == step.sibling_index {
+                  true
+                } else {
+                  // If sibling index doesn't match but properties do, this might still be the right element
+                  // if the tree structure changed. Use properties only as fallback.
+                  false
+                }
+              };
+
+              if matches {
+                current = child;
+                found = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if !found {
+        return Ok(None);
+      }
+    }
+
+    let result_hwnd = current.CurrentNativeWindowHandle().ok();
+    Ok(result_hwnd.map(|h| hwnd_to_string(h)))
   }
 }
 
@@ -764,7 +922,7 @@ pub async fn scroll_element(element_handle: String, direction: String, amount: i
 
   unsafe {
     for _ in 0..amount {
-      SendMessageW(hwnd, msg, wparam, LPARAM(0));
+      SendMessageW(hwnd, msg, Some(wparam), Some(LPARAM(0)));
     }
   }
   Ok(())
@@ -878,7 +1036,7 @@ pub async fn find_all(
   if !classes.is_empty() {
     fn collect_by_class(parent: HWND, classes: &[String], out: &mut Vec<HWND>) {
       unsafe {
-        let mut child = FindWindowExW(parent, HWND(null_mut()), None, None).ok();
+        let mut child = FindWindowExW(Some(parent), None, None, None).ok();
         while let Some(current) = child {
           if current.is_invalid() { break; }
           let class_name = crate::utils::get_class_name(current);
@@ -888,7 +1046,7 @@ pub async fn find_all(
             }
           }
           collect_by_class(current, classes, out);
-          child = FindWindowExW(parent, current, None, None).ok();
+          child = FindWindowExW(Some(parent), Some(current), None, None).ok();
         }
       }
     }
@@ -1199,7 +1357,7 @@ pub async fn set_window_bounds(
       logical_to_physical(hwnd, top),
       logical_to_physical(hwnd, width),
       logical_to_physical(hwnd, height),
-      BOOL(1),
+      true,
     )
     .map_err(|err| napi_error(format!("Failed to set window bounds: {err}")))?;
   }
@@ -1211,7 +1369,7 @@ pub async fn focus_window(window_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_SHOW);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   Ok(())
@@ -1364,7 +1522,7 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1515,7 +1673,7 @@ pub async fn key_down(window_handle: String, key: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1530,7 +1688,7 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1560,7 +1718,7 @@ pub async fn select_text(element_handle: String) -> Result<()> {
   // Fallback: focus + Ctrl+A
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1607,7 +1765,7 @@ pub async fn replace_selected_text(element_handle: String, text: String) -> Resu
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
-    SwitchToThisWindow(hwnd, BOOL(1));
+    SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
   let _ = hwnd;
@@ -1615,7 +1773,7 @@ pub async fn replace_selected_text(element_handle: String, text: String) -> Resu
   let hwnd = parse_hwnd(&element_handle)?;
   let wide = to_wide_null_terminated(&text);
   unsafe {
-    SendMessageW(hwnd, WM_SETTEXT, WPARAM(0), LPARAM(wide.as_ptr() as isize));
+    SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
   }
   Ok(())
 }
@@ -1742,10 +1900,10 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
           }
         }
         // Fallback: WM_GETTEXT
-        let len = SendMessageW(hwnd, WM_GETTEXT, WPARAM(0), LPARAM(0)).0;
+        let len = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(0)), Some(LPARAM(0))).0;
         if len > 0 {
           let mut buffer = vec![0u16; (len + 1) as usize];
-          let copied = SendMessageW(hwnd, WM_GETTEXT, WPARAM(buffer.len() as _), LPARAM(buffer.as_mut_ptr() as isize));
+          let copied = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(buffer.len() as _)), Some(LPARAM(buffer.as_mut_ptr() as isize)));
           if copied.0 > 0 {
             return Ok(String::from_utf16_lossy(&buffer[..copied.0 as usize]));
           }

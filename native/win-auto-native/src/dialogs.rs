@@ -1,4 +1,3 @@
-use std::ptr::null_mut;
 use napi::{Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::HWND;
@@ -55,7 +54,7 @@ pub fn get_dialog_controls(window_handle: String) -> Result<Vec<DialogControl>> 
 
   // SAFETY: hwnd is a valid dialog HWND from parse_hwnd; FindWindowExW enumerates child windows.
   unsafe {
-    let mut child = FindWindowExW(hwnd, HWND(null_mut()), None, None).ok();
+    let mut child = FindWindowExW(Some(hwnd), None, None, None).ok();
     while let Some(current) = child {
       if current.is_invalid() {
         break;
@@ -83,7 +82,7 @@ pub fn get_dialog_controls(window_handle: String) -> Result<Vec<DialogControl>> 
         });
       }
 
-      let nested = FindWindowExW(current, HWND(null_mut()), None, None).ok();
+      let nested = FindWindowExW(Some(current), None, None, None).ok();
       if let Some(nested_hwnd) = nested {
         if !nested_hwnd.is_invalid() {
           let nested_class = get_class_name(nested_hwnd);
@@ -103,7 +102,7 @@ pub fn get_dialog_controls(window_handle: String) -> Result<Vec<DialogControl>> 
         }
       }
 
-      child = FindWindowExW(hwnd, current, None, None).ok();
+      child = FindWindowExW(Some(hwnd), Some(current), None, None).ok();
     }
   }
 

@@ -6,7 +6,7 @@ import {
   createDefaultElement, createDefaultWindow, createDefaultApp,
 } from "./mockRuntime";
 import type {
-  DialogControl, DialogInfo, ElementNode, HwndNode, ImageMatch, MatchMode, ProcessEntry, WindowBounds, WindowDebugInfo,
+  DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, MatchMode, ProcessEntry, WindowBounds, WindowDebugInfo,
 } from "../api/types";
 
 const MOCK_DELAY_MS = 5;
@@ -825,6 +825,57 @@ export class MockBackend implements Backend {
 
   async highlightElement(_elementHandle: string, _color?: string | null, _durationMs?: number | null): Promise<void> {
     await delay();
+  }
+
+  buildElementPath(elementHandle: string): ElementPathStep[] {
+    const el = this.elementHandleToEl.get(elementHandle);
+    if (!el) return [];
+    // Walk up the parent chain (element parent -> window -> ...)
+    const steps: ElementPathStep[] = [];
+    let currentHandle: string | null = elementHandle;
+    while (currentHandle) {
+      const currentEl = this.elementHandleToEl.get(currentHandle);
+      if (currentEl) {
+        steps.push({
+          role: currentEl.selector.role ?? "",
+          name: currentEl.selector.name ?? "",
+          automationId: currentEl.selector.automationId ?? "",
+          className: currentEl.selector.className ?? "",
+          siblingIndex: 0,
+        });
+        currentHandle = currentEl.parentHandle;
+      } else {
+        break;
+      }
+    }
+    steps.reverse();
+    return steps;
+  }
+
+  async resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null> {
+    // Find all elements in the window that match the first path step
+    const win = this.windowHandleToWin.get(windowHandle);
+    if (!win || path.length === 0) return null;
+
+    let candidates = win.elements.filter((el) => {
+      for (const step of path) {
+        if (step.role && el.selector.role !== step.role) return false;
+        if (step.name && el.selector.name !== step.name) return false;
+        if (step.automationId && el.selector.automationId !== step.automationId) return false;
+        if (step.className && el.selector.className !== step.className) return false;
+      }
+      return true;
+    });
+
+    if (candidates.length === 0) return null;
+
+    // For the last step, check sibling index
+    const lastStep = path[path.length - 1];
+    if (lastStep.siblingIndex >= 0 && lastStep.siblingIndex < candidates.length) {
+      return this.ensureElementHandle(candidates[lastStep.siblingIndex]);
+    }
+
+    return this.ensureElementHandle(candidates[0]);
   }
 
   debugDiscovery(processId: number): WindowDebugInfo[] {

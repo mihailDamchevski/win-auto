@@ -1,6 +1,6 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementNode, ElementSelector, FindFirstOptions, HwndNode, ImageMatch, LocatorFilter, WindowBounds } from "./types";
+import type { ElementNode, ElementPath, ElementSelector, FindFirstOptions, HwndNode, ImageMatch, LocatorFilter, WindowBounds } from "./types";
 import { Element } from "./element";
 import { Locator } from "./locator";
 import { classNamesForSelector } from "../native/classNames";
@@ -195,6 +195,20 @@ export class Window {
       throw new Error(`Element not found for highlight`);
     }
     await element.highlight(options?.color, options?.durationMs);
+  }
+
+  /** Resolve a stable element path (obtained via Element.getPath()) to a live Element.
+   *  Useful for re-identifying elements after app restart. */
+  public async resolvePath(path: ElementPath): Promise<Element | null> {
+    const handle = await this.backend.resolveElementPath(this.handle, path);
+    if (!handle) return null;
+    return new Element(handle, this.handle, this.backend, this.events);
+  }
+
+  /** Create a Locator scoped within a container element.
+   *  Usage: `win.within({ name: "Address" }).locator({ role: "textbox" }).find()` */
+  public within(selector: ElementSelector): Locator {
+    return new Locator(this.handle, this.backend, this.events, [], [], null, selector);
   }
 
   public inspectTree(maxDepth?: number): ElementNode[] {

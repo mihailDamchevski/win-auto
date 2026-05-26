@@ -61,6 +61,7 @@ export class Locator {
   private readonly strategies: LocatorStrategy[];
   private readonly filters: LocatorFilter[];
   private readonly positional: PositionalSelector | null;
+  private readonly scopeSelector: ElementSelector | null;
 
   constructor(
     windowHandle: string,
@@ -69,6 +70,7 @@ export class Locator {
     strategies: LocatorStrategy[] = [],
     filters: LocatorFilter[] = [],
     positional: PositionalSelector | null = null,
+    scopeSelector: ElementSelector | null = null,
   ) {
     this.windowHandle = windowHandle;
     this.backend = backend;
@@ -76,6 +78,7 @@ export class Locator {
     this.strategies = strategies;
     this.filters = filters;
     this.positional = positional;
+    this.scopeSelector = scopeSelector;
   }
 
   /** Add a selector strategy. Can be chained for OR logic (multi-selector). */
@@ -108,6 +111,7 @@ export class Locator {
       this.strategies,
       [...this.filters, f],
       this.positional,
+      this.scopeSelector,
     );
   }
 
@@ -256,6 +260,21 @@ export class Locator {
     return new Locator(el.handle, this.backend, this.events, [{ type: "selector", selector }]);
   }
 
+  /** Set a scope container for relative/structural queries.
+   *  When set, all selector strategies will search within this container instead of the window root.
+   *  Usage: `win.within({ name: "Address" }).locator({ role: "textbox" }).find()` */
+  within(selector: ElementSelector): Locator {
+    return new Locator(
+      this.windowHandle,
+      this.backend,
+      this.events,
+      this.strategies,
+      this.filters,
+      this.positional,
+      selector,
+    );
+  }
+
   // --- Private helpers ---
 
   private newWithStrategy(strategy: LocatorStrategy): Locator {
@@ -266,6 +285,7 @@ export class Locator {
       [...this.strategies, strategy],
       this.filters,
       this.positional,
+      this.scopeSelector,
     );
   }
 
@@ -277,13 +297,21 @@ export class Locator {
       this.strategies,
       this.filters,
       p,
+      this.scopeSelector,
     );
   }
 
   private async findBySelector(selector: ElementSelector): Promise<Element | null> {
-    // 1) Find all matching handles
+    // Resolve scope container first if set
+    const searchHandle = this.scopeSelector
+      ? await this.resolveScopeHandle()
+      : this.windowHandle;
+
+    if (searchHandle === null) return null;
+
+    // 1) Find all matching handles within the scope
     const handles = await this.backend.findAll(
-      this.windowHandle,
+      searchHandle,
       classNamesForSelector(selector),
       selector.automationId,
       selector.name,
@@ -374,5 +402,20 @@ export class Locator {
       () => this.backend.findImage(this.windowHandle, template),
       options,
     ).catch(() => null);
+  }
+
+  private async resolveScopeHandle(): Promise<string | null> {
+    if (!this.scopeSelector) return this.windowHandle;
+    const handle = await this.backend.findElement(
+      this.windowHandle,
+      classNamesForSelector(this.scopeSelector),
+      this.scopeSelector.automationId,
+      this.scopeSelector.name,
+      this.scopeSelector.role,
+      this.scopeSelector.className,
+      this.scopeSelector.text,
+      this.scopeSelector.matchMode,
+    );
+    return handle;
   }
 }

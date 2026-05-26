@@ -10,5 +10,5 @@ export { NativeBackend } from "./api/native-backend";
 export { MockBackend } from "./mock/mockBackend";
 export { AutomationEvents } from "./api/events";
 export type { Backend } from "./api/backend";
-export type { AppSelector, ElementSelector, ElementNode, HwndNode, ImageMatch, LaunchOptions, LocatorFilter, MatchMode, ProcessEntry, WaitOptions, WindowBounds } from "./api/types";
+export type { AppSelector, ElementSelector, ElementNode, ElementPathStep, ElementPath, HwndNode, ImageMatch, LaunchOptions, LocatorFilter, MatchMode, ProcessEntry, WaitOptions, WindowBounds } from "./api/types";
 export type { AutomationEventType } from "./api/events";
