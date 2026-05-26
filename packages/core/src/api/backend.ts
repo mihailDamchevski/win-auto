@@ -81,4 +81,5 @@ export interface Backend {
   inspectWindowTree(windowHandle: string, maxDepth?: number): ElementNode[];
   inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[];
   debugDiscovery(processId: number): WindowDebugInfo[];
+  highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void>;
 }

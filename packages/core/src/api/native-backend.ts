@@ -306,4 +306,11 @@ export class NativeBackend implements Backend {
     }
     return this.native.debugDiscovery(processId);
   }
+
+  async highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void> {
+    if (!this.native.highlightElement) {
+      throw new Error("highlightElement is not available in the loaded native module.");
+    }
+    return this.native.highlightElement(elementHandle, color ?? null, durationMs ?? null);
+  }
 }

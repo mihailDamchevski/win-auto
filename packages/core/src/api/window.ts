@@ -189,6 +189,14 @@ export class Window {
     await this.backend.focusWindow(this.handle);
   }
 
+  public async highlightElement(selector: ElementSelector, options?: { color?: string; durationMs?: number }): Promise<void> {
+    const element = await this.findElement(selector);
+    if (!element) {
+      throw new Error(`Element not found for highlight`);
+    }
+    await element.highlight(options?.color, options?.durationMs);
+  }
+
   public inspectTree(maxDepth?: number): ElementNode[] {
     return this.backend.inspectWindowTree(this.handle, maxDepth);
   }

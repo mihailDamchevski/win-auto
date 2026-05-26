@@ -161,6 +161,7 @@ pub async fn close_window(window_handle: String) -> Result<()> {
       }
     }
   }
+  tracing::warn!("UIA WindowPattern.Close failed for hwnd={window_handle}, falling back to PostMessageW WM_CLOSE");
   // SAFETY: hwnd is a valid window handle; PostMessageW is inherently unsafe.
   unsafe {
     let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));

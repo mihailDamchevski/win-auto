@@ -1,6 +1,6 @@
 import type { Backend } from "../api/backend";
 import type {
-  MockAppRecord, MockWindowRecord, MockElementRecord,
+  MockAppRecord, MockWindowRecord, MockElementRecord, MockTreeElement,
 } from "./mockRuntime";
 import {
   createDefaultElement, createDefaultWindow, createDefaultApp,
@@ -822,6 +822,10 @@ export class MockBackend implements Backend {
   }
 
   // --- debug ---
+
+  async highlightElement(_elementHandle: string, _color?: string | null, _durationMs?: number | null): Promise<void> {
+    await delay();
+  }
 
   debugDiscovery(processId: number): WindowDebugInfo[] {
     const app = this.pidToApp.get(processId);

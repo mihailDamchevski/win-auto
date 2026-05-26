@@ -149,6 +149,7 @@ export type NativeBindings = {
   replaceSelectedText: (elementHandle: string, text: string) => Promise<void>;
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
   inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
+  highlightElement?: (elementHandle: string, color?: string | null, durationMs?: number | null) => Promise<void>;
 };
 
 export type ProcessEntry = {

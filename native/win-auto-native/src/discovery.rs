@@ -241,6 +241,7 @@ pub fn discover_windows_for_pid(process_id: u32, executable: Option<&str>) -> Ve
     }
   }
 
+  tracing::warn!("UIA window discovery failed for pid={process_id}, falling back to Win32 EnumWindows");
   let strict = enumerate_windows_strict_pid(process_id);
   if !strict.is_empty() {
     return finalize_discovered_windows(strict);

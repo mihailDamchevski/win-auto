@@ -4,11 +4,11 @@ import type { ElementSelector } from "./types";
 import { classNamesForSelector } from "../native/classNames";
 
 export class Element {
-  public readonly handle: string;
-  private readonly windowHandle: string;
-  private readonly backend: Backend;
-  private readonly events: AutomationEvents;
-  private readonly originalSelector?: ElementSelector;
+  public handle: string;
+  public readonly windowHandle: string;
+  public readonly backend: Backend;
+  public readonly events: AutomationEvents;
+  public readonly originalSelector?: ElementSelector;
 
   constructor(
     handle: string,
@@ -24,23 +24,117 @@ export class Element {
     this.originalSelector = originalSelector;
   }
 
+  private async tryResolve(): Promise<boolean> {
+    if (!this.originalSelector) {
+      return false;
+    }
+    try {
+      const newHandle = await this.backend.findElement(
+        this.windowHandle,
+        classNamesForSelector(this.originalSelector),
+        this.originalSelector.automationId ?? null,
+        this.originalSelector.name ?? null,
+        this.originalSelector.role ?? null,
+        this.originalSelector.className ?? null,
+        this.originalSelector.text ?? null,
+        this.originalSelector.matchMode ?? null,
+      );
+      if (newHandle && newHandle !== this.handle) {
+        this.handle = newHandle;
+        this.events.emitElementFound(newHandle, this.originalSelector as Record<string, unknown>);
+        return true;
+      }
+      return !!newHandle;
+    } catch {
+      return false;
+    }
+  }
+
+  public async isStale(): Promise<boolean> {
+    if (!this.originalSelector) {
+      return false;
+    }
+    const candidate = await this.backend.findElement(
+      this.windowHandle,
+      classNamesForSelector(this.originalSelector),
+      this.originalSelector.automationId ?? null,
+      this.originalSelector.name ?? null,
+      this.originalSelector.role ?? null,
+      this.originalSelector.className ?? null,
+      this.originalSelector.text ?? null,
+      this.originalSelector.matchMode ?? null,
+    );
+    return candidate !== this.handle;
+  }
+
+  public async resolve(): Promise<Element> {
+    if (this.originalSelector) {
+      const newHandle = await this.backend.findElement(
+        this.windowHandle,
+        classNamesForSelector(this.originalSelector),
+        this.originalSelector.automationId ?? null,
+        this.originalSelector.name ?? null,
+        this.originalSelector.role ?? null,
+        this.originalSelector.className ?? null,
+        this.originalSelector.text ?? null,
+        this.originalSelector.matchMode ?? null,
+      );
+      if (newHandle) {
+        return new Element(newHandle, this.windowHandle, this.backend, this.events, this.originalSelector);
+      }
+    }
+    return this;
+  }
+
   public async click(): Promise<void> {
-    await this.backend.clickElement(this.handle);
+    try {
+      await this.backend.clickElement(this.handle);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        await this.backend.clickElement(this.handle);
+      } else {
+        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      }
+    }
     this.events.emitElementClicked(this.handle);
   }
 
   public async rightClick(): Promise<void> {
-    await this.backend.rightClickElement(this.handle);
+    try {
+      await this.backend.rightClickElement(this.handle);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        await this.backend.rightClickElement(this.handle);
+      } else {
+        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      }
+    }
     this.events.emitElementRightClicked(this.handle);
   }
 
   public async doubleClick(): Promise<void> {
-    await this.backend.doubleClickElement(this.handle);
+    try {
+      await this.backend.doubleClickElement(this.handle);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        await this.backend.doubleClickElement(this.handle);
+      } else {
+        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      }
+    }
     this.events.emitElementDoubleClicked(this.handle);
   }
 
   public async hover(): Promise<void> {
-    await this.backend.hoverElement(this.handle);
+    try {
+      await this.backend.hoverElement(this.handle);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        await this.backend.hoverElement(this.handle);
+      } else {
+        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      }
+    }
     this.events.emitElementHovered(this.handle);
   }
 
@@ -58,7 +152,15 @@ export class Element {
   }
 
   public async typeText(text: string): Promise<void> {
-    await this.backend.typeText(this.handle, text);
+    try {
+      await this.backend.typeText(this.handle, text);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        await this.backend.typeText(this.handle, text);
+      } else {
+        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      }
+    }
     this.events.emitElementTyped(this.handle, text);
   }
 
@@ -67,7 +169,14 @@ export class Element {
   }
 
   public async getText(): Promise<string> {
-    return this.backend.getText(this.handle);
+    try {
+      return await this.backend.getText(this.handle);
+    } catch {
+      if (this.originalSelector && await this.tryResolve()) {
+        return this.backend.getText(this.handle);
+      }
+      throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+    }
   }
 
   public async exists(): Promise<boolean> {
@@ -172,6 +281,10 @@ export class Element {
 
   public async getProperty(name: string): Promise<string> {
     return this.getAttribute(name);
+  }
+
+  public async highlight(color?: string, durationMs?: number): Promise<void> {
+    await this.backend.highlightElement(this.handle, color ?? null, durationMs ?? null);
   }
 
   public async waitForVisible(options?: {

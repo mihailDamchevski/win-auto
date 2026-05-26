@@ -26,7 +26,12 @@ function formatHandle(h: string): string {
   return h.startsWith("0x") ? h : `0x${parseInt(h, 10).toString(16)}`;
 }
 
-export async function inspectCommand(target: string, maxDepth?: number, hwnd?: boolean): Promise<void> {
+export async function inspectCommand(
+  target: string,
+  maxDepth?: number,
+  hwnd?: boolean,
+  highlight?: string,
+): Promise<void> {
   const backend = new NativeBackend();
   const pid = Number(target);
 
@@ -60,6 +65,29 @@ export async function inspectCommand(target: string, maxDepth?: number, hwnd?: b
         process.stdout.write(`  UIA Tree:\n`);
         for (const node of tree) {
           printTree(node, 2);
+        }
+      }
+
+      if (highlight) {
+        const found = await backend.findElement(
+          winHandle,
+          null,
+          null,
+          highlight,
+          null,
+          null,
+          null,
+          "substring",
+        );
+        if (found) {
+          process.stdout.write(`  Highlighting element matching "${highlight}"...\n`);
+          try {
+            await backend.highlightElement(found, null, 3000);
+          } catch (e) {
+            process.stdout.write(`  Highlight failed: ${e}\n`);
+          }
+        } else {
+          process.stdout.write(`  No element found matching "${highlight}" to highlight\n`);
         }
       }
     }
@@ -103,6 +131,29 @@ export async function inspectCommand(target: string, maxDepth?: number, hwnd?: b
         }
       } catch {
         process.stdout.write(`    (tree unavailable)\n`);
+      }
+
+      if (highlight) {
+        const found = await backend.findElement(
+          winHandle,
+          null,
+          null,
+          highlight,
+          null,
+          null,
+          null,
+          "substring",
+        );
+        if (found) {
+          process.stdout.write(`    Highlighting element matching "${highlight}"...\n`);
+          try {
+            await backend.highlightElement(found, null, 3000);
+          } catch (e) {
+            process.stdout.write(`    Highlight failed: ${e}\n`);
+          }
+        } else {
+          process.stdout.write(`    No element found matching "${highlight}" to highlight\n`);
+        }
       }
     }
   }

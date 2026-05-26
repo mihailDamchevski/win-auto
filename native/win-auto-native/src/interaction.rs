@@ -294,6 +294,7 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
     }
   }
   // Fallback: Win32 WM_SETTEXT
+  tracing::warn!("UIA ValuePattern.SetValue failed for hwnd={element_handle}, falling back to WM_SETTEXT");
   let wide = to_wide_null_terminated(&text);
   // SAFETY: SendMessageW with WM_SETTEXT is safe; hwnd is valid, wide buffer is null-terminated.
   unsafe {
@@ -342,6 +343,9 @@ pub async fn send_keys(element_handle: String, text: String) -> Result<()> {
     inputs.push(input_up);
   }
 
+  // SAFETY: SendInput with properly initialized INPUT_KEYBOARD structures is safe;
+  // each keystroke has a paired KEYEVENTF_UNICODE down and KEYEVENTF_KEYUP event,
+  // and the INPUT array length matches the actual struct size.
   unsafe {
     SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
   }
@@ -418,6 +422,7 @@ pub async fn get_text(element_handle: String) -> Result<String> {
   }
 
   // Fallback: WM_GETTEXT for standard Windows controls
+  tracing::warn!("UIA ValuePattern.CurrentValue failed for hwnd={element_handle}, falling back to WM_GETTEXT");
   unsafe {
     let len = SendMessageW(hwnd, WM_GETTEXT, WPARAM(0), LPARAM(0)).0;
     if len > 0 {
@@ -440,6 +445,8 @@ pub async fn get_text(element_handle: String) -> Result<String> {
 #[napi(js_name = "findElementName")]
 pub async fn find_element_name(window_handle: String, name: String) -> Result<Option<String>> {
   let hwnd = parse_hwnd(&window_handle)?;
+  // SAFETY: COM is initialized via ComGuard; create_uia returns a cached or new IUIAutomation.
+  // UIA property conditions and FindAll/FindFirst calls follow the UIA COM ABI.
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
@@ -527,6 +534,7 @@ pub async fn click_element(element_handle: String) -> Result<()> {
     }
   }
   if !cursor_set {
+    tracing::warn!("UIA InvokePattern and bounding rect both failed for hwnd={element_handle}, falling back to Win32 center-of-window click");
     // Last resort: Win32 center-of-window click
     let mut rect = RECT::default();
     unsafe {
@@ -729,6 +737,7 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
     }
   }
   // Fallback: Win32 GetWindowRect
+  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
   unsafe {
     let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
@@ -972,6 +981,9 @@ pub async fn find_all(
   Ok(results.into_iter().map(|h| hwnd_to_string(h)).collect())
 }
 
+// SAFETY: element is a valid IUIAutomationElement from FindAll/FindFirst;
+// CurrentName/CurrentAriaRole/CurrentAutomationId are read-only COM property calls
+// that follow the UIA COM ABI and return BSTR strings.
 unsafe fn check_element_matches(
   element: &IUIAutomationElement,
   automation_id: &Option<String>,
@@ -1109,6 +1121,7 @@ pub async fn is_element_visible(element_handle: String) -> Result<bool> {
         return Ok(!offscreen.as_bool());
       }
     }
+    tracing::warn!("UIA isVisible failed for hwnd={element_handle}, falling back to Win32 IsWindowVisible");
     // Fallback to Win32
     Ok(IsWindowVisible(hwnd).as_bool())
   }
@@ -1125,6 +1138,7 @@ pub async fn is_element_enabled(element_handle: String) -> Result<bool> {
         return Ok(enabled.as_bool());
       }
     }
+    tracing::warn!("UIA isEnabled failed for hwnd={element_handle}, falling back to optimistic default (true)");
     Ok(true)
   }
 }
@@ -1311,6 +1325,9 @@ fn vk_from_name(name: &str) -> Option<u16> {
 }
 
 fn send_key_code(vk: u16, flags: KEYBD_EVENT_FLAGS) {
+  // SAFETY: SendInput with a properly initialized INPUT_KEYBOARD structure is safe;
+  // the INPUT struct is initialized with valid VIRTUAL_KEY and flags, and size_of<INPUT>
+  // matches what the OS expects.
   unsafe {
     let input = INPUT {
       r#type: INPUT_KEYBOARD,
@@ -1415,6 +1432,8 @@ fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
 }
 
 async fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) {
+  // SAFETY: SendInput with properly initialized INPUT_MOUSE structures is safe;
+  // the MOUSEINPUT struct is zero-initialized from make_mouse_input with valid dwFlags.
   unsafe {
     SendInput(
       &[make_mouse_input(flags_down.0)],
@@ -1471,6 +1490,7 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
 
 #[napi(js_name = "mouseMove")]
 pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
+  // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
     SetCursorPos(x, y)
       .map_err(|_| napi_error("Failed to set cursor position"))?;
@@ -1480,6 +1500,7 @@ pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
 
 #[napi(js_name = "clickAt")]
 pub async fn click_at(x: i32, y: i32) -> Result<()> {
+  // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
     SetCursorPos(x, y)
       .map_err(|_| napi_error("Failed to set cursor position"))?;
@@ -1615,6 +1636,9 @@ fn build_element_tree(
   automation: &IUIAutomation,
   max_depth: i32,
 ) -> ElementNode {
+  // SAFETY: element and automation are valid UIA COM objects obtained from create_uia();
+  // Current* property reads and FindAll follow the UIA COM ABI. all.GetElement returns
+  // IUIAutomationElement with correct ref counting.
   unsafe {
     let handle = element.CurrentNativeWindowHandle()
       .ok().map(|h| hwnd_to_string(h)).unwrap_or_default();
@@ -1758,6 +1782,8 @@ pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -
   let to_x = (to_rect.left + to_rect.right) / 2;
   let to_y = (to_rect.top + to_rect.bottom) / 2;
 
+  // SAFETY: SetCursorPos and SendInput are safe; coordinates are from valid GetWindowRect calls,
+  // INPUT structures are initialized via make_mouse_input with correct MOUSE_EVENT_FLAGS.
   unsafe {
     SetCursorPos(from_x, from_y).map_err(|_| napi_error("Failed to position cursor"))?;
     SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTDOWN.0)], std::mem::size_of::<INPUT>() as i32);
