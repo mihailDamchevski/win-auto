@@ -45,6 +45,7 @@ export interface HwndNode {
  * hierarchy with class names and window text — essential for legacy app debugging.
  */
 export declare function inspectHwndTree(windowHandle: string, maxDepth?: number | undefined | null): Array<HwndNode>
+export declare function highlightElement(elementHandle: string, color?: string | undefined | null, durationMs?: number | undefined | null): Promise<void>
 export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
 export declare function typeText(elementHandle: string, text: string): Promise<void>
 export declare function sendKeys(elementHandle: string, text: string): Promise<void>
@@ -59,6 +60,15 @@ export declare function clickElementByName(windowHandle: string, name: string): 
  * it only enumerates the UIA tree once instead of N times.
  */
 export declare function clickSequence(windowHandle: string, names: Array<string>): Promise<void>
+export interface ElementPathStep {
+  role: string
+  name: string
+  automationId: string
+  className: string
+  siblingIndex: number
+}
+export declare function buildElementPath(elementHandle: string): Array<ElementPathStep>
+export declare function resolveElementPath(windowHandle: string, path: Array<ElementPathStep>): Promise<string | null>
 export declare function hoverElement(elementHandle: string): Promise<void>
 export declare function scrollElement(elementHandle: string, direction: string, amount: number): Promise<void>
 export declare function getValue(elementHandle: string): Promise<string>

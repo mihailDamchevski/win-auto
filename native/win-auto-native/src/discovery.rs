@@ -205,6 +205,7 @@ pub fn enumerate_windows_by_image_suffix(image_suffix: &str) -> Vec<HWND> {
     .collect()
 }
 
+#[allow(dead_code)]
 pub fn enumerate_windows_by_class_names(class_names: &[&str]) -> Vec<HWND> {
   collect_all_top_level_windows()
     .into_iter()

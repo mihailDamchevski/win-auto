@@ -1573,6 +1573,7 @@ fn make_mouse_input(flags: u32) -> INPUT {
   }
 }
 
+#[allow(dead_code)]
 fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
   INPUT {
     r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE,

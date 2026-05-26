@@ -94,7 +94,7 @@ async fn close_app_internal(process_id: u32) -> Result<()> {
 #[napi]
 pub async fn launch(
   executable_path: Option<String>,
-  class_names: Option<Vec<String>>,
+  _class_names: Option<Vec<String>>,
 ) -> Result<u32> {
   info!("launch executable_path={executable_path:?}");
   let path = executable_path

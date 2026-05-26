@@ -5,7 +5,7 @@ use napi_derive::napi;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-  BeginPaint, CreateSolidBrush, EndPaint, FillRect, HDC, HBRUSH, PAINTSTRUCT,
+  BeginPaint, CreateSolidBrush, EndPaint, FillRect, HBRUSH, PAINTSTRUCT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
   CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
@@ -56,12 +56,8 @@ unsafe extern "system" fn highlight_wndproc(
       let _ = GetWindowRect(hwnd, &mut rect);
       let width = rect.right - rect.left;
       let height = rect.bottom - rect.top;
-      rect.left = 0;
-      rect.top = 0;
-      rect.right = width;
-      rect.bottom = height;
 
-      let brush = CreateSolidBrush(COLORREF(0x0000FF));
+      let _brush = CreateSolidBrush(COLORREF(0x0000FF));
       let border_brush = CreateSolidBrush(COLORREF(0x0000FF));
 
       // Fill border: top, bottom, left, right stripes
@@ -116,7 +112,7 @@ pub async fn highlight_element(
   let _color_str = color.unwrap_or_else(|| "#FF0000".to_string());
   let duration = duration_ms.unwrap_or(2000).max(100) as u32;
 
-  let (rect, atom, wide_class) = unsafe {
+  let (rect, _atom, wide_class) = unsafe {
     let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
       return Err(napi_error("Failed to get window rectangle for highlight"));

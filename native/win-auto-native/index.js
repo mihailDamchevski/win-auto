@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { setAppConfig, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, debugDiscovery, inspectHwndTree, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, getWindowBounds, setWindowBounds, focusWindow, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, clickAt, keyDown, keyUp, selectText, getSelection, replaceSelectedText, inspectWindowTree, getElementAttribute, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess, captureScreenshot, captureScreenshotToFile, findImage } = nativeBinding
+const { setAppConfig, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, debugDiscovery, inspectHwndTree, highlightElement, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, buildElementPath, resolveElementPath, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, getWindowBounds, setWindowBounds, focusWindow, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, clickAt, keyDown, keyUp, selectText, getSelection, replaceSelectedText, inspectWindowTree, getElementAttribute, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess, captureScreenshot, captureScreenshotToFile, findImage } = nativeBinding
 
 module.exports.setAppConfig = setAppConfig
 module.exports.findDialogs = findDialogs
@@ -319,6 +319,7 @@ module.exports.clickDialogButton = clickDialogButton
 module.exports.setDialogFilePath = setDialogFilePath
 module.exports.debugDiscovery = debugDiscovery
 module.exports.inspectHwndTree = inspectHwndTree
+module.exports.highlightElement = highlightElement
 module.exports.findElement = findElement
 module.exports.typeText = typeText
 module.exports.sendKeys = sendKeys
@@ -328,6 +329,8 @@ module.exports.findElementName = findElementName
 module.exports.clickElement = clickElement
 module.exports.clickElementByName = clickElementByName
 module.exports.clickSequence = clickSequence
+module.exports.buildElementPath = buildElementPath
+module.exports.resolveElementPath = resolveElementPath
 module.exports.hoverElement = hoverElement
 module.exports.scrollElement = scrollElement
 module.exports.getValue = getValue
