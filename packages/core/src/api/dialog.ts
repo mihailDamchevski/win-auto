@@ -33,6 +33,15 @@ export class Dialog {
     await this.clickButton("Cancel");
   }
 
+  public async pressKey(keyCombination: string): Promise<void> {
+    await this.backend.pressKey(this.handle, keyCombination);
+  }
+
+  public async typeText(text: string): Promise<void> {
+    this.events.emitDebug(`Typing text into dialog: "${text}"`, { dialog: this.handle });
+    await this.backend.sendKeys(this.handle, text);
+  }
+
   public async selectFile(path: string): Promise<void> {
     this.events.emitDebug(`Setting file path in dialog: ${path}`, { dialog: this.handle });
     await this.backend.setDialogFilePath(this.handle, path);

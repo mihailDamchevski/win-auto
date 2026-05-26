@@ -1,6 +1,9 @@
 use napi::{Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+  INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, SendInput, VIRTUAL_KEY,
+};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, SetForegroundWindow, ShowWindow, SW_NORMAL};
 
 use crate::discovery::collect_windows_for_pid;
@@ -152,15 +155,51 @@ pub async fn set_dialog_file_path(window_handle: String, path: String) -> Result
 
   let controls = get_dialog_controls(window_handle.clone())?;
 
-  // Find the file name edit control (ComboBox32 or Edit sibling)
+  // Helper: type text into the focused control via SendInput (no WM_SETTEXT).
+  async fn type_text_keystrokes(text: &str) {
+    let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
+    for cp in text.encode_utf16() {
+      inputs.push(INPUT {
+        r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+          ki: KEYBDINPUT {
+            wVk: VIRTUAL_KEY(0),
+            wScan: cp,
+            dwFlags: KEYEVENTF_UNICODE,
+            time: 0,
+            dwExtraInfo: 0,
+          },
+        },
+      });
+      inputs.push(INPUT {
+        r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+          ki: KEYBDINPUT {
+            wVk: VIRTUAL_KEY(0),
+            wScan: cp,
+            dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+            time: 0,
+            dwExtraInfo: 0,
+          },
+        },
+      });
+    }
+    // SAFETY: properly initialized INPUT structures for Unicode keyboard input.
+    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32); }
+  }
+
+  // Find the ComboBoxEx32 (filename field in Vista+ file dialogs).
+  // Type the text via keystroke simulation — WM_SETTEXT can confuse the control.
   for control in &controls {
-    if control.control_type == "textbox"
-      || control.control_type == "combobox"
-      || control.control_type.eq_ignore_ascii_case("ComboBox32")
-    {
-      crate::interaction::type_text(control.handle.clone(), path.clone()).await?;
-      // Also try sendKeys for UI that doesn't respond to WM_SETTEXT
-      crate::interaction::send_keys(control.handle.clone(), path.clone()).await?;
+    if control.control_type.eq_ignore_ascii_case("ComboBoxEx32") {
+      type_text_keystrokes(&path).await;
+      return Ok(());
+    }
+  }
+  // Fallback: type into the first textbox/Edit control.
+  for control in &controls {
+    if control.control_type == "textbox" || control.control_type.eq_ignore_ascii_case("Edit") {
+      type_text_keystrokes(&path).await;
       return Ok(());
     }
   }
