@@ -275,6 +275,18 @@ describe("MockBackend", () => {
     it("isFocused returns false for missing element", async () => {
       expect(await backend.isFocused("bad")).toBe(false);
     });
+
+    it("focusElement sets isFocused to true", async () => {
+      const pid = await backend.launch("C:\\mock.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const elHandle = await backend.findElementName(winHandle, "Main Input");
+      await backend.focusElement(elHandle!);
+      expect(await backend.isFocused(elHandle!)).toBe(true);
+    });
+
+    it("focusElement throws for missing element", async () => {
+      await expect(backend.focusElement("bad")).rejects.toThrow("Element not found");
+    });
   });
 
   describe("window management", () => {

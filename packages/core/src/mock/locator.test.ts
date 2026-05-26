@@ -101,6 +101,22 @@ describe("Locator", () => {
       await expect(locator.hover({ timeoutMs: 1000 })).resolves.toBeUndefined();
     });
 
+    it("focus on found element", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "Main Input" });
+      await expect(locator.focus({ timeoutMs: 1000 })).resolves.toBeUndefined();
+    });
+
+    it("clear on found element", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "Main Input" });
+      await expect(locator.clear({ timeoutMs: 1000 })).resolves.toBeUndefined();
+    });
+
     it("rightClick on found element", async () => {
       const pid = await backend.launch("C:\\test.exe");
       const [winHandle] = await backend.enumerateWindows(pid);

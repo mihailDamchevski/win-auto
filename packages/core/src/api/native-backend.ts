@@ -159,6 +159,10 @@ export class NativeBackend implements Backend {
     return this.native.isFocused(elementHandle);
   }
 
+  async focusElement(elementHandle: string): Promise<void> {
+    return this.native.focusElement(elementHandle);
+  }
+
   async getWindowBounds(windowHandle: string): Promise<{ left: number; top: number; width: number; height: number }> {
     return this.native.getWindowBounds(windowHandle);
   }

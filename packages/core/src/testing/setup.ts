@@ -1,4 +1,4 @@
-import { afterEach, onTestFailed, describe as vitestDescribe, expect as vitestExpect } from "vitest";
+import { afterEach, beforeEach, onTestFailed, describe as vitestDescribe, expect as vitestExpect } from "vitest";
 import { closeTrackedApps, captureScreenshotsFromTrackedApps } from "./context";
 import { it } from "./vitest";
 import { loadWinAutoConfig } from "../api/config";
@@ -22,11 +22,13 @@ loadWinAutoConfig().then((config) => {
   // config not present or failed to load — use defaults
 });
 
-onTestFailed(async () => {
-  const files = await captureScreenshotsFromTrackedApps();
-  if (files.length > 0) {
-    console.log(`Screenshots saved:\n  ${files.join("\n  ")}`);
-  }
+beforeEach(() => {
+  onTestFailed(async () => {
+    const files = await captureScreenshotsFromTrackedApps();
+    if (files.length > 0) {
+      console.log(`Screenshots saved:\n  ${files.join("\n  ")}`);
+    }
+  });
 });
 
 afterEach(async () => {

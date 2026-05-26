@@ -88,6 +88,7 @@ export declare function getSiblings(elementHandle: string): Promise<Array<string
 export declare function isVisible(elementHandle: string): Promise<boolean>
 export declare function isEnabled(elementHandle: string): Promise<boolean>
 export declare function isFocused(elementHandle: string): Promise<boolean>
+export declare function focusElement(elementHandle: string): Promise<void>
 export interface WindowBounds {
   left: number
   top: number

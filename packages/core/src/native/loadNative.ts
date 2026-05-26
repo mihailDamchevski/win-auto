@@ -72,6 +72,7 @@ const CORE_FUNCTIONS: (keyof NativeBindings)[] = [
 ];
 
 const EXTENDED_FUNCTIONS: (keyof NativeBindings)[] = [
+  "focusElement",
   "focusWindow",
   "rightClickElement",
   "doubleClickElement",

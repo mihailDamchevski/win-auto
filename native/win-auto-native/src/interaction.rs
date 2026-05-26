@@ -1316,6 +1316,23 @@ pub async fn is_element_focused(element_handle: String) -> Result<bool> {
   }
 }
 
+#[napi(js_name = "focusElement")]
+pub async fn focus_element(element_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let _com_init = crate::utils::ComGuard::init();
+    let automation =
+      create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
+    let uia_element = automation
+      .ElementFromHandle(hwnd)
+      .map_err(|err| napi_error(format!("Failed to get UIA element from handle: {err}")))?;
+    uia_element
+      .SetFocus()
+      .map_err(|err| napi_error(format!("Failed to set focus on element: {err}")))?;
+  }
+  Ok(())
+}
+
 #[napi(object)]
 pub struct WindowBounds {
   pub left: i32,

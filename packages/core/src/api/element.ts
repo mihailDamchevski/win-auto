@@ -168,6 +168,29 @@ export class Element {
     return this.typeText(text);
   }
 
+  public async focus(): Promise<void> {
+    await this.backend.focusElement(this.handle);
+    this.events.emitDebug("Element focused", { handle: this.handle });
+  }
+
+  public async clear(): Promise<void> {
+    try {
+      // Prefer UIA ValuePattern.SetValue("")
+      await this.backend.setValue(this.handle, "");
+    } catch {
+      // Fallback: select all + replace with empty
+      try {
+        await this.backend.selectText(this.handle);
+        await this.backend.replaceSelectedText(this.handle, "");
+      } catch {
+        // Last resort: Ctrl+A + Delete
+        await this.backend.pressKeyCodes(this.windowHandle, [65]); // Ctrl+A
+        await this.backend.pressKeyCodes(this.windowHandle, [46]); // Delete
+      }
+    }
+    this.events.emitDebug("Element cleared", { handle: this.handle });
+  }
+
   public async getText(): Promise<string> {
     try {
       return await this.backend.getText(this.handle);

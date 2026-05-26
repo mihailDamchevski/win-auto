@@ -559,6 +559,10 @@ export class MockBackend implements Backend {
     return el?.isFocused ?? false;
   }
 
+  async focusElement(elementHandle: string): Promise<void> {
+    this.setFocused(elementHandle);
+  }
+
   // --- window operations (with state tracking) ---
 
   async getWindowBounds(windowHandle: string): Promise<WindowBounds> {

@@ -116,6 +116,7 @@ export type NativeBindings = {
   isVisible: (elementHandle: string) => Promise<boolean>;
   isEnabled: (elementHandle: string) => Promise<boolean>;
   isFocused: (elementHandle: string) => Promise<boolean>;
+  focusElement: (elementHandle: string) => Promise<void>;
   getWindowBounds: (windowHandle: string) => Promise<{ left: number; top: number; width: number; height: number }>;
   setWindowBounds: (windowHandle: string, left: number, top: number, width: number, height: number) => Promise<void>;
   focusWindow: (windowHandle: string) => Promise<void>;

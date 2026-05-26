@@ -212,6 +212,16 @@ export class Locator {
     await el.hover();
   }
 
+  async focus(options?: WaitOptions): Promise<void> {
+    const el = await this.waitFor(options);
+    await el.focus();
+  }
+
+  async clear(options?: WaitOptions): Promise<void> {
+    const el = await this.waitFor(options);
+    await el.clear();
+  }
+
   async isVisible(options?: WaitOptions): Promise<boolean> {
     const el = await this.find(options);
     return el ? el.isVisible() : false;

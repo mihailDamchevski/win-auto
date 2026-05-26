@@ -33,8 +33,19 @@ const realDesktopIt: TestFn = (
   return vitestIt.skip(`[requires desktop] ${name}`, fn, timeout ?? DEFAULT_TEST_TIMEOUT_MS);
 };
 
-export const it: typeof vitestIt = Object.assign(
+const flakyIt = (retries?: number) => {
+  const count = retries ?? 3;
+  const retry = (vitestIt as unknown as { retry: (n: number) => typeof vitestIt }).retry(count);
+  return (name: string, fn: () => void | Promise<void>, timeout?: number) =>
+    retry(name, fn, timeout ?? DEFAULT_TEST_TIMEOUT_MS);
+};
+
+export const it: typeof vitestIt & {
+  ci: TestFn;
+  realDesktop: TestFn;
+  flaky: (retries?: number) => (name: string, fn: () => void | Promise<void>, timeout?: number) => void;
+} = Object.assign(
   baseIt,
   vitestIt,
-  { ci: ciIt, realDesktop: realDesktopIt } as { ci: TestFn; realDesktop: TestFn },
+  { ci: ciIt, realDesktop: realDesktopIt, flaky: flakyIt } as { ci: TestFn; realDesktop: TestFn; flaky: typeof flakyIt },
 );
