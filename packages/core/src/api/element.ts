@@ -305,7 +305,7 @@ export class Element {
       if (await this.isVisible()) {
         return this;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     throw new Error(
@@ -325,7 +325,7 @@ export class Element {
       if (await this.isEnabled()) {
         return this;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     throw new Error(

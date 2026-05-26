@@ -17,6 +17,7 @@ const DEFAULT_INTERVAL_MS = 100;
 async function poll<T>(
   fn: () => Promise<T | null>,
   isValid: (t: T) => boolean,
+  backend: Backend,
   options?: WaitOptions,
 ): Promise<T> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -28,7 +29,7 @@ async function poll<T>(
     if (result !== null && isValid(result)) {
       return result;
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    await backend.waitForUiChange(intervalMs);
   }
 
   throw new Error(`Locator: element not found within ${timeoutMs}ms`);
@@ -36,6 +37,7 @@ async function poll<T>(
 
 async function pollImage(
   fn: () => Promise<ImageMatch | null>,
+  backend: Backend,
   options?: WaitOptions & { minConfidence?: number },
 ): Promise<ImageMatch> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -48,7 +50,7 @@ async function pollImage(
     if (result !== null && result.confidence >= minConfidence) {
       return result;
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    await backend.waitForUiChange(intervalMs);
   }
 
   throw new Error(`Locator: image not found within ${timeoutMs}ms`);
@@ -151,6 +153,7 @@ export class Locator {
       return await poll(
         () => this.find(options),
         () => true,
+        this.backend,
         options,
       );
     } catch {
@@ -390,6 +393,7 @@ export class Locator {
       return await poll(
         () => this.findBySelector(strategy.selector),
         () => true,
+        this.backend,
         options,
       );
     } catch {
@@ -400,6 +404,7 @@ export class Locator {
   private async waitForImage(template: number[], options?: WaitOptions): Promise<ImageMatch | null> {
     return pollImage(
       () => this.backend.findImage(this.windowHandle, template),
+      this.backend,
       options,
     ).catch(() => null);
   }

@@ -894,4 +894,9 @@ export class MockBackend implements Backend {
       processImage: app.executablePath,
     }));
   }
+
+  async waitForUiChange(_timeoutMs: number): Promise<boolean> {
+    await new Promise((resolve) => setTimeout(resolve, _timeoutMs));
+    return false;
+  }
 }

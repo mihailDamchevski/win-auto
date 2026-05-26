@@ -85,7 +85,7 @@ export class App {
       if (window) {
         return window;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     const msg = await buildWindowNotFoundError(this.processId, timeoutMs, this.backend);
@@ -137,7 +137,7 @@ export class App {
         return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     throw new Error(

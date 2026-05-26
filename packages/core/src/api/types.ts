@@ -147,6 +147,7 @@ export type NativeBindings = {
   selectText: (elementHandle: string) => Promise<void>;
   getSelection: (elementHandle: string) => Promise<string>;
   replaceSelectedText: (elementHandle: string, text: string) => Promise<void>;
+  waitForUiChange: (timeoutMs: number) => Promise<boolean>;
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
   inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
   highlightElement?: (elementHandle: string, color?: string | null, durationMs?: number | null) => Promise<void>;

@@ -327,4 +327,8 @@ export class NativeBackend implements Backend {
     }
     return this.native.resolveElementPath(windowHandle, path);
   }
+
+  async waitForUiChange(timeoutMs: number): Promise<boolean> {
+    return this.native.waitForUiChange(timeoutMs);
+  }
 }

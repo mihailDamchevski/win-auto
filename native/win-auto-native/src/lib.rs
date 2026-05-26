@@ -7,6 +7,7 @@ mod config;
 mod dialogs;
 mod discovery;
 mod error;
+mod event_watcher;
 mod highlight;
 mod interaction;
 mod process_control;

@@ -84,4 +84,5 @@ export interface Backend {
   highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void>;
   buildElementPath(elementHandle: string): ElementPathStep[];
   resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null>;
+  waitForUiChange(timeoutMs: number): Promise<boolean>;
 }

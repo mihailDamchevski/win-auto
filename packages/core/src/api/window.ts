@@ -52,7 +52,7 @@ export class Window {
         }
       }
       if (Date.now() - start < timeoutMs) {
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        await this.backend.waitForUiChange(intervalMs);
       } else {
         break;
       }
@@ -243,7 +243,7 @@ export class Window {
       if (element) {
         return element;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
@@ -263,7 +263,7 @@ export class Window {
       if (element && (await element.isVisible())) {
         return element;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
@@ -283,7 +283,7 @@ export class Window {
       if (element && (await element.isEnabled())) {
         return element;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await this.backend.waitForUiChange(intervalMs);
     }
 
     const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
