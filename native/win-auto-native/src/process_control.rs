@@ -3,16 +3,16 @@ use std::time::Duration;
 use napi::{Result};
 use napi_derive::napi;
 use tracing::info;
-use windows::Win32::Foundation::{CloseHandle, WPARAM, LPARAM};
+use windows::Win32::Foundation::{CloseHandle, HWND, WPARAM, LPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
 use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
-use crate::discovery::discover_windows_for_pid;
+use crate::discovery::{collect_all_top_level_windows, discover_windows_for_pid};
 use crate::error::napi_error;
-use crate::utils::{process_image_for_pid, window_pid};
+use crate::utils::{get_class_name, get_window_title, is_visible, process_image_for_pid, window_pid};
 
 fn is_process_running(pid: u32) -> bool {
   if pid == 0 {
@@ -105,17 +105,55 @@ pub async fn launch(
     .map_err(|err| napi_error(format!("Failed to launch process: {err}")))?;
 
   let child_pid = child.id();
+
+  // Phase 1: Look for windows belonging to the spawned PID directly.
+  // Handles normal Win32 apps where the process owns its own window.
   for _ in 0..30 {
     let found = {
       let windows = discover_windows_for_pid(child_pid, Some(&path));
       windows.first().map(|hwnd| window_pid(*hwnd)).filter(|pid| *pid != 0)
     };
     if let Some(owner_pid) = found {
-      // Verify owner PID belongs to the same image if class_names were provided
-      // (handles scenarios like Notepad's AppFrameHost redirect)
+      // Return the actual window-owning PID (handles ApplicationFrameHost scenarios)
       return Ok(owner_pid);
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+
+  // Phase 2: For stub executables (e.g. calc.exe -> CalculatorApp via ApplicationFrameHost),
+  // the spawned process has no windows itself. Scan ALL visible top-level windows and
+  // find ones whose title contains the executable stem. Prefer ApplicationFrameWindow
+  // (owned by ApplicationFrameHost.exe, directly reachable via UIA) over CoreWindow
+  // (owned by the UWP app process, not a direct UIA root child).
+  let stem: Option<String> = std::path::Path::new(&path)
+    .file_stem()
+    .map(|s| s.to_string_lossy().to_ascii_lowercase());
+
+  for _ in 0..30 {
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let all = collect_all_top_level_windows();
+    let candidates: Vec<HWND> = all.into_iter().filter(|hwnd| {
+      if !is_visible(*hwnd) { return false; }
+      let pid = window_pid(*hwnd);
+      if pid == 0 || pid == child_pid { return false; }
+      if let Some(ref stem) = stem {
+        let title = get_window_title(*hwnd).to_ascii_lowercase();
+        if title.contains(stem) { return true; }
+      }
+      false
+    }).collect();
+
+    if !candidates.is_empty() {
+      // Prefer ApplicationFrameWindow over other window types
+      let chosen_idx = candidates.iter().position(|hwnd| {
+        get_class_name(*hwnd) == "ApplicationFrameWindow"
+      }).unwrap_or(0);
+      let chosen = candidates[chosen_idx];
+      let owner_pid = window_pid(chosen);
+      if owner_pid != 0 {
+        return Ok(owner_pid);
+      }
+    }
   }
 
   Ok(child_pid)

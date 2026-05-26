@@ -167,7 +167,7 @@ pub fn is_top_level_visible(hwnd: HWND) -> bool {
   // SAFETY: GetWindow with GW_OWNER is safe; the window hierarchy is managed by the OS.
   unsafe { GetWindow(hwnd, GW_OWNER) }
     .ok()
-    .map_or(false, |owner| owner.is_invalid())
+    .map_or(true, |owner| owner.is_invalid())
     && is_visible(hwnd)
 }
 
