@@ -1,1 +1,1 @@
-export { trackApp, closeTrackedApps } from "../api/testAutomation";
+export { trackApp, closeTrackedApps, captureScreenshotsFromTrackedApps, getTrackedApps } from "../api/testAutomation";

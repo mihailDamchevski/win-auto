@@ -12,9 +12,22 @@ export class Automation {
   private readonly backend: Backend;
 
   constructor(backend?: Backend) {
-    this.backend = backend ?? new NativeBackend();
+    this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
     this.events = new AutomationEvents();
     this.processes = new ProcessManager(this.backend);
+  }
+
+  private static detectBackend(): Backend | null {
+    if (process.env.WIN_AUTO_BACKEND === "mock") {
+      try {
+        // Lazy require to avoid circular dependency
+        const { MockBackend } = require("../mock/mockBackend");
+        return new MockBackend();
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   public async launch(executablePath: string): Promise<App> {

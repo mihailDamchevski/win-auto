@@ -24,8 +24,8 @@ export function templatePackageJson(projectName: string): string {
 export const templateTsConfig = `{
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true
   },
@@ -47,6 +47,36 @@ export default defineConfig({
     setupFiles: ["@win-auto/core/testing/setup"]
   }
 });
+`;
+
+export const templateGitHubActions = `name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+        continue-on-error: false
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: ignore
 `;
 
 export const templateSampleSpec = `import "@win-auto/core/testing/globals";

@@ -5,7 +5,8 @@ import {
   templateSampleSpec,
   templateTsConfig,
   templateVitestConfig,
-  templateWinAutoConfig
+  templateWinAutoConfig,
+  templateGitHubActions,
 } from "../templates/basic/templateFiles";
 
 async function ensurePathDoesNotExist(targetPath: string): Promise<void> {
@@ -30,6 +31,8 @@ export async function initProject(projectName: string): Promise<void> {
   await ensurePathDoesNotExist(targetDir);
 
   await fs.mkdir(path.join(targetDir, "tests"), { recursive: true });
+  await fs.mkdir(path.join(targetDir, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(targetDir, ".github", "workflows", "test.yml"), templateGitHubActions, "utf8");
   await fs.writeFile(path.join(targetDir, "package.json"), templatePackageJson(projectName), "utf8");
   await fs.writeFile(path.join(targetDir, "tsconfig.json"), templateTsConfig, "utf8");
   await fs.writeFile(path.join(targetDir, "win-auto.config.ts"), templateWinAutoConfig, "utf8");
