@@ -10,7 +10,7 @@
     "url": "https://github.com/mihailDamchevski/win-auto/issues"
   },
   "homepage": "https://github.com/mihailDamchevski/win-auto#readme",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "author": "Mihail Damchevski",
   "workspaces": [
     "packages/*",

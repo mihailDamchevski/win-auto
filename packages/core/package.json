@@ -11,7 +11,7 @@
     "url": "https://github.com/mihailDamchevski/win-auto/issues"
   },
   "homepage": "https://github.com/mihailDamchevski/win-auto/tree/main/packages/core#readme",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "author": "Your Name",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

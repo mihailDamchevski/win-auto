@@ -631,7 +631,9 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details
+Copyright (C) 2026 YourNameOrAlias
+
+Licensed under AGPL-3.0.
 
 ## Changelog
 
