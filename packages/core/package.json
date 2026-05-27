@@ -1,6 +1,6 @@
 {
   "name": "@win-auto/core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Core TypeScript API for Windows desktop automation.",
   "repository": {
     "type": "git",
@@ -42,7 +42,7 @@
     }
   },
   "dependencies": {
-    "win-auto-native": "0.1.5"
+    "win-auto-native": "0.1.6"
   },
   "files": [
     "dist",
