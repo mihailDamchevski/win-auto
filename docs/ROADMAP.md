@@ -12,6 +12,7 @@
 | # | Task | Completed |
 |---|---|---|
 | Q5 | `classNames`/`executable` filtering in MockBackend | 2026-05-27 |
+| Q3 | Missing event emissions wired up | 2026-05-27 |
 
 ---
 
@@ -21,7 +22,7 @@
 |---|---|---|
 | Q1 | **Structured Rust errors** — replace `napi_error("string")` with `thiserror` enum: `ElementNotFound`, `ComInitFailed`, `PermissionDenied`, `PatternNotSupported`. Map to proper napi-rs status codes. | Every Rust error currently surfaces as `GenericFailure` — TS consumers cannot distinguish "element not found" from "access denied" without parsing message strings. |
 | Q2 | **Typed event payloads** — wire `AutomationEventPayload` mapped type into `AutomationEvents.on()` so every event has a typed payload. | Event consumers have zero type safety today. The type infrastructure already exists but is unused. |
-| Q3 | **Wire up missing event emissions** — `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:exited` are in the type union but never emitted. Emit `element:found` during poll loops. | Silent omissions confuse debuggers and force workarounds. |
+| Q3 | **Wire up missing event emissions** — `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:exited` are in the type union but never emitted. Emit `element:found` during poll loops. | ✅ Done |
 | Q4 | **Bare `catch {}` in stale recovery** — replace with type-checked catch that only retries on `ElementNotFound`/`StaleElement` errors, not permission or crash errors. | Current code catches ALL errors during stale-element retry, masking real backend failures. |
 | Q5 | **`classNames` filtering in MockBackend** — `findElement`/`findAll`/`enumerateWindows` now filter by `classNames` and `executable`. | ✅ Done |
 
@@ -570,7 +571,7 @@ Examples:
 
 | Step | What | Time | Why first |
 |---|---|---|---|
-| Q1–Q5 | Quick wins (Q5 ✅ done) | 1–2 wks | Foundation for everything |
+| Q1–Q5 | Quick wins (Q3 + Q5 ✅ done) | 1–2 wks | Foundation for everything |
 | P1 | Foundation hardening | 2 wks | Every layer depends on errors, events, COM |
 | P3 | Wait system | 2 wks | Most tests fail due to timing, not logic |
 | P2 | Element discovery | 3–4 wks | The core value proposition |

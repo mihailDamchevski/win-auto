@@ -129,6 +129,7 @@ export class App {
       );
       if (!processRunning) {
         this.events.emitAppClosed(this.processId);
+        this.events.emitProcessExited(this.processId);
         return;
       }
 
@@ -146,7 +147,11 @@ export class App {
   }
 
   public async waitForExit(timeoutMs?: number): Promise<boolean> {
-    return this.backend.waitForProcessExit(this.processId, timeoutMs ?? 30_000);
+    const exited = await this.backend.waitForProcessExit(this.processId, timeoutMs ?? 30_000);
+    if (exited) {
+      this.events.emitProcessExited(this.processId);
+    }
+    return exited;
   }
 
   public async isRunning(): Promise<boolean> {

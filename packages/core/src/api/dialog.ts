@@ -23,6 +23,7 @@ export class Dialog {
   public async clickButton(buttonText: string): Promise<void> {
     this.events.emitDebug(`Clicking dialog button "${buttonText}"`, { dialog: this.handle });
     await this.backend.clickDialogButton(this.handle, buttonText);
+    this.events.emitDialogButtonClicked(this.handle, buttonText);
   }
 
   public async accept(): Promise<void> {
@@ -45,6 +46,7 @@ export class Dialog {
   public async selectFile(path: string): Promise<void> {
     this.events.emitDebug(`Setting file path in dialog: ${path}`, { dialog: this.handle });
     await this.backend.setDialogFilePath(this.handle, path);
+    this.events.emitDialogFileSelected(this.handle, path);
   }
 
   public async findElement(selector: ElementSelector): Promise<Element | null> {
@@ -104,6 +106,7 @@ export class DialogManager {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const dialog = this.find(options?.title);
       if (dialog) {
+        this.events.emitDialogFound(dialog.handle, dialog.title);
         this.events.emitDebug("Dialog found", {
           title: dialog.title,
           handle: dialog.handle,

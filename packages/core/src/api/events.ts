@@ -117,6 +117,18 @@ export class AutomationEvents extends EventEmitter {
     this.emit("process:killed", { pid, timestamp: Date.now() });
   }
 
+  public emitDialogFound(handle: string, title: string): void {
+    this.emit("dialog:found", { handle, title, timestamp: Date.now() });
+  }
+
+  public emitDialogButtonClicked(handle: string, buttonText: string): void {
+    this.emit("dialog:buttonClicked", { handle, buttonText, timestamp: Date.now() });
+  }
+
+  public emitDialogFileSelected(handle: string, path: string): void {
+    this.emit("dialog:fileSelected", { handle, path, timestamp: Date.now() });
+  }
+
   public emitProcessExited(pid: number): void {
     this.emit("process:exited", { pid, timestamp: Date.now() });
   }
