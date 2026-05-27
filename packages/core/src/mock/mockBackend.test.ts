@@ -338,4 +338,103 @@ describe("MockBackend", () => {
       await expect(backend.pressKey("bad", "Enter")).resolves.toBeUndefined();
     });
   });
+
+  describe("classNames filtering", () => {
+    it("findElement filters by classNames", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", name: "Input A", className: "Edit" },
+          { role: "button", name: "OK", className: "Button" },
+          { role: "textbox", name: "Input B", className: "Edit" },
+        ],
+      });
+      const found = await backend.findElement(winHandle, ["Button"], null, "OK", "button");
+      expect(found).not.toBeNull();
+      const notFound = await backend.findElement(winHandle, ["Edit"], null, "OK", "button");
+      expect(notFound).toBeNull();
+    });
+
+    it("findElement returns null when classNames has no match", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", name: "Input", className: "Edit" },
+        ],
+      });
+      const result = await backend.findElement(winHandle, ["Button"], null, "Input", "textbox");
+      expect(result).toBeNull();
+    });
+
+    it("findElement ignores classNames when null/undefined", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", name: "Input", className: "Edit" },
+        ],
+      });
+      const withNull = await backend.findElement(winHandle, null, null, "Input", "textbox");
+      expect(withNull).not.toBeNull();
+      const withUndefined = await backend.findElement(winHandle, undefined, null, "Input", "textbox");
+      expect(withUndefined).not.toBeNull();
+    });
+
+    it("findElement with empty classNames array ignores filter", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", name: "Input", className: "Edit" },
+        ],
+      });
+      const result = await backend.findElement(winHandle, [], null, "Input", "textbox");
+      expect(result).not.toBeNull();
+    });
+
+    it("findAll filters by classNames", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", name: "A", className: "Edit" },
+          { role: "button", name: "B", className: "Button" },
+          { role: "textbox", name: "C", className: "Edit" },
+          { role: "static", name: "D", className: "Static" },
+        ],
+      });
+      const editTextBoxes = await backend.findAll(winHandle, ["Edit"], null, null, "textbox");
+      expect(editTextBoxes).toHaveLength(2);
+      const buttons = await backend.findAll(winHandle, ["Button"], null, null, "button");
+      expect(buttons).toHaveLength(1);
+    });
+
+    it("findAll returns empty when classNames match no elements", async () => {
+      const pid = await backend.launch("C:\\app.exe");
+      const winHandle = backend.setupElementTree(pid, {
+        role: "pane", children: [
+          { role: "textbox", className: "Edit" },
+        ],
+      });
+      const result = await backend.findAll(winHandle, ["NonExistentClass"], null, null, "textbox");
+      expect(result).toEqual([]);
+    });
+
+    it("enumerateWindows filters by executable", async () => {
+      const pid = await backend.launch("C:\\Program Files\\MyApp.exe");
+      const matching = await backend.enumerateWindows(pid, "MyApp.exe");
+      expect(matching).toHaveLength(1);
+      const nonMatching = await backend.enumerateWindows(pid, "Other.exe");
+      expect(nonMatching).toEqual([]);
+    });
+
+    it("enumerateWindows returns windows when executable matches partially", async () => {
+      const pid = await backend.launch("C:\\Tools\\MyApp.exe");
+      const result = await backend.enumerateWindows(pid, "MyApp");
+      expect(result).toHaveLength(1);
+    });
+
+    it("enumerateWindows ignores executable filter when null", async () => {
+      const pid = await backend.launch("C:\\MyApp.exe");
+      const result = await backend.enumerateWindows(pid, null);
+      expect(result).toHaveLength(1);
+    });
+  });
 });

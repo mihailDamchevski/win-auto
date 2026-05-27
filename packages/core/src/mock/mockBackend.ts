@@ -38,6 +38,17 @@ function matchesValue(
   }
 }
 
+function classNamesMatch(
+  elementClassName: string | undefined,
+  classNames?: string[] | null,
+): boolean {
+  if (!classNames || classNames.length === 0) return true;
+  // Elements with unknown class name always pass (native backend only
+  // uses classNames as an HWND pre-filter, not a mandatory UIA constraint)
+  if (!elementClassName) return true;
+  return classNames.some((cn) => cn.toLowerCase() === elementClassName.toLowerCase());
+}
+
 function selectorMatches(
   recordSelector: { automationId?: string; name?: string; role?: string; className?: string; text?: string },
   automationId?: string | null,
@@ -224,7 +235,6 @@ export class MockBackend implements Backend {
         ...(node.className ? { className: node.className } : {}),
         ...(node.text ? { text: node.text } : {}),
       };
-
       const handle = this.registerElement(el, parentHandle);
       window.elements.push(el);
 
@@ -312,8 +322,16 @@ export class MockBackend implements Backend {
     return pid;
   }
 
-  async enumerateWindows(processId: number, _executable?: string | null): Promise<string[]> {
+  async enumerateWindows(processId: number, executable?: string | null): Promise<string[]> {
     await delay();
+    const app = this.pidToApp.get(processId);
+    if (executable && app) {
+      const exeLower = executable.toLowerCase();
+      const appExeLower = app.executablePath.toLowerCase();
+      if (!appExeLower.includes(exeLower) && !exeLower.includes(appExeLower)) {
+        return [];
+      }
+    }
     return [...this.winHandleToPid.entries()]
       .filter(([, pid]) => pid === processId)
       .map(([handle]) => handle);
@@ -355,7 +373,7 @@ export class MockBackend implements Backend {
 
   async findElement(
     windowHandle: string,
-    _classNames?: string[] | null,
+    classNames?: string[] | null,
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
@@ -366,7 +384,8 @@ export class MockBackend implements Backend {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return null;
     const match = win.elements.find((el) =>
-      selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
+      classNamesMatch(el.selector.className, classNames)
+      && selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
     );
     if (!match) return null;
     return this.ensureElementHandle(match);
@@ -378,7 +397,7 @@ export class MockBackend implements Backend {
 
   async findAll(
     windowHandle: string,
-    _classNames?: string[] | null,
+    classNames?: string[] | null,
     automationId?: string | null,
     name?: string | null,
     role?: string | null,
@@ -389,11 +408,18 @@ export class MockBackend implements Backend {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return [];
     let matches = win.elements;
-    if (automationId || name || role || className || text) {
-      matches = matches.filter((el) =>
-        selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
-      );
+    if (classNames || automationId || name || role || className || text) {
+      matches = matches.filter((el) => {
+        const r1 = classNamesMatch(el.selector.className, classNames);
+        if (!r1) return false;
+        if (automationId || name || role || className || text) {
+          const r2 = selectorMatches(el.selector, automationId, name, role, className, text, matchMode);
+          return r2;
+        }
+        return true;
+      });
     }
+    
     return matches.map((el) => this.ensureElementHandle(el));
   }
 
