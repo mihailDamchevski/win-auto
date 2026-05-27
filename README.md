@@ -631,7 +631,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## License
 
-Copyright (C) 2026 YourNameOrAlias
+Copyright (C) 2026 Mihail Damchevski
 
 Licensed under AGPL-3.0.
 

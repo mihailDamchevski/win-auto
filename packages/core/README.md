@@ -11,12 +11,12 @@ npm install @win-auto/core
 ## Quick Start
 
 ```typescript
-import { Automation } from '@win-auto/core';
+import { Automation } from "@win-auto/core";
 
 const automation = new Automation();
-const app = await automation.launch('C:\\Windows\\System32\\notepad.exe');
-const textbox = await app.find({ role: 'textbox' });
-await textbox?.type('Hello from win-auto!');
+const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
+const textbox = await app.find({ role: "textbox" });
+await textbox?.type("Hello from win-auto!");
 ```
 
 ## API
@@ -26,7 +26,7 @@ await textbox?.type('Hello from win-auto!');
 Main entry point. Accepts an optional `Backend` (defaults to `NativeBackend`).
 
 ```typescript
-import { Automation, MockBackend } from '@win-auto/core';
+import { Automation, MockBackend } from "@win-auto/core";
 
 // Real Windows automation
 const real = new Automation();
@@ -38,14 +38,14 @@ const mock = new Automation(new MockBackend());
 await automation.mouseMove(500, 300);
 
 // Find running processes by name
-const notepads = automation.processes.findByName('notepad.exe');
+const notepads = automation.processes.findByName("notepad.exe");
 
 // Connect to an already-running app
-const app = await automation.connectProcess('notepad.exe');
+const app = await automation.connectProcess("notepad.exe");
 
 // Subscribe to automation events
-automation.events.on('app:launched', (data) => console.log('PID:', data.processId));
-automation.events.on('element:clicked', (data) => console.log('Clicked:', data.handle));
+automation.events.on("app:launched", (data) => console.log("PID:", data.processId));
+automation.events.on("element:clicked", (data) => console.log("Clicked:", data.handle));
 ```
 
 ### App
@@ -55,7 +55,7 @@ Launched application instance. Provides access to windows, elements, and dialogs
 ```typescript
 const mainWindow = await app.getMainWindow();
 const windows = await app.listWindows();
-const element = await app.find({ role: 'button', name: 'OK' });
+const element = await app.find({ role: "button", name: "OK" });
 await app.close({ timeoutMs: 5000 });
 
 // Lifecycle management
@@ -64,12 +64,12 @@ await app.waitForExit(10000);
 await app.kill();
 
 // Wait for elements via the main window
-const btn = await app.waitForElement({ name: 'OK' }, { timeoutMs: 5000 });
-const visible = await app.waitForVisible({ name: 'OK' });
+const btn = await app.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
+const visible = await app.waitForVisible({ name: "OK" });
 
 // Dialog handling
-const dialog = await app.dialogs.waitFor({ title: 'Open', timeoutMs: 5000 });
-await dialog.selectFile('C:\\path\\file.txt');
+const dialog = await app.dialogs.waitFor({ title: "Open", timeoutMs: 5000 });
+await dialog.selectFile("C:\\path\\file.txt");
 await dialog.accept();
 ```
 
@@ -79,10 +79,10 @@ Window management and element discovery.
 
 ```typescript
 // Element finding
-const el = await window.findElement({ role: 'textbox' });
-const all = await window.findAll({ role: 'button' });
-await window.clickElementByName('Save');
-await window.clickSequence(['File', 'Save As']);
+const el = await window.findElement({ role: "textbox" });
+const all = await window.findAll({ role: "button" });
+await window.clickElementByName("Save");
+await window.clickSequence(["File", "Save As"]);
 
 // Window state
 const bounds = await window.getBounds();
@@ -92,25 +92,25 @@ await window.minimize();
 await window.restore();
 
 // Input
-await window.typeText('Hello');
-await window.pressKey('Ctrl+S');
+await window.typeText("Hello");
+await window.pressKey("Ctrl+S");
 
 // Hold/release modifier keys
-await window.keyDown('Ctrl');
-await window.pressKey('A');
-await window.keyUp('Ctrl');
+await window.keyDown("Ctrl");
+await window.pressKey("A");
+await window.keyUp("Ctrl");
 
 // Inspect UI tree
 const tree = window.inspectTree(5);
 
 // Screenshots
 const pixels = await window.screenshot();
-await window.screenshotToFile('window.bmp');
+await window.screenshotToFile("window.bmp");
 
 // Wait for elements
-const btn = await window.waitForElement({ name: 'OK' }, { timeoutMs: 5000 });
-const visible = await window.waitForVisible({ name: 'OK' });
-const enabled = await window.waitForEnabled({ name: 'OK' });
+const btn = await window.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
+const visible = await window.waitForVisible({ name: "OK" });
+const enabled = await window.waitForEnabled({ name: "OK" });
 
 await window.close();
 ```
@@ -121,12 +121,12 @@ UI element for interaction and inspection.
 
 ```typescript
 // Interaction
-await element.typeText('Hello');
+await element.typeText("Hello");
 await element.click();
 await element.rightClick();
 await element.doubleClick();
 await element.hover();
-await element.scroll('down', 3);
+await element.scroll("down", 3);
 await element.dragDrop(targetElement);
 await element.select();
 await element.toggle();
@@ -134,7 +134,7 @@ await element.toggle();
 // Value access
 const value = await element.getValue();
 const text = await element.getText();
-await element.setValue('new value');
+await element.setValue("new value");
 
 // State queries
 const visible = await element.isVisible();
@@ -143,11 +143,11 @@ const focused = await element.isFocused();
 const toggleState = await element.getToggleState();
 
 // Read arbitrary UIA attributes
-const name = await element.getAttribute('name');
-const role = await element.getAttribute('role');
-const bounds = await element.getAttribute('bounds');
+const name = await element.getAttribute("name");
+const role = await element.getAttribute("role");
+const bounds = await element.getAttribute("bounds");
 // getProperty is an alias
-const autoId = await element.getProperty('automationId');
+const autoId = await element.getProperty("automationId");
 
 // Wait for element state
 await element.waitForVisible({ timeoutMs: 5000 });
@@ -161,15 +161,15 @@ const siblings = await element.getSiblings();
 // Text selection
 await element.selectText();
 const selected = await element.getSelection();
-await element.replaceSelectedText('replacement');
+await element.replaceSelectedText("replacement");
 
 // Keyboard modifiers
-await element.keyDown('Shift');
-await element.keyUp('Shift');
+await element.keyDown("Shift");
+await element.keyUp("Shift");
 
 // Screenshots
 const pixels = await element.screenshot();
-await element.screenshotToFile('element.bmp');
+await element.screenshotToFile("element.bmp");
 ```
 
 ### Events
@@ -177,16 +177,16 @@ await element.screenshotToFile('element.bmp');
 Every `Automation` instance exposes an `events` EventEmitter. Subscribe to lifecycle events for logging, debugging, or tracking:
 
 ```typescript
-automation.events.on('app:launched', (data) => {
+automation.events.on("app:launched", (data) => {
   console.log(`Launched ${data.executablePath} (PID ${data.processId})`);
 });
 
-automation.events.on('element:clicked', (data) => {
+automation.events.on("element:clicked", (data) => {
   console.log(`Element ${data.handle} was clicked`);
 });
 
-automation.events.on('debug', (data) => {
-  console.debug('[auto]', data.message);
+automation.events.on("debug", (data) => {
+  console.debug("[auto]", data.message);
 });
 ```
 
@@ -198,7 +198,7 @@ Pluggable backends for the automation engine:
 - **`MockBackend`** - In-memory simulation for testing without a desktop
 
 ```typescript
-import { Automation, NativeBackend, MockBackend } from '@win-auto/core';
+import { Automation, NativeBackend, MockBackend } from "@win-auto/core";
 
 const real = new Automation(new NativeBackend());
 const mock = new Automation(new MockBackend());
@@ -208,15 +208,15 @@ const mock = new Automation(new MockBackend());
 
 ```typescript
 // Auto-track and cleanup launched apps
-import { TestAutomation, closeTrackedApps } from '@win-auto/core';
+import { TestAutomation, closeTrackedApps } from "@win-auto/core";
 // or: import { TestAutomation, closeTrackedApps } from '@win-auto/core/testing';
 
-describe('my tests', () => {
+describe("my tests", () => {
   afterAll(() => closeTrackedApps());
 
-  it('works', async () => {
+  it("works", async () => {
     const auto = new TestAutomation();
-    const app = await auto.launch('notepad.exe');
+    const app = await auto.launch("notepad.exe");
     // app is automatically tracked — closed by closeTrackedApps()
   });
 });
@@ -233,4 +233,4 @@ See the [main README](../../README.md) for complete documentation, examples, and
 
 ## License
 
-MIT
+AGPL-3.0

@@ -21,6 +21,7 @@ npm install
 ```
 
 This creates a starter project with:
+
 - Pre-configured TypeScript setup
 - Example automation scripts
 - Vitest integration for testing
@@ -51,6 +52,7 @@ my-automation-project/
 ## Examples
 
 After creating a project, check the generated files for examples of:
+
 - Launching applications
 - Finding UI elements
 - Simulating user interactions
@@ -62,4 +64,4 @@ See the [main README](../../README.md) for complete documentation and API refere
 
 ## License
 
-MIT
+AGPL-3.0

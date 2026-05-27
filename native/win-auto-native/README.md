@@ -45,4 +45,4 @@ The TypeScript wrapper loads the native addon at runtime to perform real Windows
 
 ## License
 
-MIT
+AGPL-3.0
