@@ -46,6 +46,10 @@ const app = await automation.connectProcess("notepad.exe");
 // Subscribe to automation events
 automation.events.on("app:launched", (data) => console.log("PID:", data.processId));
 automation.events.on("element:clicked", (data) => console.log("Clicked:", data.handle));
+
+// Watch raw Windows events
+automation.startWinEventWatcher();
+automation.events.on("winEvent", (e) => console.log(e.eventType, e.hwnd));
 ```
 
 ### App
@@ -84,6 +88,9 @@ const all = await window.findAll({ role: "button" });
 await window.clickElementByName("Save");
 await window.clickSequence(["File", "Save As"]);
 
+// Locator with healing
+const btn = await window.locator({ name: "OK" }).heal({ threshold: 0.5 }).find();
+
 // Window state
 const bounds = await window.getBounds();
 await window.setBounds({ left: 0, top: 0, width: 800, height: 600 });
@@ -108,9 +115,17 @@ const pixels = await window.screenshot();
 await window.screenshotToFile("window.bmp");
 
 // Wait for elements
-const btn = await window.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
+const btn2 = await window.waitForElement({ name: "OK" }, { timeoutMs: 5000 });
 const visible = await window.waitForVisible({ name: "OK" });
 const enabled = await window.waitForEnabled({ name: "OK" });
+
+// Structural navigation via Locator
+const parent = await window.locator({ name: "OK" }).parent();
+const next = await window.locator({ role: "button" }).next();
+const ancestor = await window.locator({ name: "OK" }).ancestor({ automationId: "toolbar" });
+
+// Wait for window to close
+await window.waitForClosed({ timeoutMs: 5000 });
 
 await window.close();
 ```
@@ -142,21 +157,40 @@ const enabled = await element.isEnabled();
 const focused = await element.isFocused();
 const toggleState = await element.getToggleState();
 
+// Class name (Win32 window class)
+const className = await element.getClassName();
+
 // Read arbitrary UIA attributes
 const name = await element.getAttribute("name");
 const role = await element.getAttribute("role");
 const bounds = await element.getAttribute("bounds");
+const legacyName = await element.getAttribute("legacyName"); // MSAA fallback
 // getProperty is an alias
 const autoId = await element.getProperty("automationId");
 
-// Wait for element state
+// Wait for element state (positive)
 await element.waitForVisible({ timeoutMs: 5000 });
 await element.waitForEnabled();
 
-// Tree navigation
-const parent = await element.getParent();
-const children = await element.getChildren();
-const siblings = await element.getSiblings();
+// Wait for element state (inverse)
+await element.waitForNotVisible({ timeoutMs: 5000 });
+await element.waitForNotEnabled();
+await element.waitForRemoved();
+
+// Structural navigation
+const parent = await element.parent();
+const next = await element.next({ role: "button" });
+const prev = await element.previous();
+const ancestor = await element.ancestor({ automationId: "mainPanel" });
+const relative = await element.findRelative(
+  { role: "button", name: "OK" },
+  { relation: "ancestor", direction: "up" },
+);
+
+// Tree navigation (legacy)
+await element.getParent();
+await element.getChildren();
+await element.getSiblings();
 
 // Text selection
 await element.selectText();
@@ -172,6 +206,52 @@ const pixels = await element.screenshot();
 await element.screenshotToFile("element.bmp");
 ```
 
+### Healing Engine
+
+`Locator.heal()` auto-generates 8 fallback strategies when the primary selector fails:
+
+```typescript
+const btn = await window.locator({ name: "OK" }).heal({ threshold: 0.5 }).find();
+
+// Parallel strategy search (fastest high-confidence match wins)
+const btn = await window
+  .locator({ name: "OK" })
+  .heal({ threshold: 0.7, parallel: true })
+  .waitFor({ timeoutMs: 5000 });
+```
+
+### Fluent Wait API
+
+```typescript
+import { wait } from "@win-auto/core";
+
+await wait
+  .until(() => element.getText())
+  .matches(/loaded/)
+  .for(10000);
+await wait
+  .until(element)
+  .isVisible()
+  .and((el) => el.getText().then((t) => t.includes("ready")))
+  .for(10000);
+
+// Inverse waits
+await element.waitForNotVisible({ timeoutMs: 5000 });
+await element.waitForRemoved();
+await window.waitForClosed();
+```
+
+### Structural Navigation
+
+```typescript
+await element.parent();
+await element.next({ role: "button" });
+await element.previous();
+await element.ancestor({ automationId: "mainPanel" });
+await locator.parent();
+await locator.next({ role: "textbox" });
+```
+
 ### Events
 
 Every `Automation` instance exposes an `events` EventEmitter. Subscribe to lifecycle events for logging, debugging, or tracking:
@@ -185,9 +265,37 @@ automation.events.on("element:clicked", (data) => {
   console.log(`Element ${data.handle} was clicked`);
 });
 
+automation.events.on("winEvent", (event) => {
+  console.log("WinEvent:", event.eventType, "HWND:", event.hwnd);
+});
+
 automation.events.on("debug", (data) => {
   console.debug("[auto]", data.message);
 });
+```
+
+### Fluent Wait API
+
+```typescript
+import { wait } from "@win-auto/core";
+
+// Basic
+await wait
+  .until(() => element.getText())
+  .matches(/loaded/)
+  .for(10000);
+await wait.until(window).isVisible().for(5000);
+await wait.until(element).isEnabled();
+
+// Compound
+await wait
+  .until(element)
+  .isVisible()
+  .and((el) => el.getText().then((t) => t.includes("ready")))
+  .for(10000);
+
+// Adaptive polling
+await wait.until(element).isVisible().adaptive().for(10000);
 ```
 
 ### Backend

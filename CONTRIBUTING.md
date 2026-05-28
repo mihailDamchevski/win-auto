@@ -118,26 +118,22 @@ When reporting issues, include:
 
 ## Roadmap
 
-Planned features and improvements (in loose priority order):
+See `docs/ROADMAP.md` for the full implementation plan. Completed phases:
 
-### High Priority
+- ✅ **Q1–Q5** — Quick wins (structured errors, typed events, missing emissions, stale recovery, mock filtering)
+- ✅ **P1** — Foundation hardening (TS error hierarchy, COM init, stale recovery v2, events)
+- ✅ **P2** — Element discovery (healing engine, LegacyIAccessible, className, structural navigation)
+- ✅ **P3** — Fluent wait API (wait.until, inverse waits, compound conditions, adaptive polling)
+- ✅ **P9** — Rust core hardening (structured errors, event watcher, OLE drag-drop, CreateProcessW, parallel template matching)
 
-- **Full UIA pattern coverage** — `SelectionItemPattern`, `ExpandCollapsePattern`, `ScrollPattern` for richer control interaction
-- **Cross-process UI tree caching** — UIA tree cache requests for faster element discovery on complex UIs
-- **`Element.waitForNotVisible()`, `.waitForDisabled()`** — Inverse wait conditions for modal/busy state detection
+Active priorities:
 
-### Medium Priority
-
-- **Image-based element finding** — Locate elements by template matching (Screenshot → find coordinates → click)
-- **Remote automation agent** — gRPC server exposing win-auto operations for cross-machine automation
-- **PowerShell module generator** — `win-auto init --ps` that generates PowerShell cmdlet wrappers
-- **macOS/Linux parity** — Basic window/element discovery via platform accessibility APIs (AT-SPI, Accessibility API)
-
-### Low Priority
-
-- **Record-and-playback** — Interactive recorder that generates TypeScript scripts from manual UI interactions
-- **WebView2 / Electron support** — Navigate, read DOM, inject JS into embedded WebView2 controls
-- **Headless automation mode** — Run automation against off-screen or virtual desktops
+- **P4** — Dual input mode (hardware + pattern-based input)
+- **P5** — Image recognition (FFT matching, multi-scale, OCR)
+- **P6** — Legacy app toolkit (DirectUI, WM_COMMAND, AUMID launch)
+- **P7** — Mock backend fidelity (tree-aware lookup, state simulation)
+- **P8** — Testing infrastructure (negative matchers, polling assertions, snapshots)
+- **P10** — Cross-cutting (UIPI, diagnostics, config expansion, diagnose CLI)
 
 ## Questions or Need Help?
 

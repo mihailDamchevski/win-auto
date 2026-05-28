@@ -12,8 +12,12 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 
 - 🚀 **Simple TypeScript API** - Clean, intuitive interface for desktop automation
 - 🔧 **Native Performance** - Rust + napi-rs backend for fast, reliable automation
-- 🎯 **Element Finding** - Locate UI elements by role, name, automation ID, and other attributes
-- 🏷️ **Element Attributes** - Read arbitrary UIA properties (name, role, value, bounds, isEnabled, and many more)
+- 🎯 **Element Finding** - Locate UI elements by role, name, automation ID, className, and other attributes
+- 🩹 **Healing Engine** - Auto-fallback through 8 strategies when primary selector fails, with confidence scoring
+- 🏷️ **Element Attributes** - Read arbitrary UIA properties (name, role, value, bounds, isEnabled, legacy properties, and many more)
+- 🧭 **Structural Navigation** - Navigate parent/child/sibling/ancestor tree relative to any element
+- ⏳ **Fluent Wait API** - Chainable `wait.until()` with compound conditions, adaptive polling, and inverse waits
+- 🔬 **Legacy MSAA Support** - LegacyIAccessible pattern for VB6, MFC, Delphi apps
 - ⌨️ **Modifier Key Hold/Release** - `keyDown("Ctrl")` / `keyUp("Ctrl")` for complex multi-key sequences
 - ✂️ **Text Selection** - Select all text, get current selection, and replace selected text
 - 🔭 **UI Tree Inspection** - Recursively walk the UIA element tree of any window (great for debugging)
@@ -21,10 +25,13 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 - ⌨️ **User Simulation** - Type text, click buttons, interact with controls, send keyboard shortcuts
 - 🪟 **Window Management** - Maximize, minimize, restore, resize, and move windows
 - 🖱️ **Mouse Operations** - Click, right-click, double-click, hover, scroll, and drag-drop on elements
+- 📋 **OLE Drag-Drop** - Auto-detect OLE support on target apps, falls back to mouse simulation
 - 🗔 **Dialog Handling** - Detect and interact with modal dialogs (file open, message boxes, etc.)
 - 🔍 **Process Management** - Find running processes, connect to them, wait for exit, kill
-- 📸 **Screenshots** - Capture window and element screenshots to buffer or file (BMP format)
-- 📡 **Event System** - Subscribe to automation events (app launched, element clicked, etc.) for logging and debugging
+- 🏗️ **CreateProcessW Launch** - Native Win32 process launch with job objects, args, cwd, and env support
+- 🖼️ **Template Matching** - Parallel 4-quadrant NCC search to find images on screen
+- 📸 **Screenshots** - Capture window and element screenshots to buffer or file (PNG format)
+- 📡 **Event System** - Subscribe to automation events (app launched, element clicked, WinEvent hooks, etc.) for logging and debugging
 - 📦 **CLI Tool** - Scaffold new automation projects quickly
 - 🧪 **Testing Integration** - Built-in support for vitest with auto-cleanup via TestAutomation
 - 🧪 **Assertion Helpers** - `expectElement(el).toBeVisible()`, `.toBeEnabled()`, `.toHaveText()`, and more
@@ -421,7 +428,123 @@ automation.events.on("window:closed", (data) => {
 });
 ```
 
-Full list of event types: `app:launched`, `app:closed`, `window:found`, `window:closed`, `window:boundsChanged`, `window:maximized`, `window:minimized`, `window:restored`, `element:found`, `element:clicked`, `element:rightClicked`, `element:doubleClicked`, `element:hovered`, `element:typed`, `element:selected`, `element:toggled`, `element:valueChanged`, `element:screenshot`, `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:connected`, `process:killed`, `process:exited`, `mouse:moved`, `debug`.
+Full list of event types: `app:launched`, `app:closed`, `window:found`, `window:closed`, `window:boundsChanged`, `window:maximized`, `window:minimized`, `window:restored`, `element:found`, `element:clicked`, `element:rightClicked`, `element:doubleClicked`, `element:hovered`, `element:typed`, `element:selected`, `element:toggled`, `element:valueChanged`, `element:staleRecovered`, `element:screenshot`, `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:connected`, `process:killed`, `process:exited`, `mouse:moved`, `winEvent`, `debug`.
+
+### Healing Engine
+
+The `Locator.heal()` method auto-generates 8 fallback strategies when the primary selector fails, with confidence-based scoring:
+
+```typescript
+// Enable healing with confidence threshold
+const btn = await window.locator({ name: "OK" }).heal({ threshold: 0.5 }).find();
+
+// Parallel strategy search in waitFor (fastest high-confidence match wins)
+const btn = await window.locator({ name: "OK" }).heal({ threshold: 0.7, parallel: true }).waitFor({ timeoutMs: 5000 });
+
+// Debug logging
+// WIN_AUTO_DEBUG_LOCATORS=1 node my-script.js
+```
+
+Fallback strategies (in priority order):
+1. AutomationId (exact) — confidence 1.0
+2. Name (exact) — confidence 1.0
+3. Role + ClassName — confidence 0.9
+4. Name (substring) — confidence 0.7
+5. XPath path (buildElementPath / resolveElementPath) — confidence 0.7
+6. Role + sibling index — confidence 0.6
+7. className (HWND) — confidence 0.5
+8. Name (substring all) — confidence 0.3
+
+### Fluent Wait API
+
+```typescript
+import { wait } from "@win-auto/core";
+
+// Basic usage
+await wait.until(() => element.getText()).matches(/loaded/).for(10000);
+await wait.until(window).isVisible().for(5000);
+await wait.until(element).isEnabled();
+
+// Compound conditions
+await wait.until(element).isVisible()
+  .and(el => el.getText().then(t => t.includes("ready")))
+  .for(10000);
+
+await wait.until(element).hasText("loaded")
+  .or(() => element.getText().then(t => t.includes("error")));
+
+// Inverse waits on Element
+await element.waitForNotVisible({ timeoutMs: 5000 });
+await element.waitForNotEnabled();
+await element.waitForRemoved();
+
+// Inverse waits on Window
+await window.waitForClosed({ timeoutMs: 5000 });
+
+// Adaptive polling (configurable or opt-in)
+await wait.until(element).isVisible().adaptive().for(10000);
+// WIN_AUTO_POLL_INTERVAL=adaptive environment variable
+```
+
+### Structural Navigation
+
+Navigate the element tree relative to any element or locator:
+
+```typescript
+// On resolved Element
+const parent = await element.parent();
+const next = await element.next();                     // next sibling
+const prev = await element.previous();                  // previous sibling
+const ancestor = await element.ancestor({ role: "pane" }); // first matching ancestor
+const relative = await element.findRelative(
+  { role: "button", name: "OK" },
+  { relation: "ancestor", direction: "up" },
+);
+
+// On unresolved Locator (eager resolution via waitFor)
+const parent = await locator.parent();
+const next = await locator.next({ role: "button" });
+const prev = await locator.previous({ role: "textbox" });
+const ancestor = await locator.ancestor({ automationId: "mainPanel" });
+```
+
+### WinEvent Watcher
+
+Monitor raw Windows events via the event watcher:
+
+```typescript
+automation.events.on("winEvent", (event) => {
+  console.log("Event:", event.eventType, "HWND:", event.hwnd);
+});
+
+// Start/stop watching
+automation.startWinEventWatcher();
+// ... later
+automation.stopWinEventWatcher();
+```
+
+### Drag-Drop with OLE Fallback
+
+`dragDrop()` auto-detects OLE support and falls back to mouse simulation:
+
+```typescript
+await element.dragDrop(targetElement);
+// Internally: tries OLE first, falls back to 30-step smooth mouse animation
+```
+
+### Process Launch with Options
+
+```typescript
+await automation.launch("notepad.exe"); // simple launch (CreateProcessW under the hood)
+
+// Full-featured launch with options
+await automation.backend.launchProcess("myapp.exe", {
+  args: ["--config", "settings.ini"],
+  cwd: "C:\\App\\Data",
+  env: ["MY_APP_MODE=test"],
+});
+// Spawned processes are attached to a job object for guaranteed cleanup
+```
 
 ## Supported Elements
 

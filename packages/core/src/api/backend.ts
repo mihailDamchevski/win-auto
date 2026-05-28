@@ -14,7 +14,10 @@ export interface Backend {
   ping(): string;
   setAppConfig(executable: string, classNames: string[]): void;
   launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
-  launchProcess(executablePath: string, options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number>;
+  launchProcess(
+    executablePath: string,
+    options?: { args?: string[]; cwd?: string; env?: string[] },
+  ): Promise<number>;
   enumerateWindows(processId: number, executable?: string | null): Promise<string[]>;
   closeApp(processId: number): Promise<void>;
   closeWindow(windowHandle: string): Promise<void>;

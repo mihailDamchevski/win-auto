@@ -348,7 +348,10 @@ export class MockBackend implements Backend {
     return pid;
   }
 
-  async launchProcess(_executablePath: string, _options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number> {
+  async launchProcess(
+    _executablePath: string,
+    _options?: { args?: string[]; cwd?: string; env?: string[] },
+  ): Promise<number> {
     return 0;
   }
 

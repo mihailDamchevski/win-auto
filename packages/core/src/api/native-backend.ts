@@ -57,7 +57,10 @@ export class NativeBackend implements Backend {
     return this.native.launch(executablePath, classNames ?? null);
   }
 
-  async launchProcess(executablePath: string, options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number> {
+  async launchProcess(
+    executablePath: string,
+    options?: { args?: string[]; cwd?: string; env?: string[] },
+  ): Promise<number> {
     return this.call(() => this.native.launchProcess(executablePath, options ?? undefined));
   }
 
