@@ -1,12 +1,37 @@
 import type { Backend } from "./backend";
 import type { DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, NativeBindings, ProcessEntry } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
+import { BackendError } from "./errors";
 
 export class NativeBackend implements Backend {
   private native: NativeBindings;
 
   constructor() {
     this.native = loadNativeBindings();
+  }
+
+  private wrapError(err: unknown): never {
+    if (err instanceof BackendError) throw err;
+    if (err instanceof Error) {
+      throw new BackendError(err.message, "native", err);
+    }
+    throw new BackendError(String(err), "native", err);
+  }
+
+  private async call<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      this.wrapError(err);
+    }
+  }
+
+  private callSync<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (err) {
+      this.wrapError(err);
+    }
   }
 
   ping(): string {
@@ -225,14 +250,14 @@ export class NativeBackend implements Backend {
 
   async findImage(windowHandle: string, template: number[]): Promise<ImageMatch | null> {
     if (!this.native.findImage) {
-      throw new Error("findImage is not available in the loaded native module.");
+      throw new BackendError("findImage is not available in the loaded native module.", "native");
     }
     return this.native.findImage(windowHandle, template);
   }
 
   async clickAt(x: number, y: number): Promise<void> {
     if (!this.native.clickAt) {
-      throw new Error("clickAt is not available in the loaded native module.");
+      throw new BackendError("clickAt is not available in the loaded native module.", "native");
     }
     return this.native.clickAt(x, y);
   }
@@ -299,35 +324,35 @@ export class NativeBackend implements Backend {
 
   inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[] {
     if (!this.native.inspectHwndTree) {
-      throw new Error("inspectHwndTree is not available in the loaded native module.");
+      throw new BackendError("inspectHwndTree is not available in the loaded native module.", "native");
     }
     return this.native.inspectHwndTree(windowHandle, maxDepth ?? null);
   }
 
   debugDiscovery(processId: number) {
     if (!this.native.debugDiscovery) {
-      throw new Error("debugDiscovery is not available in the loaded native module.");
+      throw new BackendError("debugDiscovery is not available in the loaded native module.", "native");
     }
     return this.native.debugDiscovery(processId);
   }
 
   async highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void> {
     if (!this.native.highlightElement) {
-      throw new Error("highlightElement is not available in the loaded native module.");
+      throw new BackendError("highlightElement is not available in the loaded native module.", "native");
     }
     return this.native.highlightElement(elementHandle, color ?? null, durationMs ?? null);
   }
 
   buildElementPath(elementHandle: string): ElementPathStep[] {
     if (!this.native.buildElementPath) {
-      throw new Error("buildElementPath is not available in the loaded native module.");
+      throw new BackendError("buildElementPath is not available in the loaded native module.", "native");
     }
     return this.native.buildElementPath(elementHandle);
   }
 
   async resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null> {
     if (!this.native.resolveElementPath) {
-      throw new Error("resolveElementPath is not available in the loaded native module.");
+      throw new BackendError("resolveElementPath is not available in the loaded native module.", "native");
     }
     return this.native.resolveElementPath(windowHandle, path);
   }

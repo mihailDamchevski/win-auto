@@ -4,7 +4,7 @@ import type { ElementNode, ElementPath, ElementSelector, FindFirstOptions, HwndN
 import { Element } from "./element";
 import { Locator } from "./locator";
 import { classNamesForSelector } from "../native/classNames";
-import { buildElementNotFoundError } from "./errors";
+import { buildElementNotFoundError, AutomationError } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -192,7 +192,7 @@ export class Window {
   public async highlightElement(selector: ElementSelector, options?: { color?: string; durationMs?: number }): Promise<void> {
     const element = await this.findElement(selector);
     if (!element) {
-      throw new Error(`Element not found for highlight`);
+      throw new AutomationError(`Element not found for highlight`);
     }
     await element.highlight(options?.color, options?.durationMs);
   }
@@ -246,8 +246,7 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
-    throw new Error(msg);
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
   }
 
   public async waitForVisible(
@@ -266,8 +265,7 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
-    throw new Error(msg);
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
   }
 
   public async waitForEnabled(
@@ -286,7 +284,6 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    const msg = await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
-    throw new Error(msg);
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
   }
 }

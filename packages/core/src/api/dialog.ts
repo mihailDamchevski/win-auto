@@ -2,6 +2,7 @@ import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
 import type { DialogControl, DialogInfo, ElementSelector } from "./types";
 import { Element } from "./element";
+import { TimeoutError, AutomationError } from "./errors";
 
 export class Dialog {
   public readonly handle: string;
@@ -116,8 +117,10 @@ export class DialogManager {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(
+    throw new TimeoutError(
       `No dialog${options?.title ? ` with title "${options.title}"` : ""} found within ${timeoutMs}ms`,
+      "waitFor",
+      timeoutMs,
     );
   }
 }

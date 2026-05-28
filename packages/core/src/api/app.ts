@@ -5,7 +5,7 @@ import { Locator } from "./locator";
 import { DialogManager } from "./dialog";
 import type { AutomationEvents } from "./events";
 import type { ElementSelector, FindFirstOptions } from "./types";
-import { buildWindowNotFoundError } from "./errors";
+import { buildWindowNotFoundError, WindowNotFoundError, TimeoutError } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -39,7 +39,7 @@ export class App {
   public async locator(selector: ElementSelector): Promise<Locator> {
     const mainWindow = await this.getMainWindow();
     if (!mainWindow) {
-      throw new Error("App.locator: no main window found");
+      throw new WindowNotFoundError("App.locator: no main window found", this.processId, DEFAULT_TIMEOUT_MS);
     }
     return mainWindow.locator(selector);
   }
@@ -88,8 +88,7 @@ export class App {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    const msg = await buildWindowNotFoundError(this.processId, timeoutMs, this.backend);
-    throw new Error(msg);
+    throw await buildWindowNotFoundError(this.processId, timeoutMs, this.backend);
   }
 
   public async find(selector: {
@@ -141,8 +140,10 @@ export class App {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw new Error(
+    throw new TimeoutError(
       `App process ${this.processId} still has open windows after close()`,
+      "close",
+      timeoutMs,
     );
   }
 

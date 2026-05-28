@@ -1,12 +1,12 @@
 use std::cell::RefCell;
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children, TreeScope_Descendants};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetWindow, GetWindowThreadProcessId, GW_OWNER};
 
-use crate::error::napi_error;
+use crate::error::AutomationError;
 use crate::utils::{get_class_name, get_window_title, matches_window_by_class_or_title, is_top_level_visible, is_visible, process_image_for_pid, window_pid, hwnd_to_string, sort_windows_for_selection, dedupe_hwnds, to_wide_null_terminated, window_process_ends_with};
 
 struct AllWindowsContext {
@@ -327,7 +327,7 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
     }
   });
 
-  result.ok_or_else(|| napi_error("Failed to create UIAutomation instance"))
+  result.ok_or_else(|| Error::from(AutomationError::ComInitFailed { reason: "Failed to create UIAutomation instance".into() }))
 }
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
@@ -335,10 +335,10 @@ pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Ve
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
-    let root = automation.GetRootElement().map_err(|err| napi_error(format!("UIA GetRootElement failed: {err}")))?;
-    let true_condition = automation.CreateTrueCondition().map_err(|err| napi_error(format!("UIA CreateTrueCondition failed: {err}")))?;
-    let all = root.FindAll(TreeScope_Children, &true_condition).map_err(|err| napi_error(format!("UIA FindAll failed: {err}")))?;
-    let length = all.Length().map_err(|err| napi_error(format!("UIA Length failed: {err}")))?;
+    let root = automation.GetRootElement().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let true_condition = automation.CreateTrueCondition().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let all = root.FindAll(TreeScope_Children, &true_condition).map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let length = all.Length().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let mut windows = Vec::<HWND>::new();
     for i in 0..length {

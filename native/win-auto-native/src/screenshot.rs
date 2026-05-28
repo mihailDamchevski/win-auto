@@ -1,10 +1,10 @@
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use image::{ImageBuffer, ImageEncoder, Rgba};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HGDIOBJ, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
 
-use crate::error::napi_error;
+use crate::error::AutomationError;
 use crate::utils::parse_hwnd;
 
 struct CapturedBitmap {
@@ -20,32 +20,32 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
   unsafe {
     let mut rect = RECT::default();
     if windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to get window rectangle".into() }));
     }
 
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
 
     if width <= 0 || height <= 0 {
-      return Err(napi_error("Invalid window bounds for screenshot"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Invalid window bounds for screenshot".into() }));
     }
 
     let hdc_window = GetWindowDC(Some(hwnd));
     if hdc_window.is_invalid() {
-      return Err(napi_error("Failed to get window device context"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to get window device context".into() }));
     }
 
     let hdc_mem = CreateCompatibleDC(Some(hdc_window));
     if hdc_mem.is_invalid() {
       ReleaseDC(Some(hwnd), hdc_window);
-      return Err(napi_error("Failed to create compatible DC"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to create compatible DC".into() }));
     }
 
     let hbitmap = CreateCompatibleBitmap(hdc_window, width, height);
     if hbitmap.is_invalid() {
       let _ = DeleteDC(hdc_mem);
       let _ = ReleaseDC(Some(hwnd), hdc_window);
-      return Err(napi_error("Failed to create compatible bitmap"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to create compatible bitmap".into() }));
     }
 
     let old_obj = SelectObject(hdc_mem, HGDIOBJ::from(hbitmap));
@@ -53,7 +53,7 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
       let _ = DeleteObject(HGDIOBJ::from(hbitmap));
       let _ = DeleteDC(hdc_mem);
       let _ = ReleaseDC(Some(hwnd), hdc_window);
-      return Err(napi_error("Failed to select bitmap into DC"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to select bitmap into DC".into() }));
     }
 
     if BitBlt(hdc_mem, 0, 0, width, height, Some(hdc_window), 0, 0, SRCCOPY).is_err() {
@@ -61,7 +61,7 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
       let _ = DeleteObject(HGDIOBJ::from(hbitmap));
       let _ = DeleteDC(hdc_mem);
       let _ = ReleaseDC(Some(hwnd), hdc_window);
-      return Err(napi_error("Failed to capture window bitmap"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to capture window bitmap".into() }));
     }
 
     let header = BITMAPINFOHEADER {
@@ -102,7 +102,7 @@ fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
     let _ = ReleaseDC(Some(hwnd), hdc_window);
 
     if result == 0 {
-      return Err(napi_error("Failed to read bitmap pixels"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: format!("{}", hwnd.0 as isize), reason: "Failed to read bitmap pixels".into() }));
     }
 
     Ok(CapturedBitmap { pixels: buffer, width, height })
@@ -150,7 +150,7 @@ pub async fn capture_screenshot(element_handle: String) -> Result<Vec<u8>> {
 #[napi(js_name = "captureScreenshotToFile")]
 pub async fn capture_screenshot_to_file(element_handle: String, path: String) -> Result<()> {
   let bytes = capture_screenshot(element_handle).await?;
-  std::fs::write(path, bytes).map_err(|err| napi_error(format!("Failed to write screenshot file: {err}")))
+  std::fs::write(path, bytes).map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to write screenshot file: {err}") }))
 }
 
 // --- Template matching ---
@@ -288,7 +288,7 @@ pub async fn find_image(element_handle: String, template: Vec<u8>) -> Result<Opt
 
   // Decode template PNG
   let template_img = image::load_from_memory(&template)
-    .map_err(|e| napi_error(format!("Failed to decode template image: {e}")))?;
+    .map_err(|e| Error::from(AutomationError::Generic { message: format!("Failed to decode template image: {e}") }))?;
   let tw = template_img.width() as usize;
   let th = template_img.height() as usize;
 
@@ -303,12 +303,12 @@ pub async fn find_image(element_handle: String, template: Vec<u8>) -> Result<Opt
   let screen_pixels = bmp.pixels.clone();
   let screen_gray = tokio::task::spawn_blocking(move || {
     bgra_to_grayscale(&screen_pixels, sw, sh)
-  }).await.map_err(|e| napi_error(format!("Thread pool error: {e}")))?;
+  }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
 
   // Run template matching on blocking thread
   let (best_x, best_y, best_ncc) = tokio::task::spawn_blocking(move || {
     template_match_ncc(&screen_gray, sw, sh, &template_gray, tw, th)
-  }).await.map_err(|e| napi_error(format!("Thread pool error: {e}")))?;
+  }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
 
   if best_ncc < 0.3 {
     return Ok(None);

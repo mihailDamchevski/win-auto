@@ -1,4 +1,4 @@
-use napi::Result;
+use napi::{Error, Result};
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
@@ -33,7 +33,7 @@ pub fn physical_to_logical(hwnd: HWND, value: i32) -> i32 {
   }
 }
 
-use crate::error::napi_error;
+use crate::error::AutomationError;
 
 /// RAII guard that calls CoInitializeEx on construction and CoUninitialize on drop.
 /// Never fails — RPC_E_CHANGED_MODE (COM already initialized) is treated as success.
@@ -64,7 +64,7 @@ impl Drop for ComGuard {
 pub fn parse_hwnd(handle: &str) -> Result<HWND> {
   let value = handle
     .parse::<isize>()
-    .map_err(|_| napi_error(format!("Invalid window/element handle: {handle}")))?;
+    .map_err(|_| Error::from(AutomationError::InvalidHandle { handle: handle.to_string() }))?;
   // SAFETY: reinterpretation of an isize as a raw pointer; HWND is only used
   // with Windows APIs that validate the handle internally.
   Ok(HWND(value as *mut core::ffi::c_void))

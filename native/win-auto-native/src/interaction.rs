@@ -1,4 +1,4 @@
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use tracing::{info, debug};
 use windows::core::BSTR;
@@ -20,7 +20,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INP
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, SW_SHOW, WM_GETTEXT, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
 
 use crate::discovery::{create_uia, find_child_window_by_text, find_element_hwnd, find_element_uia};
-use crate::error::napi_error;
+use crate::error::AutomationError;
 
 use crate::utils::{hwnd_to_string, logical_to_physical, parse_hwnd, physical_to_logical, to_wide_null_terminated};
 
@@ -449,8 +449,8 @@ pub async fn find_element_name(window_handle: String, name: String) -> Result<Op
   // UIA property conditions and FindAll/FindFirst calls follow the UIA COM ABI.
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let root = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA root from handle: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
     let query_lower = name.to_ascii_lowercase();
     let condition_flags = PropertyConditionFlags(
       PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
@@ -463,10 +463,10 @@ pub async fn find_element_name(window_handle: String, name: String) -> Result<Op
         &value,
         condition_flags,
       )
-      .map_err(|err| napi_error(format!("Failed to create UIA name condition: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let element = root.FindFirst(TreeScope_Descendants, &condition)
-      .map_err(|err| napi_error(format!("Failed to find UIA element by name: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     if let Ok(current_name) = element.CurrentName() {
       let current_name = current_name.to_string();
@@ -476,14 +476,14 @@ pub async fn find_element_name(window_handle: String, name: String) -> Result<Op
     }
 
     // Fallback: search all descendants by name substring if the direct property condition didn't match.
-    let true_condition = automation.CreateTrueCondition().map_err(|err| napi_error(format!("Failed to create UIA true condition: {err}")))?;
+    let true_condition = automation.CreateTrueCondition().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let all = root
       .FindAll(TreeScope_Descendants, &true_condition)
-      .map_err(|err| napi_error(format!("Failed to search UIA descendants: {err}")))?;
-    let length = all.Length().map_err(|err| napi_error(format!("Failed to get UIA collection length: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let length = all.Length().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     for i in 0..length {
-      let element = all.GetElement(i).map_err(|err| napi_error(format!("Failed to read UIA element from collection: {err}")))?;
+      let element = all.GetElement(i).map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
       let current_name = element.CurrentName().ok().map(|name| name.to_string()).unwrap_or_default();
       if current_name.is_empty() {
         continue;
@@ -501,10 +501,10 @@ fn invoke_uia_element(element: &windows::Win32::UI::Accessibility::IUIAutomation
   unsafe {
     let pattern: IUIAutomationInvokePattern = element
       .GetCurrentPatternAs(UIA_InvokePatternId)
-      .map_err(|err| napi_error(format!("Invoke pattern not available on element: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: "".into(), pattern: "InvokePattern" }))?;
     pattern
       .Invoke()
-      .map_err(|err| napi_error(format!("Invoke failed: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::Generic { message: format!("Invoke failed: {err}") }))?;
   }
   Ok(())
 }
@@ -520,14 +520,14 @@ pub async fn click_element(element_handle: String) -> Result<()> {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         // Try InvokePattern first
         if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
-          pattern.Invoke().map_err(|err| napi_error(format!("Invoke failed: {err}")))?;
+          pattern.Invoke().map_err(|err| Error::from(AutomationError::Generic { message: format!("Invoke failed: {err}") }))?;
           return Ok(());
         }
         // Fallback: click center of UIA bounding rectangle
         if let Ok(rect) = element.CurrentBoundingRectangle() {
           let cx = (rect.left + rect.right) / 2;
           let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
+          SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
           cursor_set = true;
         }
       }
@@ -539,13 +539,13 @@ pub async fn click_element(element_handle: String) -> Result<()> {
     let mut rect = RECT::default();
     unsafe {
       if GetWindowRect(hwnd, &mut rect).is_err() {
-        return Err(napi_error("Failed to get window rect"));
+        return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rect".into() }));
       }
     }
     let cx = (rect.left + rect.right) / 2;
     let cy = (rect.top + rect.bottom) / 2;
     unsafe {
-      SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
+      SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
     }
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
@@ -633,16 +633,16 @@ fn find_and_invoke_by_name(
 pub async fn click_element_by_name(window_handle: String, name: String) -> Result<()> {
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let hwnd = parse_hwnd(&window_handle)?;
-    let root = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA root from handle: {err}")))?;
+    let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
 
     let query_lower = name.to_ascii_lowercase();
     if find_and_invoke_by_name(&automation, &root, &query_lower)? {
       return Ok(());
     }
-    Err(napi_error(format!("No UIA element found with name containing '{name}'")))
+    Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: name.clone() }))
   }
 }
 
@@ -657,10 +657,10 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
 
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let hwnd = parse_hwnd(&window_handle)?;
-    let root = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA root from handle: {err}")))?;
+    let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
 
     let lower_names: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
     let mut remaining: Vec<bool> = vec![true; names.len()];
@@ -686,9 +686,9 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
                 let lower = current_name.to_ascii_lowercase();
                 if lower.contains(&lower_names[j]) {
                   if let Err(err) = invoke_uia_element(&element) {
-                    return Err(napi_error(format!(
+                    return Err(Error::from(AutomationError::Generic { message: format!(
                       "Failed to invoke '{}': {}", names[j], err
-                    )));
+                    ) }));
                   }
                   remaining[j] = false;
                   break;
@@ -696,9 +696,7 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
               }
             }
             if remaining[j] {
-              return Err(napi_error(format!(
-                "No UIA element found with name containing '{}'", names[j]
-              )));
+              return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
             }
           }
         }
@@ -708,9 +706,7 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
     // Check for any remaining unfound names.
     for j in 0..total {
       if remaining[j] {
-        return Err(napi_error(format!(
-          "No UIA element found with name containing '{}'", names[j]
-        )));
+        return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
       }
     }
   }
@@ -734,13 +730,13 @@ pub fn build_element_path(element_handle: String) -> Result<Vec<ElementPathStep>
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
     let true_condition = automation.CreateTrueCondition()
-      .map_err(|err| napi_error(format!("CreateTrueCondition failed: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let walker = automation.CreateTreeWalker(&true_condition)
-      .map_err(|err| napi_error(format!("CreateTreeWalker failed: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let mut path: Vec<ElementPathStep> = Vec::new();
     let mut current = automation.ElementFromHandle(hwnd)
-      .map_err(|err| napi_error(format!("ElementFromHandle failed: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
 
     loop {
       // Read properties of current element
@@ -818,10 +814,10 @@ pub async fn resolve_element_path(window_handle: String, path: Vec<ElementPathSt
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
     let true_condition = automation.CreateTrueCondition()
-      .map_err(|err| napi_error(format!("CreateTrueCondition failed: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let mut current = automation.ElementFromHandle(hwnd)
-      .map_err(|err| napi_error(format!("ElementFromHandle failed: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
 
     for step in &path {
       let mut found = false;
@@ -888,7 +884,7 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
         if let Ok(rect) = element.CurrentBoundingRectangle() {
           let cx = (rect.left + rect.right) / 2;
           let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|_| napi_error("Failed to set cursor position"))?;
+          SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
           return Ok(());
         }
       }
@@ -899,11 +895,11 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
   unsafe {
     let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
     }
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
-    SetCursorPos(center_x, center_y).map_err(|_| napi_error("Failed to set cursor position"))?;
+    SetCursorPos(center_x, center_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
   }
   Ok(())
 }
@@ -917,7 +913,7 @@ pub async fn scroll_element(element_handle: String, direction: String, amount: i
     "down" => (WPARAM(1), WM_VSCROLL),
     "left" => (WPARAM(0), WM_HSCROLL),
     "right" => (WPARAM(1), WM_HSCROLL),
-    _ => return Err(napi_error(format!("Invalid scroll direction: {direction}"))),
+    _ => return Err(Error::from(AutomationError::Generic { message: format!("Invalid scroll direction: {direction}") })),
   };
 
   unsafe {
@@ -933,12 +929,12 @@ pub async fn get_value(element_handle: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationValuePattern = element
       .GetCurrentPatternAs(UIA_ValuePatternId)
-      .map_err(|err| napi_error(format!("Value pattern not available on element: {err}")))?;
-    let value = pattern.CurrentValue().map_err(|err| napi_error(format!("Failed to get value: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: element_handle.clone(), pattern: "ValuePattern" }))?;
+    let value = pattern.CurrentValue().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get value: {err}") }))?;
     Ok(value.to_string())
   }
 }
@@ -948,13 +944,13 @@ pub async fn set_value(element_handle: String, value: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationValuePattern = element
       .GetCurrentPatternAs(UIA_ValuePatternId)
-      .map_err(|err| napi_error(format!("Value pattern not available on element: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: element_handle.clone(), pattern: "ValuePattern" }))?;
     let bstr: BSTR = value.into();
-    pattern.SetValue(&bstr).map_err(|err| napi_error(format!("Failed to set value: {err}")))?;
+    pattern.SetValue(&bstr).map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to set value: {err}") }))?;
   }
   Ok(())
 }
@@ -964,12 +960,12 @@ pub async fn select_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationSelectionItemPattern = element
       .GetCurrentPatternAs(UIA_SelectionItemPatternId)
-      .map_err(|err| napi_error(format!("SelectionItem pattern not available on element: {err}")))?;
-    pattern.Select().map_err(|err| napi_error(format!("Failed to select element: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: element_handle.clone(), pattern: "SelectionItemPattern" }))?;
+    pattern.Select().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to select element: {err}") }))?;
   }
   Ok(())
 }
@@ -979,12 +975,12 @@ pub async fn toggle_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationTogglePattern = element
       .GetCurrentPatternAs(UIA_TogglePatternId)
-      .map_err(|err| napi_error(format!("Toggle pattern not available on element: {err}")))?;
-    pattern.Toggle().map_err(|err| napi_error(format!("Failed to toggle element: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: element_handle.clone(), pattern: "TogglePattern" }))?;
+    pattern.Toggle().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to toggle element: {err}") }))?;
   }
   Ok(())
 }
@@ -994,12 +990,12 @@ pub async fn get_toggle_state(element_handle: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
-    let automation = create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationTogglePattern = element
       .GetCurrentPatternAs(UIA_TogglePatternId)
-      .map_err(|err| napi_error(format!("Toggle pattern not available on element: {err}")))?;
-    let state = pattern.CurrentToggleState().map_err(|err| napi_error(format!("Failed to get toggle state: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::PatternNotSupported { handle: element_handle.clone(), pattern: "TogglePattern" }))?;
+    let state = pattern.CurrentToggleState().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get toggle state: {err}") }))?;
     let label = match state.0 {
       0 => "Off",
       1 => "On",
@@ -1275,7 +1271,7 @@ pub async fn is_element_visible(element_handle: String) -> Result<bool> {
     let _com_init = crate::utils::ComGuard::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        let offscreen = element.CurrentIsOffscreen().map_err(|err| napi_error(format!("Failed to get offscreen state: {err}")))?;
+        let offscreen = element.CurrentIsOffscreen().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get offscreen state: {err}") }))?;
         return Ok(!offscreen.as_bool());
       }
     }
@@ -1292,7 +1288,7 @@ pub async fn is_element_enabled(element_handle: String) -> Result<bool> {
     let _com_init = crate::utils::ComGuard::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        let enabled = element.CurrentIsEnabled().map_err(|err| napi_error(format!("Failed to get enabled state: {err}")))?;
+        let enabled = element.CurrentIsEnabled().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get enabled state: {err}") }))?;
         return Ok(enabled.as_bool());
       }
     }
@@ -1308,7 +1304,7 @@ pub async fn is_element_focused(element_handle: String) -> Result<bool> {
     let _com_init = crate::utils::ComGuard::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        let focused = element.CurrentHasKeyboardFocus().map_err(|err| napi_error(format!("Failed to get focus state: {err}")))?;
+        let focused = element.CurrentHasKeyboardFocus().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get focus state: {err}") }))?;
         return Ok(focused.as_bool());
       }
     }
@@ -1322,13 +1318,13 @@ pub async fn focus_element(element_handle: String) -> Result<()> {
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation =
-      create_uia().map_err(|err| napi_error(format!("Failed to initialize UIAutomation: {err}")))?;
+      create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let uia_element = automation
       .ElementFromHandle(hwnd)
-      .map_err(|err| napi_error(format!("Failed to get UIA element from handle: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     uia_element
       .SetFocus()
-      .map_err(|err| napi_error(format!("Failed to set focus on element: {err}")))?;
+      .map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to set focus on element: {err}") }))?;
   }
   Ok(())
 }
@@ -1347,7 +1343,7 @@ pub async fn get_window_bounds(window_handle: String) -> Result<WindowBounds> {
   unsafe {
     let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: window_handle.clone(), reason: "Failed to get window rectangle".into() }));
     }
     Ok(WindowBounds {
       left: physical_to_logical(hwnd, rect.left),
@@ -1376,7 +1372,7 @@ pub async fn set_window_bounds(
       logical_to_physical(hwnd, height),
       true,
     )
-    .map_err(|err| napi_error(format!("Failed to set window bounds: {err}")))?;
+    .map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to set window bounds: {err}") }))?;
   }
   Ok(())
 }
@@ -1546,18 +1542,18 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
 
   let parts: Vec<&str> = key_combination.split('+').map(|s| s.trim()).collect();
   if parts.is_empty() {
-    return Err(napi_error("Empty key combination"));
+    return Err(Error::from(AutomationError::Generic { message: "Empty key combination".into() }));
   }
 
-  let main_key = parts.last().ok_or_else(|| napi_error("No main key in combination"))?;
+  let main_key = parts.last().ok_or_else(|| Error::from(AutomationError::Generic { message: "No main key in combination".into() }))?;
   let main_vk = vk_from_name(main_key)
-    .ok_or_else(|| napi_error(format!("Unknown key: {main_key}")))?;
+    .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {main_key}") }))?;
 
   let mut modifier_keys = Vec::new();
   for i in 0..parts.len().saturating_sub(1) {
     let mod_name = parts[i];
     let mod_vk = vk_from_name(mod_name)
-      .ok_or_else(|| napi_error(format!("Unknown modifier: {mod_name}")))?;
+      .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown modifier: {mod_name}") }))?;
     modifier_keys.push(mod_vk);
   }
 
@@ -1631,12 +1627,12 @@ pub async fn right_click_element(element_handle: String) -> Result<()> {
   let mut rect = RECT::default();
   unsafe {
     if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
     }
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
-      .map_err(|_| napi_error("Failed to set cursor position"))?;
+      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await;
@@ -1649,12 +1645,12 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
   let mut rect = RECT::default();
   unsafe {
     if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
     }
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
-      .map_err(|_| napi_error("Failed to set cursor position"))?;
+      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   // Two quick left clicks
@@ -1669,7 +1665,7 @@ pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
   // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
     SetCursorPos(x, y)
-      .map_err(|_| napi_error("Failed to set cursor position"))?;
+      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
   }
   Ok(())
 }
@@ -1679,7 +1675,7 @@ pub async fn click_at(x: i32, y: i32) -> Result<()> {
   // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
     SetCursorPos(x, y)
-      .map_err(|_| napi_error("Failed to set cursor position"))?;
+      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
@@ -1696,7 +1692,7 @@ pub async fn key_down(window_handle: String, key: String) -> Result<()> {
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
-    .ok_or_else(|| napi_error(format!("Unknown key: {key}")))?;
+    .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
   send_key_down(vk);
   Ok(())
 }
@@ -1711,7 +1707,7 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
-    .ok_or_else(|| napi_error(format!("Unknown key: {key}")))?;
+    .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
   send_key_up(vk);
   Ok(())
 }
@@ -1855,7 +1851,7 @@ pub fn inspect_window_tree(window_handle: String, max_depth: Option<i32>) -> Res
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
     let root = automation.ElementFromHandle(hwnd)
-      .map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
     let depth = max_depth.unwrap_or(10);
     let mut result = Vec::new();
     if let Ok(true_cond) = automation.CreateTrueCondition() {
@@ -1879,7 +1875,7 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
   unsafe {
     let _com_init = crate::utils::ComGuard::init();
     let automation = create_uia()?;
-    let element = automation.ElementFromHandle(hwnd).map_err(|err| napi_error(format!("Failed to get UIA element: {err}")))?;
+    let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
 
     let attr = attribute_name.to_ascii_lowercase().replace("_", "");
     let result = match attr.as_str() {
@@ -1928,10 +1924,10 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
         }
         Some(String::new())
       }
-      _ => return Err(napi_error(format!("Unknown attribute: {attribute_name}"))),
+      _ => return Err(Error::from(AutomationError::Generic { message: format!("Unknown attribute: {attribute_name}") })),
     };
 
-    result.ok_or_else(|| napi_error(format!("Failed to read attribute '{attribute_name}' from element")))
+    result.ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Failed to read attribute '{attribute_name}' from element") }))
   }
 }
 
@@ -1943,7 +1939,7 @@ pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -
   let mut from_rect = RECT::default();
   unsafe {
     if GetWindowRect(from_hwnd, &mut from_rect).is_err() {
-      return Err(napi_error("Failed to get source window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: from_element_handle.clone(), reason: "Failed to get source window rectangle".into() }));
     }
   }
   let from_x = (from_rect.left + from_rect.right) / 2;
@@ -1952,7 +1948,7 @@ pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -
   let mut to_rect = RECT::default();
   unsafe {
     if GetWindowRect(to_hwnd, &mut to_rect).is_err() {
-      return Err(napi_error("Failed to get target window rectangle"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: to_element_handle.clone(), reason: "Failed to get target window rectangle".into() }));
     }
   }
   let to_x = (to_rect.left + to_rect.right) / 2;
@@ -1961,12 +1957,12 @@ pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -
   // SAFETY: SetCursorPos and SendInput are safe; coordinates are from valid GetWindowRect calls,
   // INPUT structures are initialized via make_mouse_input with correct MOUSE_EVENT_FLAGS.
   unsafe {
-    SetCursorPos(from_x, from_y).map_err(|_| napi_error("Failed to position cursor"))?;
+    SetCursorPos(from_x, from_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to position cursor".into() }))?;
     SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTDOWN.0)], std::mem::size_of::<INPUT>() as i32);
   }
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   unsafe {
-    SetCursorPos(to_x, to_y).map_err(|_| napi_error("Failed to position cursor"))?;
+    SetCursorPos(to_x, to_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to position cursor".into() }))?;
     SendInput(&[make_mouse_input(MOUSEEVENTF_MOVE.0)], std::mem::size_of::<INPUT>() as i32);
   }
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;

@@ -3,6 +3,7 @@ import { NativeBackend } from "./native-backend";
 import { App } from "./app";
 import { AutomationEvents } from "./events";
 import { ProcessManager } from "./process";
+import { AutomationError } from "./errors";
 import type { AppSelector, LaunchOptions } from "./types";
 
 
@@ -52,7 +53,7 @@ export class Automation {
 
   public async connectApp(selector: AppSelector): Promise<App> {
     if (!selector.processId) {
-      throw new Error(
+      throw new AutomationError(
         "connectApp currently requires processId for the native backend.",
       );
     }

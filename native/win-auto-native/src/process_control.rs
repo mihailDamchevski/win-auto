@@ -1,6 +1,6 @@
 use std::process::Command;
 use std::time::Duration;
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use tracing::info;
 use windows::Win32::Foundation::{CloseHandle, HWND, WPARAM, LPARAM};
@@ -11,7 +11,7 @@ use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomat
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
 use crate::discovery::{collect_all_top_level_windows, discover_windows_for_pid};
-use crate::error::napi_error;
+use crate::error::AutomationError;
 use crate::utils::{get_class_name, get_window_title, is_visible, process_image_for_pid, window_pid};
 
 fn is_process_running(pid: u32) -> bool {
@@ -51,7 +51,7 @@ fn terminate_process(pid: u32) -> Result<()> {
   // SAFETY: handle is still valid and owned by this function.
   let _ = unsafe { CloseHandle(handle) };
   if result.is_err() {
-    return Err(napi_error(format!("TerminateProcess failed for pid {pid}")));
+    return Err(Error::from(AutomationError::ProcessLaunchFailed { path: format!("pid {pid}"), os_error: 0 }));
   }
   Ok(())
 }
@@ -84,7 +84,7 @@ async fn close_app_internal(process_id: u32) -> Result<()> {
       tokio::time::sleep(Duration::from_millis(50)).await;
     }
     if is_process_running(process_id) {
-      return Err(napi_error(format!("Process {process_id} did not exit after close")));
+      return Err(Error::from(AutomationError::ProcessLaunchFailed { path: format!("Process {process_id}"), os_error: 0 }));
     }
   }
 
@@ -98,11 +98,11 @@ pub async fn launch(
 ) -> Result<u32> {
   info!("launch executable_path={executable_path:?}");
   let path = executable_path
-    .ok_or_else(|| napi_error("executablePath is required"))?;
+    .ok_or_else(|| Error::from(AutomationError::Generic { message: "executablePath is required".into() }))?;
 
   let child = Command::new(&path)
     .spawn()
-    .map_err(|err| napi_error(format!("Failed to launch process: {err}")))?;
+    .map_err(|_err| Error::from(AutomationError::ProcessLaunchFailed { path: path.clone(), os_error: 0 }))?;
 
   let child_pid = child.id();
 

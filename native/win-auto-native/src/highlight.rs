@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 use tokio::sync::oneshot;
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
   WS_VISIBLE,
 };
 
-use crate::error::napi_error;
+use crate::error::AutomationError;
 use crate::utils::parse_hwnd;
 
 const HIGHLIGHT_CLASS_NAME: &str = "WinAutoHighlightOverlay\0";
@@ -115,11 +115,11 @@ pub async fn highlight_element(
   let (rect, _atom, wide_class) = unsafe {
     let mut rect = RECT::default();
     if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(napi_error("Failed to get window rectangle for highlight"));
+      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle for highlight".into() }));
     }
     let atom = ensure_window_class();
     if atom == 0 {
-      return Err(napi_error("Failed to register highlight window class"));
+      return Err(Error::from(AutomationError::Generic { message: "Failed to register highlight window class".into() }));
     }
     let wide_class: Vec<u16> = HIGHLIGHT_CLASS_NAME.encode_utf16().collect();
     (rect, atom, wide_class)
@@ -147,7 +147,7 @@ pub async fn highlight_element(
       None::<HINSTANCE>,
       None::<*const std::ffi::c_void>,
     )
-    .map_err(|_| napi_error("Failed to create highlight overlay window"))?;
+    .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to create highlight overlay window".into() }))?;
     let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
     h
   };

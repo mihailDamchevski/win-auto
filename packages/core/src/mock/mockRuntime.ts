@@ -1,4 +1,5 @@
 import type { ElementSelector, LaunchOptions, MatchMode, WindowBounds } from "../api/types";
+import { AutomationError } from "../api/errors";
 
 function matchesValue(
   actual: string | undefined,
@@ -185,7 +186,7 @@ export class MockRuntime {
     await wait();
     const element = windowRecord.elements.find((record) => record.id === elementId);
     if (!element) {
-      throw new Error(`Element not found: ${elementId}`);
+      throw new AutomationError(`Element not found: ${elementId}`);
     }
     element.text = text;
   }

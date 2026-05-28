@@ -1,4 +1,4 @@
-use napi::{Result};
+use napi::{Error, Result};
 use napi_derive::napi;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -7,7 +7,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, SetForegroundWindow, ShowWindow, SW_NORMAL};
 
 use crate::discovery::collect_windows_for_pid;
-use crate::error::napi_error;
+use crate::error::AutomationError;
 use crate::interaction::click_element;
 use crate::utils::{get_class_name, get_window_title, hwnd_to_string, is_visible, parse_hwnd};
 
@@ -137,9 +137,7 @@ pub async fn click_dialog_button(window_handle: String, button_text: String) -> 
     }
   }
 
-  Err(napi_error(format!(
-    "No button with text '{button_text}' found in dialog"
-  )))
+  Err(Error::from(AutomationError::DialogFailed { message: format!("No button with text '{button_text}' found in dialog") }))
 }
 
 #[napi(js_name = "setDialogFilePath")]
@@ -204,7 +202,5 @@ pub async fn set_dialog_file_path(window_handle: String, path: String) -> Result
     }
   }
 
-  Err(napi_error(format!(
-    "No text input control found in file dialog for window {window_handle}"
-  )))
+  Err(Error::from(AutomationError::DialogFailed { message: format!("No text input control found in file dialog for window {window_handle}") }))
 }

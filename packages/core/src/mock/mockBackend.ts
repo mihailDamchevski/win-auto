@@ -8,6 +8,7 @@ import {
 import type {
   DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, MatchMode, ProcessEntry, WindowBounds, WindowDebugInfo,
 } from "../api/types";
+import { AutomationError } from "../api/errors";
 
 const MOCK_DELAY_MS = 5;
 
@@ -87,13 +88,13 @@ export class MockBackend implements Backend {
 
   private assertWindow(handle: string): MockWindowRecord {
     const win = this.windowHandleToWin.get(handle);
-    if (!win) throw new Error(`Window not found: ${handle}`);
+    if (!win) throw new AutomationError(`Window not found: ${handle}`);
     return win;
   }
 
   private assertElement(handle: string): MockElementRecord {
     const el = this.elementHandleToEl.get(handle);
-    if (!el) throw new Error(`Element not found: ${handle}`);
+    if (!el) throw new AutomationError(`Element not found: ${handle}`);
     return el;
   }
 
@@ -124,7 +125,7 @@ export class MockBackend implements Backend {
   ): string {
     const parentEl = this.elementHandleToEl.get(parentHandle);
     if (!parentEl) {
-      throw new Error(`Parent element not found: ${parentHandle}`);
+      throw new AutomationError(`Parent element not found: ${parentHandle}`);
     }
 
     const childId = elementId ?? `mock-el-child-${this.nextElementHandle}`;
@@ -164,7 +165,7 @@ export class MockBackend implements Backend {
   ): string {
     const app = this.pidToApp.get(processId);
     if (!app) {
-      throw new Error(`App not found: ${processId}`);
+      throw new AutomationError(`App not found: ${processId}`);
     }
 
     const winId = windowId ?? `mock-win-child-${this.nextWindowHandle}`;
@@ -194,7 +195,7 @@ export class MockBackend implements Backend {
   ): string {
     const app = this.pidToApp.get(processId);
     if (!app) {
-      throw new Error(`App not found: ${processId}`);
+      throw new AutomationError(`App not found: ${processId}`);
     }
 
     const winId = `mock-win-tree-${this.nextWindowHandle}`;
@@ -451,7 +452,7 @@ export class MockBackend implements Backend {
   async clickElementByName(windowHandle: string, name: string): Promise<void> {
     const handle = await this.findElementName(windowHandle, name);
     if (!handle) {
-      throw new Error(`Element with name "${name}" not found in window ${windowHandle}`);
+      throw new AutomationError(`Element with name "${name}" not found in window ${windowHandle}`);
     }
     await this.clickElement(handle);
   }
@@ -460,7 +461,7 @@ export class MockBackend implements Backend {
     for (const name of names) {
       const handle = await this.findElementName(windowHandle, name);
       if (!handle) {
-        throw new Error(`Element with name "${name}" not found in clickSequence`);
+        throw new AutomationError(`Element with name "${name}" not found in clickSequence`);
       }
       await this.clickElement(handle);
     }
@@ -723,7 +724,7 @@ export class MockBackend implements Backend {
   async clickDialogButton(windowHandle: string, buttonText: string): Promise<void> {
     const controls = this.getDialogControls(windowHandle);
     if (!controls.some((c) => c.name === buttonText)) {
-      throw new Error(`Button "${buttonText}" not found in dialog ${windowHandle}`);
+      throw new AutomationError(`Button "${buttonText}" not found in dialog ${windowHandle}`);
     }
   }
 

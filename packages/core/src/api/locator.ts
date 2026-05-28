@@ -3,7 +3,7 @@ import type { AutomationEvents } from "./events";
 import type { ElementSelector, ImageMatch, LocatorFilter, WaitOptions } from "./types";
 import { Element } from "./element";
 import { classNamesForSelector } from "../native/classNames";
-import { buildElementNotFoundError } from "./errors";
+import { AutomationError, buildElementNotFoundError, TimeoutError } from "./errors";
 
 type LocatorStrategy =
   | { type: "selector"; selector: ElementSelector }
@@ -32,7 +32,7 @@ async function poll<T>(
     await backend.waitForUiChange(intervalMs);
   }
 
-  throw new Error(`Locator: element not found within ${timeoutMs}ms`);
+    throw new TimeoutError(`Locator: element not found within ${timeoutMs}ms`, "poll", timeoutMs);
 }
 
 async function pollImage(
@@ -53,7 +53,7 @@ async function pollImage(
     await backend.waitForUiChange(intervalMs);
   }
 
-  throw new Error(`Locator: image not found within ${timeoutMs}ms`);
+  throw new TimeoutError(`Locator: image not found within ${timeoutMs}ms`, "pollImage", timeoutMs);
 }
 
 export class Locator {
@@ -146,7 +146,7 @@ export class Locator {
 
   async waitFor(options?: WaitOptions): Promise<Element> {
     if (this.strategies.length === 0) {
-      throw new Error("Locator: no strategies defined. Call .locator() or .image() first.");
+      throw new AutomationError("Locator: no strategies defined. Call .locator() or .image() first.");
     }
 
     try {
@@ -156,14 +156,15 @@ export class Locator {
         this.backend,
         options,
       );
-    } catch {
-      // Build a rich error with available elements
-      const firstSelector = this.strategies.find(s => s.type === "selector") as { type: "selector"; selector: ElementSelector } | undefined;
-      if (firstSelector) {
-        const msg = await buildElementNotFoundError(this.windowHandle, firstSelector.selector, this.backend, options);
-        throw new Error(msg);
+    } catch (err) {
+      if (err instanceof TimeoutError) {
+        // Build a rich error with available elements
+        const firstSelector = this.strategies.find(s => s.type === "selector") as { type: "selector"; selector: ElementSelector } | undefined;
+        if (firstSelector) {
+          throw await buildElementNotFoundError(this.windowHandle, firstSelector.selector, this.backend, options);
+        }
       }
-      throw new Error(`Locator: element not found within ${options?.timeoutMs ?? 10_000}ms`);
+      throw err;
     }
   }
 
@@ -184,7 +185,7 @@ export class Locator {
         }
       }
     }
-    throw new Error("Locator: all strategies exhausted");
+    throw new AutomationError("Locator: all strategies exhausted");
   }
 
   async rightClick(options?: WaitOptions): Promise<void> {

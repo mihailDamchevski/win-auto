@@ -2,6 +2,7 @@ import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
 import type { ElementPath, ElementSelector } from "./types";
 import { classNamesForSelector } from "../native/classNames";
+import { StaleElementError, TimeoutError } from "./errors";
 
 export class Element {
   public handle: string;
@@ -93,7 +94,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         await this.backend.clickElement(this.handle);
       } else {
-        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
       }
     }
     this.events.emitElementClicked(this.handle);
@@ -106,7 +112,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         await this.backend.rightClickElement(this.handle);
       } else {
-        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
       }
     }
     this.events.emitElementRightClicked(this.handle);
@@ -119,7 +130,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         await this.backend.doubleClickElement(this.handle);
       } else {
-        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
       }
     }
     this.events.emitElementDoubleClicked(this.handle);
@@ -132,7 +148,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         await this.backend.hoverElement(this.handle);
       } else {
-        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
       }
     }
     this.events.emitElementHovered(this.handle);
@@ -158,7 +179,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         await this.backend.typeText(this.handle, text);
       } else {
-        throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
       }
     }
     this.events.emitElementTyped(this.handle, text);
@@ -198,7 +224,12 @@ export class Element {
       if (this.originalSelector && await this.tryResolve()) {
         return this.backend.getText(this.handle);
       }
-      throw new Error(`Element ${this.handle} is stale and could not be re-resolved`);
+      throw new StaleElementError(
+        `Element ${this.handle} is stale and could not be re-resolved`,
+        this.handle,
+        undefined,
+        this.originalSelector,
+      );
     }
   }
 
@@ -331,8 +362,10 @@ export class Element {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw new Error(
+    throw new TimeoutError(
       `Element ${this.handle} did not become visible within ${timeoutMs}ms`,
+      "waitForVisible",
+      timeoutMs,
     );
   }
 
@@ -351,8 +384,10 @@ export class Element {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw new Error(
+    throw new TimeoutError(
       `Element ${this.handle} did not become enabled within ${timeoutMs}ms`,
+      "waitForEnabled",
+      timeoutMs,
     );
   }
 }

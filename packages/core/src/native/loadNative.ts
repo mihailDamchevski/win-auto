@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { NativeBindings } from "../api/types";
+import { BackendError } from "../api/errors";
 
 // CJS-compatible import.meta shim — in ESM builds import.meta is available,
 // in CJS builds the try block throws and we fall back to __dirname / require.
@@ -145,7 +146,8 @@ export function loadNativeBindings(): NativeBindings {
     }
   }
 
-  throw new Error(
+  throw new BackendError(
     "Native module not found. Run `npm run build:native` at workspace root before calling native functions.",
+    "native",
   );
 }
