@@ -46,7 +46,9 @@ export async function inspectCommand(
       process.stdout.write(`  PID: ${pid}\n`);
       try {
         const bounds = await backend.getWindowBounds(winHandle);
-        process.stdout.write(`  Bounds: ${bounds.left},${bounds.top} ${bounds.width}x${bounds.height}\n`);
+        process.stdout.write(
+          `  Bounds: ${bounds.left},${bounds.top} ${bounds.width}x${bounds.height}\n`,
+        );
       } catch {
         process.stdout.write(`  Bounds: (unavailable)\n`);
       }
@@ -111,7 +113,9 @@ export async function inspectCommand(
       process.stdout.write(`  Window: ${formatHandle(winHandle)}\n`);
       try {
         const bounds = await backend.getWindowBounds(winHandle);
-        process.stdout.write(`    Bounds: ${bounds.left},${bounds.top} ${bounds.width}x${bounds.height}\n`);
+        process.stdout.write(
+          `    Bounds: ${bounds.left},${bounds.top} ${bounds.width}x${bounds.height}\n`,
+        );
       } catch {
         process.stdout.write(`    Bounds: (unavailable)\n`);
       }

@@ -88,11 +88,13 @@ export class DialogManager {
       return dialogs[0] ?? null;
     }
     const query = title.toLocaleLowerCase();
-    return dialogs.find(
-      (d) =>
-        d.title.toLocaleLowerCase().includes(query) ||
-        query.includes(d.title.toLocaleLowerCase()),
-    ) ?? null;
+    return (
+      dialogs.find(
+        (d) =>
+          d.title.toLocaleLowerCase().includes(query) ||
+          query.includes(d.title.toLocaleLowerCase()),
+      ) ?? null
+    );
   }
 
   public async waitFor(options?: {

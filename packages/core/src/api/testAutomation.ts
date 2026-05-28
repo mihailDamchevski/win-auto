@@ -25,7 +25,7 @@ export async function closeTrackedApps(): Promise<void> {
       } catch {
         // Best-effort cleanup between tests.
       }
-    })
+    }),
   );
 }
 
@@ -39,7 +39,10 @@ export async function captureScreenshotsFromTrackedApps(dir?: string): Promise<s
     try {
       const window = await app.getMainWindow();
       if (window) {
-        const filePath = path.resolve(screenshotDir, `${Date.now()}_${app.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`);
+        const filePath = path.resolve(
+          screenshotDir,
+          `${Date.now()}_${app.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`,
+        );
         await window.screenshotToFile(filePath);
         saved.push(filePath);
       }

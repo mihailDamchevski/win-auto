@@ -1,12 +1,22 @@
 import type { Backend } from "../api/backend";
 import type {
-  MockAppRecord, MockWindowRecord, MockElementRecord, MockTreeElement,
+  MockAppRecord,
+  MockWindowRecord,
+  MockElementRecord,
+  MockTreeElement,
 } from "./mockRuntime";
-import {
-  createDefaultElement, createDefaultWindow, createDefaultApp,
-} from "./mockRuntime";
+import { createDefaultElement, createDefaultWindow, createDefaultApp } from "./mockRuntime";
 import type {
-  DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, MatchMode, ProcessEntry, WindowBounds, WindowDebugInfo,
+  DialogControl,
+  DialogInfo,
+  ElementNode,
+  ElementPathStep,
+  HwndNode,
+  ImageMatch,
+  MatchMode,
+  ProcessEntry,
+  WindowBounds,
+  WindowDebugInfo,
 } from "../api/types";
 import { AutomationError } from "../api/errors";
 
@@ -51,7 +61,13 @@ function classNamesMatch(
 }
 
 function selectorMatches(
-  recordSelector: { automationId?: string; name?: string; role?: string; className?: string; text?: string },
+  recordSelector: {
+    automationId?: string;
+    name?: string;
+    role?: string;
+    className?: string;
+    text?: string;
+  },
   automationId?: string | null,
   name?: string | null,
   role?: string | null,
@@ -59,10 +75,20 @@ function selectorMatches(
   _text?: string | null,
   matchMode?: MatchMode | string | null,
 ): boolean {
-  if (!matchesValue(recordSelector.automationId, automationId, matchMode as MatchMode | undefined | null)) return false;
-  if (!matchesValue(recordSelector.name, name, matchMode as MatchMode | undefined | null)) return false;
-  if (!matchesValue(recordSelector.role, role, matchMode as MatchMode | undefined | null)) return false;
-  if (!matchesValue(recordSelector.className, className, matchMode as MatchMode | undefined | null)) return false;
+  if (
+    !matchesValue(
+      recordSelector.automationId,
+      automationId,
+      matchMode as MatchMode | undefined | null,
+    )
+  )
+    return false;
+  if (!matchesValue(recordSelector.name, name, matchMode as MatchMode | undefined | null))
+    return false;
+  if (!matchesValue(recordSelector.role, role, matchMode as MatchMode | undefined | null))
+    return false;
+  if (!matchesValue(recordSelector.className, className, matchMode as MatchMode | undefined | null))
+    return false;
   return true;
 }
 
@@ -120,7 +146,13 @@ export class MockBackend implements Backend {
   /** Add a child element to a parent element (for building element trees) */
   public addChildElement(
     parentHandle: string,
-    selector: { automationId?: string; name?: string; role?: string; className?: string; text?: string },
+    selector: {
+      automationId?: string;
+      name?: string;
+      role?: string;
+      className?: string;
+      text?: string;
+    },
     elementId?: string,
   ): string {
     const parentEl = this.elementHandleToEl.get(parentHandle);
@@ -158,11 +190,7 @@ export class MockBackend implements Backend {
   }
 
   /** Add a child window to an app (for multi-window tests) */
-  public addWindow(
-    processId: number,
-    title?: string,
-    windowId?: string,
-  ): string {
+  public addWindow(processId: number, title?: string, windowId?: string): string {
     const app = this.pidToApp.get(processId);
     if (!app) {
       throw new AutomationError(`App not found: ${processId}`);
@@ -188,11 +216,7 @@ export class MockBackend implements Backend {
   }
 
   /** Setup a complete element tree for testing. Returns the root window handle. */
-  public setupElementTree(
-    processId: number,
-    tree: MockTreeElement,
-    windowTitle?: string,
-  ): string {
+  public setupElementTree(processId: number, tree: MockTreeElement, windowTitle?: string): string {
     const app = this.pidToApp.get(processId);
     if (!app) {
       throw new AutomationError(`App not found: ${processId}`);
@@ -204,10 +228,7 @@ export class MockBackend implements Backend {
     this.windowHandleToWin.set(winHandle, window);
     this.winHandleToPid.set(winHandle, processId);
 
-    const buildTree = (
-      node: MockTreeElement,
-      parentHandle: string | null,
-    ): string => {
+    const buildTree = (node: MockTreeElement, parentHandle: string | null): string => {
       const elId = node.id ?? `mock-el-${this.nextElementHandle}`;
       const el: MockElementRecord = {
         id: elId,
@@ -305,7 +326,11 @@ export class MockBackend implements Backend {
     const elId = `mock-el-${pid}`;
     const winHandle = String(this.nextWindowHandle++);
 
-    const element = createDefaultElement(elId, { automationId: "main-input", name: "Main Input", role: "textbox" });
+    const element = createDefaultElement(elId, {
+      automationId: "main-input",
+      name: "Main Input",
+      role: "textbox",
+    });
     const window = createDefaultWindow(winId, "Mock Window");
     window.elements.push(element);
     element.parentHandle = winId;
@@ -384,9 +409,10 @@ export class MockBackend implements Backend {
   ): Promise<string | null> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return null;
-    const match = win.elements.find((el) =>
-      classNamesMatch(el.selector.className, classNames)
-      && selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
+    const match = win.elements.find(
+      (el) =>
+        classNamesMatch(el.selector.className, classNames) &&
+        selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
     );
     if (!match) return null;
     return this.ensureElementHandle(match);
@@ -414,13 +440,21 @@ export class MockBackend implements Backend {
         const r1 = classNamesMatch(el.selector.className, classNames);
         if (!r1) return false;
         if (automationId || name || role || className || text) {
-          const r2 = selectorMatches(el.selector, automationId, name, role, className, text, matchMode);
+          const r2 = selectorMatches(
+            el.selector,
+            automationId,
+            name,
+            role,
+            className,
+            text,
+            matchMode,
+          );
           return r2;
         }
         return true;
       });
     }
-    
+
     return matches.map((el) => this.ensureElementHandle(el));
   }
 
@@ -599,7 +633,10 @@ export class MockBackend implements Backend {
 
   async setWindowBounds(
     windowHandle: string,
-    left: number, top: number, width: number, height: number,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
   ): Promise<void> {
     const win = this.assertWindow(windowHandle);
     win.bounds = { left, top, width, height };
@@ -672,7 +709,7 @@ export class MockBackend implements Backend {
 
   async captureScreenshot(elementHandle: string): Promise<number[]> {
     this.assertElement(elementHandle);
-    return [0x42, 0x4D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // miniature BMP header
+    return [0x42, 0x4d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // miniature BMP header
   }
 
   async captureScreenshotToFile(elementHandle: string, _path: string): Promise<void> {
@@ -769,19 +806,29 @@ export class MockBackend implements Backend {
     const el = this.assertElement(elementHandle);
     const attr = attributeName.toLowerCase().replace(/_/g, "");
     switch (attr) {
-      case "name": return el.selector.name ?? "";
-      case "automationid": return el.selector.automationId ?? "";
+      case "name":
+        return el.selector.name ?? "";
+      case "automationid":
+        return el.selector.automationId ?? "";
       case "role":
-      case "ariarole": return el.selector.role ?? "";
-      case "isenabled": return String(el.isEnabled);
-      case "isoffscreen": return String(!el.isVisible);
-      case "haskeyboardfocus": return String(el.isFocused);
-      case "ispassword": return "false";
+      case "ariarole":
+        return el.selector.role ?? "";
+      case "isenabled":
+        return String(el.isEnabled);
+      case "isoffscreen":
+        return String(!el.isVisible);
+      case "haskeyboardfocus":
+        return String(el.isFocused);
+      case "ispassword":
+        return "false";
       case "iscontrolelement":
-      case "iscontentelement": return "true";
+      case "iscontentelement":
+        return "true";
       case "value":
-      case "text": return el.text;
-      default: return "";
+      case "text":
+        return el.text;
+      default:
+        return "";
     }
   }
 
@@ -854,7 +901,11 @@ export class MockBackend implements Backend {
 
   // --- debug ---
 
-  async highlightElement(_elementHandle: string, _color?: string | null, _durationMs?: number | null): Promise<void> {
+  async highlightElement(
+    _elementHandle: string,
+    _color?: string | null,
+    _durationMs?: number | null,
+  ): Promise<void> {
     await delay();
   }
 
@@ -913,8 +964,7 @@ export class MockBackend implements Backend {
     const app = this.pidToApp.get(processId);
     if (!app) return [];
     return app.windows.map((win) => ({
-      hwnd: [...this.windowHandleToWin.entries()]
-        .find(([, w]) => w.id === win.id)?.[0] ?? "0x0",
+      hwnd: [...this.windowHandleToWin.entries()].find(([, w]) => w.id === win.id)?.[0] ?? "0x0",
       pid: processId,
       className: "MockTopLevelClass",
       title: win.title,

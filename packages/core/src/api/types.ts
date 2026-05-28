@@ -87,10 +87,7 @@ export type NativeBindings = {
   closeWindow: (elementHandle: string) => Promise<void>;
   isProcessRunning: (processId: number) => boolean;
   getText: (elementHandle: string) => Promise<string>;
-  findElementName: (
-    windowHandle: string,
-    name: string,
-  ) => Promise<string | null>;
+  findElementName: (windowHandle: string, name: string) => Promise<string | null>;
   clickElement: (elementHandle: string) => Promise<void>;
   clickElementByName: (windowHandle: string, name: string) => Promise<void>;
   clickSequence: (windowHandle: string, names: string[]) => Promise<void>;
@@ -117,8 +114,16 @@ export type NativeBindings = {
   isEnabled: (elementHandle: string) => Promise<boolean>;
   isFocused: (elementHandle: string) => Promise<boolean>;
   focusElement: (elementHandle: string) => Promise<void>;
-  getWindowBounds: (windowHandle: string) => Promise<{ left: number; top: number; width: number; height: number }>;
-  setWindowBounds: (windowHandle: string, left: number, top: number, width: number, height: number) => Promise<void>;
+  getWindowBounds: (
+    windowHandle: string,
+  ) => Promise<{ left: number; top: number; width: number; height: number }>;
+  setWindowBounds: (
+    windowHandle: string,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ) => Promise<void>;
   focusWindow: (windowHandle: string) => Promise<void>;
   maximizeWindow: (windowHandle: string) => Promise<void>;
   minimizeWindow: (windowHandle: string) => Promise<void>;
@@ -151,7 +156,11 @@ export type NativeBindings = {
   waitForUiChange: (timeoutMs: number) => Promise<boolean>;
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
   inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
-  highlightElement?: (elementHandle: string, color?: string | null, durationMs?: number | null) => Promise<void>;
+  highlightElement?: (
+    elementHandle: string,
+    color?: string | null,
+    durationMs?: number | null,
+  ) => Promise<void>;
   buildElementPath?: (elementHandle: string) => ElementPathStep[];
   resolveElementPath?: (windowHandle: string, path: ElementPathStep[]) => Promise<string | null>;
 };

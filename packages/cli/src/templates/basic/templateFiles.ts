@@ -6,18 +6,18 @@ export function templatePackageJson(projectName: string): string {
       private: true,
       scripts: {
         test: "vitest run",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
       },
       devDependencies: {
         "@types/node": "^22.15.3",
         "@win-auto/core": "^0.1.0",
         typescript: "^5.8.3",
         vitest: "^3.1.1",
-        "win-auto": "^0.1.0"
-      }
+        "win-auto": "^0.1.0",
+      },
     },
     null,
-    2
+    2,
   );
 }
 

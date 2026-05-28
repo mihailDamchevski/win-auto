@@ -26,10 +26,7 @@ interface QueryOptions {
   highlight?: boolean;
 }
 
-export async function queryCommand(
-  target: string,
-  options: QueryOptions,
-): Promise<void> {
+export async function queryCommand(target: string, options: QueryOptions): Promise<void> {
   const backend = new NativeBackend();
   const pid = Number(target);
   let handles: string[];
@@ -156,7 +153,9 @@ function printHwndNode(node: HwndNode, indent = 0): void {
   const indentStr = "  ".repeat(indent);
   const visible = node.visible ? "" : " hidden";
   const title = node.title ? ` "${node.title}"` : "";
-  process.stdout.write(`${indentStr}${formatHandle(node.handle)} [${node.class_name}]${title}${visible}\n`);
+  process.stdout.write(
+    `${indentStr}${formatHandle(node.handle)} [${node.class_name}]${title}${visible}\n`,
+  );
   for (const child of node.children) {
     printHwndNode(child, indent + 1);
   }

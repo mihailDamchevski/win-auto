@@ -14,6 +14,98 @@ type PositionalSelector = "first" | "last" | { index: number };
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_INTERVAL_MS = 100;
 
+// --- Healing engine ---
+
+interface HealedResult {
+  handle: string;
+  confidence: number;
+  strategyName: string;
+}
+
+const STRATEGY_DEFS = [
+  {
+    name: "exact-all",
+    confidence: 1.0,
+    build: (s: ElementSelector) => ({ ...s, matchMode: "exact" as const }),
+  },
+  {
+    name: "exact-automationId",
+    confidence: 0.95,
+    build: (s: ElementSelector) =>
+      s.automationId ? { automationId: s.automationId, matchMode: "exact" as const } : null,
+  },
+  {
+    name: "exact-name",
+    confidence: 0.85,
+    build: (s: ElementSelector) => (s.name ? { name: s.name, matchMode: "exact" as const } : null),
+  },
+  {
+    name: "substring-name+role",
+    confidence: 0.75,
+    build: (s: ElementSelector) => {
+      const r: ElementSelector = { matchMode: "substring" as const };
+      if (s.name) r.name = s.name;
+      if (s.role) r.role = s.role;
+      return r.name || r.role ? r : null;
+    },
+  },
+  {
+    name: "substring-name+className",
+    confidence: 0.7,
+    build: (s: ElementSelector) => {
+      const r: ElementSelector = { matchMode: "substring" as const };
+      if (s.name) r.name = s.name;
+      if (s.className) r.className = s.className;
+      return r.name || r.className ? r : null;
+    },
+  },
+  {
+    name: "substring-role+className",
+    confidence: 0.65,
+    build: (s: ElementSelector) => {
+      const r: ElementSelector = { matchMode: "substring" as const };
+      if (s.role) r.role = s.role;
+      if (s.className) r.className = s.className;
+      return r.role || r.className ? r : null;
+    },
+  },
+  {
+    name: "substring-name",
+    confidence: 0.5,
+    build: (s: ElementSelector) =>
+      s.name ? { name: s.name, matchMode: "substring" as const } : null,
+  },
+  {
+    name: "substring-all",
+    confidence: 0.3,
+    build: (s: ElementSelector) => ({ ...s, matchMode: "substring" as const }),
+  },
+];
+
+const strategyCache = new Map<string, { strategyName: string; handle: string }>();
+
+function cacheKey(s: ElementSelector): string {
+  return `aid:${s.automationId ?? ""}|name:${s.name ?? ""}|role:${s.role ?? ""}|cn:${s.className ?? ""}`;
+}
+
+function debugLog(...args: unknown[]): void {
+  if (typeof process !== "undefined" && process.env?.WIN_AUTO_DEBUG_LOCATORS) {
+    console.debug("[HealingLocator]", ...args);
+  }
+}
+
+function generateFallbackSelectors(
+  original: ElementSelector,
+): Array<{ selector: ElementSelector; strategyName: string; confidence: number }> {
+  const results: Array<{ selector: ElementSelector; strategyName: string; confidence: number }> =
+    [];
+  for (const def of STRATEGY_DEFS) {
+    const sel = def.build(original);
+    if (sel) results.push({ selector: sel, strategyName: def.name, confidence: def.confidence });
+  }
+  return results;
+}
+
 async function poll<T>(
   fn: () => Promise<T | null>,
   isValid: (t: T) => boolean,
@@ -32,7 +124,7 @@ async function poll<T>(
     await backend.waitForUiChange(intervalMs);
   }
 
-    throw new TimeoutError(`Locator: element not found within ${timeoutMs}ms`, "poll", timeoutMs);
+  throw new TimeoutError(`Locator: element not found within ${timeoutMs}ms`, "poll", timeoutMs);
 }
 
 async function pollImage(
@@ -64,6 +156,9 @@ export class Locator {
   private readonly filters: LocatorFilter[];
   private readonly positional: PositionalSelector | null;
   private readonly scopeSelector: ElementSelector | null;
+  private healEnabled = false;
+  private healThreshold = 0.5;
+  private healParallel = true;
 
   constructor(
     windowHandle: string,
@@ -81,6 +176,16 @@ export class Locator {
     this.filters = filters;
     this.positional = positional;
     this.scopeSelector = scopeSelector;
+  }
+
+  /** Enable healing mode: auto-generates fallback strategies and applies confidence scoring.
+   *  When enabled, find() tries progressively looser selectors if the primary match fails.
+   *  waitFor() runs all strategies in parallel on each poll cycle. */
+  heal(options?: { threshold?: number; parallel?: boolean }): this {
+    this.healEnabled = true;
+    this.healThreshold = options?.threshold ?? 0.5;
+    this.healParallel = options?.parallel ?? true;
+    return this;
   }
 
   /** Add a selector strategy. Can be chained for OR logic (multi-selector). */
@@ -106,15 +211,7 @@ export class Locator {
 
   /** Filter by element state. Multiple filters are AND-ed. */
   filter(f: LocatorFilter): Locator {
-    return new Locator(
-      this.windowHandle,
-      this.backend,
-      this.events,
-      this.strategies,
-      [...this.filters, f],
-      this.positional,
-      this.scopeSelector,
-    );
+    return this.newClone({ filters: [...this.filters, f] });
   }
 
   /** Pick only the first matching element. */
@@ -134,11 +231,46 @@ export class Locator {
 
   // --- Actions ---
 
-  async find(options?: WaitOptions): Promise<Element | null> {
+  async find(_options?: WaitOptions): Promise<Element | null> {
     for (const strategy of this.strategies) {
       if (strategy.type === "selector") {
         const el = await this.findBySelector(strategy.selector);
         if (el) return el;
+
+        // Healing: auto-generate fallback selectors when primary fails
+        if (this.healEnabled) {
+          const fallbacks = generateFallbackSelectors(strategy.selector);
+          const ck = cacheKey(strategy.selector);
+          const cached = strategyCache.get(ck);
+
+          if (cached) {
+            debugLog(`cache hit for ${ck}: trying ${cached.strategyName} first`);
+            const cachedEl = await this.findBySelector(
+              fallbacks.find((f) => f.strategyName === cached.strategyName)?.selector ??
+                strategy.selector,
+            );
+            if (cachedEl) {
+              debugLog(`cache hit succeeded: ${cached.strategyName}`);
+              return cachedEl;
+            }
+          }
+
+          for (const fb of fallbacks) {
+            if (fb.confidence < this.healThreshold) {
+              debugLog(
+                `skipping ${fb.strategyName} (confidence ${fb.confidence} < threshold ${this.healThreshold})`,
+              );
+              continue;
+            }
+            debugLog(`trying fallback ${fb.strategyName} (confidence ${fb.confidence})`);
+            const fbEl = await this.findBySelector(fb.selector);
+            if (fbEl) {
+              debugLog(`fallback ${fb.strategyName} succeeded`);
+              strategyCache.set(ck, { strategyName: fb.strategyName, handle: fbEl.handle });
+              return fbEl;
+            }
+          }
+        }
       }
     }
     return null;
@@ -146,7 +278,76 @@ export class Locator {
 
   async waitFor(options?: WaitOptions): Promise<Element> {
     if (this.strategies.length === 0) {
-      throw new AutomationError("Locator: no strategies defined. Call .locator() or .image() first.");
+      throw new AutomationError(
+        "Locator: no strategies defined. Call .locator() or .image() first.",
+      );
+    }
+
+    if (this.healEnabled && this.healParallel) {
+      // Parallel healing: run all fallback strategies concurrently on each poll cycle
+      const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const intervalMs = options?.intervalMs ?? DEFAULT_INTERVAL_MS;
+      const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const results = await Promise.all(
+          this.strategies
+            .filter(
+              (s): s is { type: "selector"; selector: ElementSelector } => s.type === "selector",
+            )
+            .flatMap((s) => {
+              const fallbacks = generateFallbackSelectors(s.selector).filter(
+                (fb) => fb.confidence >= this.healThreshold,
+              );
+              // Include the original selector as highest-confidence
+              return [
+                { strategyName: "original", confidence: 1.0, selector: s.selector },
+                ...fallbacks,
+              ].map((fb) =>
+                this.findBySelector(fb.selector).then((el) =>
+                  el
+                    ? {
+                        handle: el.handle,
+                        confidence: fb.confidence,
+                        strategyName: fb.strategyName,
+                      }
+                    : null,
+                ),
+              );
+            }),
+        );
+
+        const best = results
+          .filter((r): r is HealedResult => r !== null)
+          .sort((a, b) => b.confidence - a.confidence)[0];
+
+        if (best) {
+          const el = new Element(best.handle, this.windowHandle, this.backend, this.events);
+          debugLog(`parallel healing: ${best.strategyName} (confidence ${best.confidence})`);
+          return el;
+        }
+
+        if (attempt < maxAttempts - 1) {
+          await this.backend.waitForUiChange(intervalMs);
+        }
+      }
+
+      const firstSelector = this.strategies.find((s) => s.type === "selector") as
+        | { type: "selector"; selector: ElementSelector }
+        | undefined;
+      if (firstSelector) {
+        throw await buildElementNotFoundError(
+          this.windowHandle,
+          firstSelector.selector,
+          this.backend,
+          options,
+        );
+      }
+      throw new TimeoutError(
+        `Locator: element not found within ${timeoutMs}ms (healing)`,
+        "waitFor",
+        timeoutMs,
+      );
     }
 
     try {
@@ -159,9 +360,16 @@ export class Locator {
     } catch (err) {
       if (err instanceof TimeoutError) {
         // Build a rich error with available elements
-        const firstSelector = this.strategies.find(s => s.type === "selector") as { type: "selector"; selector: ElementSelector } | undefined;
+        const firstSelector = this.strategies.find((s) => s.type === "selector") as
+          | { type: "selector"; selector: ElementSelector }
+          | undefined;
         if (firstSelector) {
-          throw await buildElementNotFoundError(this.windowHandle, firstSelector.selector, this.backend, options);
+          throw await buildElementNotFoundError(
+            this.windowHandle,
+            firstSelector.selector,
+            this.backend,
+            options,
+          );
         }
       }
       throw err;
@@ -179,7 +387,10 @@ export class Locator {
       } else if (strategy.type === "image") {
         const match = await this.waitForImage(strategy.template, options);
         if (match) {
-          await this.backend.mouseMove(match.x + Math.floor(match.width / 2), match.y + Math.floor(match.height / 2));
+          await this.backend.mouseMove(
+            match.x + Math.floor(match.width / 2),
+            match.y + Math.floor(match.height / 2),
+          );
           await this.backend.clickElement(this.windowHandle);
           return;
         }
@@ -268,58 +479,86 @@ export class Locator {
     await el.scroll(direction, amount);
   }
 
+  async parent(options?: WaitOptions): Promise<Element | null> {
+    const el = await this.waitFor(options);
+    return el.parent();
+  }
+
+  async next(selector?: ElementSelector, options?: WaitOptions): Promise<Element | null> {
+    const el = await this.waitFor(options);
+    return el.next(selector);
+  }
+
+  async previous(selector?: ElementSelector, options?: WaitOptions): Promise<Element | null> {
+    const el = await this.waitFor(options);
+    return el.previous(selector);
+  }
+
+  async ancestor(selector: ElementSelector, options?: WaitOptions): Promise<Element | null> {
+    const el = await this.waitFor(options);
+    return el.ancestor(selector);
+  }
+
+  async findRelative(
+    selector: ElementSelector,
+    relOptions?: { relation: "parent" | "ancestor" | "next" | "previous" | "child" },
+    options?: WaitOptions,
+  ): Promise<Element | null> {
+    const el = await this.waitFor(options);
+    return el.findRelative(selector, relOptions);
+  }
+
   /** Scoped locator: find this element, then create a locator scoped within it. */
   async locatorWithin(selector: ElementSelector, options?: WaitOptions): Promise<Locator> {
     const el = await this.waitFor(options);
-    return new Locator(el.handle, this.backend, this.events, [{ type: "selector", selector }]);
+    const l = new Locator(el.handle, this.backend, this.events, [{ type: "selector", selector }]);
+    l.healEnabled = this.healEnabled;
+    l.healThreshold = this.healThreshold;
+    l.healParallel = this.healParallel;
+    return l;
   }
 
   /** Set a scope container for relative/structural queries.
    *  When set, all selector strategies will search within this container instead of the window root.
    *  Usage: `win.within({ name: "Address" }).locator({ role: "textbox" }).find()` */
   within(selector: ElementSelector): Locator {
-    return new Locator(
-      this.windowHandle,
-      this.backend,
-      this.events,
-      this.strategies,
-      this.filters,
-      this.positional,
-      selector,
-    );
+    return this.newClone({ scopeSelector: selector });
   }
 
   // --- Private helpers ---
 
-  private newWithStrategy(strategy: LocatorStrategy): Locator {
-    return new Locator(
+  private newClone(overrides: {
+    strategies?: LocatorStrategy[];
+    filters?: LocatorFilter[];
+    positional?: PositionalSelector | null;
+    scopeSelector?: ElementSelector | null;
+  }): Locator {
+    const l = new Locator(
       this.windowHandle,
       this.backend,
       this.events,
-      [...this.strategies, strategy],
-      this.filters,
-      this.positional,
-      this.scopeSelector,
+      overrides.strategies ?? this.strategies,
+      overrides.filters ?? this.filters,
+      overrides.positional !== undefined ? overrides.positional : this.positional,
+      overrides.scopeSelector !== undefined ? overrides.scopeSelector : this.scopeSelector,
     );
+    l.healEnabled = this.healEnabled;
+    l.healThreshold = this.healThreshold;
+    l.healParallel = this.healParallel;
+    return l;
+  }
+
+  private newWithStrategy(strategy: LocatorStrategy): Locator {
+    return this.newClone({ strategies: [...this.strategies, strategy] });
   }
 
   private withPositional(p: PositionalSelector): Locator {
-    return new Locator(
-      this.windowHandle,
-      this.backend,
-      this.events,
-      this.strategies,
-      this.filters,
-      p,
-      this.scopeSelector,
-    );
+    return this.newClone({ positional: p });
   }
 
   private async findBySelector(selector: ElementSelector): Promise<Element | null> {
     // Resolve scope container first if set
-    const searchHandle = this.scopeSelector
-      ? await this.resolveScopeHandle()
-      : this.windowHandle;
+    const searchHandle = this.scopeSelector ? await this.resolveScopeHandle() : this.windowHandle;
 
     if (searchHandle === null) return null;
 
@@ -342,7 +581,9 @@ export class Locator {
     if (!selected) return null;
 
     // 3) Create elements (pass original selector for exists())
-    let elements = selected.map((h) => new Element(h, this.windowHandle, this.backend, this.events, selector));
+    let elements = selected.map(
+      (h) => new Element(h, this.windowHandle, this.backend, this.events, selector),
+    );
 
     // 4) Apply filters
     for (const f of this.filters) {
@@ -398,7 +639,10 @@ export class Locator {
     return results;
   }
 
-  private async waitForStrategy(strategy: LocatorStrategy, options?: WaitOptions): Promise<Element | null> {
+  private async waitForStrategy(
+    strategy: LocatorStrategy,
+    options?: WaitOptions,
+  ): Promise<Element | null> {
     if (strategy.type !== "selector") return null;
     try {
       return await poll(
@@ -412,7 +656,10 @@ export class Locator {
     }
   }
 
-  private async waitForImage(template: number[], options?: WaitOptions): Promise<ImageMatch | null> {
+  private async waitForImage(
+    template: number[],
+    options?: WaitOptions,
+  ): Promise<ImageMatch | null> {
     return pollImage(
       () => this.backend.findImage(this.windowHandle, template),
       this.backend,

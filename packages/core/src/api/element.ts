@@ -1,8 +1,29 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementPath, ElementSelector } from "./types";
+import type { ElementPath, ElementSelector, MatchMode } from "./types";
 import { classNamesForSelector } from "../native/classNames";
 import { StaleElementError, TimeoutError, isStaleError } from "./errors";
+
+function handleMatchesValue(
+  actual: string,
+  query: string,
+  mode: MatchMode | undefined | null,
+): boolean {
+  const m = mode ?? "substring";
+  switch (m) {
+    case "exact":
+      return actual === query;
+    case "regex":
+      try {
+        return new RegExp(query, "i").test(actual);
+      } catch {
+        return false;
+      }
+    case "substring":
+    default:
+      return actual.toLowerCase().includes(query.toLowerCase());
+  }
+}
 
 export class Element {
   public handle: string;
@@ -81,7 +102,13 @@ export class Element {
         this.originalSelector.matchMode ?? null,
       );
       if (newHandle) {
-        return new Element(newHandle, this.windowHandle, this.backend, this.events, this.originalSelector);
+        return new Element(
+          newHandle,
+          this.windowHandle,
+          this.backend,
+          this.events,
+          this.originalSelector,
+        );
       }
     }
     return this;
@@ -91,7 +118,7 @@ export class Element {
     try {
       await this.backend.clickElement(this.handle);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         await this.backend.clickElement(this.handle);
       } else if (isStaleError(err)) {
         throw new StaleElementError(
@@ -111,7 +138,7 @@ export class Element {
     try {
       await this.backend.rightClickElement(this.handle);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         await this.backend.rightClickElement(this.handle);
       } else if (isStaleError(err)) {
         throw new StaleElementError(
@@ -131,7 +158,7 @@ export class Element {
     try {
       await this.backend.doubleClickElement(this.handle);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         await this.backend.doubleClickElement(this.handle);
       } else if (isStaleError(err)) {
         throw new StaleElementError(
@@ -151,7 +178,7 @@ export class Element {
     try {
       await this.backend.hoverElement(this.handle);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         await this.backend.hoverElement(this.handle);
       } else if (isStaleError(err)) {
         throw new StaleElementError(
@@ -184,7 +211,7 @@ export class Element {
     try {
       await this.backend.typeText(this.handle, text);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         await this.backend.typeText(this.handle, text);
       } else if (isStaleError(err)) {
         throw new StaleElementError(
@@ -231,7 +258,7 @@ export class Element {
     try {
       return await this.backend.getText(this.handle);
     } catch (err) {
-      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
+      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
         return this.backend.getText(this.handle);
       }
       if (isStaleError(err)) {
@@ -348,6 +375,110 @@ export class Element {
 
   public async getProperty(name: string): Promise<string> {
     return this.getAttribute(name);
+  }
+
+  public async getClassName(): Promise<string> {
+    return this.getAttribute("className");
+  }
+
+  private async matchesSelector(handle: string, selector: ElementSelector): Promise<boolean> {
+    if (selector.name) {
+      const name = await this.backend.getElementAttribute(handle, "name");
+      if (!handleMatchesValue(name, selector.name, selector.matchMode)) return false;
+    }
+    if (selector.role) {
+      const role = await this.backend.getElementAttribute(handle, "role");
+      if (!handleMatchesValue(role, selector.role, selector.matchMode)) return false;
+    }
+    if (selector.automationId) {
+      const aid = await this.backend.getElementAttribute(handle, "automationId");
+      if (!handleMatchesValue(aid, selector.automationId, selector.matchMode)) return false;
+    }
+    if (selector.className) {
+      const cn = await this.backend.getElementAttribute(handle, "className");
+      if (!handleMatchesValue(cn, selector.className, selector.matchMode)) return false;
+    }
+    if (selector.text) {
+      const text = await this.backend.getText(handle);
+      if (!handleMatchesValue(text, selector.text, selector.matchMode)) return false;
+    }
+    return true;
+  }
+
+  public async parent(): Promise<Element | null> {
+    const parentHandle = await this.backend.getParent(this.handle);
+    if (!parentHandle) return null;
+    return new Element(parentHandle, this.windowHandle, this.backend, this.events);
+  }
+
+  public async next(selector?: ElementSelector): Promise<Element | null> {
+    const siblings = await this.backend.getSiblings(this.handle);
+    const idx = siblings.indexOf(this.handle);
+    if (idx === -1) return null;
+    for (let i = idx; i < siblings.length; i += 1) {
+      if (siblings[i] === this.handle) continue;
+      if (!selector || (await this.matchesSelector(siblings[i], selector))) {
+        return new Element(siblings[i], this.windowHandle, this.backend, this.events);
+      }
+    }
+    return null;
+  }
+
+  public async previous(selector?: ElementSelector): Promise<Element | null> {
+    const siblings = await this.backend.getSiblings(this.handle);
+    const idx = siblings.indexOf(this.handle);
+    if (idx === -1) return null;
+    for (let i = idx; i >= 0; i -= 1) {
+      if (siblings[i] === this.handle) continue;
+      if (!selector || (await this.matchesSelector(siblings[i], selector))) {
+        return new Element(siblings[i], this.windowHandle, this.backend, this.events);
+      }
+    }
+    return null;
+  }
+
+  public async ancestor(selector: ElementSelector): Promise<Element | null> {
+    let current = await this.parent();
+    while (current) {
+      if (await current.matchesSelector(current.handle, selector)) {
+        return current;
+      }
+      const nextParent = await current.parent();
+      if (!nextParent) break;
+      current = nextParent;
+    }
+    return null;
+  }
+
+  public async findRelative(
+    selector: ElementSelector,
+    options?: { relation: "parent" | "ancestor" | "next" | "previous" | "child" },
+  ): Promise<Element | null> {
+    const relation = options?.relation ?? "child";
+    switch (relation) {
+      case "parent":
+        return this.parent();
+      case "ancestor":
+        return this.ancestor(selector);
+      case "next":
+        return this.next(selector);
+      case "previous":
+        return this.previous(selector);
+      case "child": {
+        const result = await this.backend.findElement(
+          this.windowHandle,
+          classNamesForSelector(selector),
+          selector.automationId ?? null,
+          selector.name ?? null,
+          selector.role ?? null,
+          selector.className ?? null,
+          selector.text ?? null,
+          selector.matchMode ?? null,
+        );
+        if (!result) return null;
+        return new Element(result, this.windowHandle, this.backend, this.events, selector);
+      }
+    }
   }
 
   public async highlight(color?: string, durationMs?: number): Promise<void> {

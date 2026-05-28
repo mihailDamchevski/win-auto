@@ -7,13 +7,13 @@ use windows::Win32::System::Variant::VARIANT;
 
 use windows::Win32::UI::Accessibility::{
   IUIAutomation, IUIAutomationCondition, IUIAutomationElement, IUIAutomationInvokePattern,
-  IUIAutomationSelectionItemPattern,
+  IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
   IUIAutomationTogglePattern, IUIAutomationTextPattern, IUIAutomationValuePattern,
   PropertyConditionFlags, PropertyConditionFlags_MatchSubstring, PropertyConditionFlags_IgnoreCase,
   UIA_PROPERTY_ID,
   TreeScope_Children, TreeScope_Descendants,
   UIA_AutomationIdPropertyId, UIA_AriaRolePropertyId,
-  UIA_InvokePatternId, UIA_NamePropertyId, UIA_SelectionItemPatternId,
+  UIA_InvokePatternId, UIA_LegacyIAccessiblePatternId, UIA_NamePropertyId, UIA_SelectionItemPatternId,
   UIA_TextPatternId, UIA_TogglePatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSE_EVENT_FLAGS};
@@ -117,14 +117,11 @@ fn find_element_uia_by_conditions(
             if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
               if !hwnd_raw.is_invalid() {
                 // Verify the match (UIA substring conditions can return near-matches).
-                if let Ok(current_name) = element.CurrentName() {
-                  if name.map_or(true, |q| {
-                    match_mode_matches(
-                      &current_name.to_string(),
-                      q,
-                      mm,
-                    )
-                  }) {
+                let current_name = element.CurrentName().ok()
+                  .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
+                  .or_else(|| get_legacy_accessible_name(&element));
+                if let Some(ref cn) = current_name {
+                  if name.map_or(true, |q| match_mode_matches(cn, q, mm)) {
                     return Some(hwnd_raw);
                   }
                 } else if name.is_none() {
@@ -146,12 +143,11 @@ fn find_element_uia_by_conditions(
       let element = all.GetElement(i).ok()?;
 
       if let Some(query_name) = name {
-        if let Ok(current_name) = element.CurrentName() {
-          let current_name = current_name.to_string();
-          if !match_mode_matches(&current_name, query_name, mm) {
-            continue;
-          }
-        } else {
+        let current_name = element.CurrentName().ok()
+          .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
+          .or_else(|| get_legacy_accessible_name(&element))
+          .unwrap_or_default();
+        if !match_mode_matches(&current_name, query_name, mm) {
           continue;
         }
       }
@@ -1869,6 +1865,42 @@ pub fn inspect_window_tree(window_handle: String, max_depth: Option<i32>) -> Res
   }
 }
 
+fn get_legacy_accessible_name(element: &IUIAutomationElement) -> Option<String> {
+  unsafe {
+    if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+      UIA_LegacyIAccessiblePatternId,
+    ) {
+      pattern.CurrentName().ok().map(|s| s.to_string())
+    } else {
+      None
+    }
+  }
+}
+
+fn get_legacy_accessible_role(element: &IUIAutomationElement) -> Option<String> {
+  unsafe {
+    if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+      UIA_LegacyIAccessiblePatternId,
+    ) {
+      pattern.CurrentRole().ok().map(|v| v.to_string())
+    } else {
+      None
+    }
+  }
+}
+
+fn get_legacy_accessible_state(element: &IUIAutomationElement) -> Option<String> {
+  unsafe {
+    if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+      UIA_LegacyIAccessiblePatternId,
+    ) {
+      pattern.CurrentState().ok().map(|v| v.to_string())
+    } else {
+      None
+    }
+  }
+}
+
 #[napi(js_name = "getElementAttribute")]
 pub async fn get_element_attribute(element_handle: String, attribute_name: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
@@ -1879,7 +1911,20 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
 
     let attr = attribute_name.to_ascii_lowercase().replace("_", "");
     let result = match attr.as_str() {
-      "name" => element.CurrentName().ok().map(|s| s.to_string()),
+      "name" => {
+        // Try standard CurrentName() first, fallback to LegacyIAccessible::Name
+        if let Ok(name) = element.CurrentName() {
+          let name = name.to_string();
+          if !name.is_empty() {
+            Some(name)
+          } else {
+            get_legacy_accessible_name(&element)
+          }
+        } else {
+          get_legacy_accessible_name(&element)
+        }
+      }
+      "legacyname" => get_legacy_accessible_name(&element),
       "automationid" => element.CurrentAutomationId().ok().map(|s| s.to_string()),
       "role" | "ariarole" => element.CurrentAriaRole().ok().map(|s| s.to_string()),
       "helptext" => element.CurrentHelpText().ok().map(|s| s.to_string()),
@@ -1896,6 +1941,8 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
       "isrequiredforform" => element.CurrentIsRequiredForForm().ok().map(|v| v.as_bool().to_string()),
       "iscontrolelement" => element.CurrentIsControlElement().ok().map(|v| v.as_bool().to_string()),
       "iscontentelement" => element.CurrentIsContentElement().ok().map(|v| v.as_bool().to_string()),
+      "legacyrole" => get_legacy_accessible_role(&element),
+      "legacystate" => get_legacy_accessible_state(&element),
       "processid" => element.CurrentProcessId().ok().map(|v| v.to_string()),
       "boundingrectangle" | "bounds" => {
         element.CurrentBoundingRectangle().ok().map(|rect| {

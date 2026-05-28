@@ -12,7 +12,12 @@ export async function loadWinAutoConfig(cwd?: string): Promise<WinAutoConfig | n
   const projectDir = cwd ?? process.cwd();
 
   // Try .ts first, then .mjs, .cjs, .js
-  const candidates = ["win-auto.config.ts", "win-auto.config.mjs", "win-auto.config.cjs", "win-auto.config.js"];
+  const candidates = [
+    "win-auto.config.ts",
+    "win-auto.config.mjs",
+    "win-auto.config.cjs",
+    "win-auto.config.js",
+  ];
   for (const candidate of candidates) {
     const configPath = path.resolve(projectDir, candidate);
     if (fs.existsSync(configPath)) {

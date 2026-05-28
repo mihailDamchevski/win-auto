@@ -16,14 +16,17 @@ async function runCli(): Promise<void> {
   if (command === "inspect") {
     const target = args[0];
     if (!target) {
-      process.stderr.write("Usage: win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n");
+      process.stderr.write(
+        "Usage: win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n",
+      );
       process.exitCode = 1;
       return;
     }
     const maxDepth = args[1] && !args[1].startsWith("--") ? Number(args[1]) : undefined;
     const hwnd = args.includes("--hwnd");
     const highlightIdx = args.indexOf("--highlight");
-    const highlight = highlightIdx >= 0 && highlightIdx + 1 < args.length ? args[highlightIdx + 1] : undefined;
+    const highlight =
+      highlightIdx >= 0 && highlightIdx + 1 < args.length ? args[highlightIdx + 1] : undefined;
     await inspectCommand(target, maxDepth, hwnd, highlight);
     return;
   }
@@ -68,8 +71,12 @@ async function runCli(): Promise<void> {
   process.stdout.write("win-auto CLI\n");
   process.stdout.write("Usage:\n");
   process.stdout.write("  win-auto init <project-name>\n");
-  process.stdout.write("  win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n");
-  process.stdout.write("  win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]\n");
+  process.stdout.write(
+    "  win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n",
+  );
+  process.stdout.write(
+    "  win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]\n",
+  );
 }
 
 if (require.main === module) {

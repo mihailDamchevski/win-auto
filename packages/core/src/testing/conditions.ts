@@ -1,12 +1,8 @@
 const IS_CI = Boolean(
-  process.env.CI
-    || process.env.GITHUB_ACTIONS
-    || process.env.TF_BUILD
-    || false,
+  process.env.CI || process.env.GITHUB_ACTIONS || process.env.TF_BUILD || false,
 );
 
-const RUNNING_MOCK = typeof process !== "undefined"
-  && process.env.WIN_AUTO_BACKEND === "mock";
+const RUNNING_MOCK = typeof process !== "undefined" && process.env.WIN_AUTO_BACKEND === "mock";
 
 export function isCI(): boolean {
   return IS_CI;

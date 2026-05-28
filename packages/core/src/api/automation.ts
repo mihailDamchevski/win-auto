@@ -7,7 +7,6 @@ import { AutomationError } from "./errors";
 import { WaitBuilder } from "./wait";
 import type { AppSelector, LaunchOptions } from "./types";
 
-
 export class Automation {
   public readonly events: AutomationEvents;
   public readonly processes: ProcessManager;
@@ -56,9 +55,7 @@ export class Automation {
 
   public async connectApp(selector: AppSelector): Promise<App> {
     if (!selector.processId) {
-      throw new AutomationError(
-        "connectApp currently requires processId for the native backend.",
-      );
+      throw new AutomationError("connectApp currently requires processId for the native backend.");
     }
 
     return new App(

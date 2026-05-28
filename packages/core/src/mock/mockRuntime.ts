@@ -76,7 +76,10 @@ export type MockTreeElement = {
   children?: MockTreeElement[];
 };
 
-export function createDefaultElement(id: string, selector?: Partial<ElementSelector>): MockElementRecord {
+export function createDefaultElement(
+  id: string,
+  selector?: Partial<ElementSelector>,
+): MockElementRecord {
   return {
     id,
     selector: { automationId: "main-input", name: "Main Input", role: "textbox", ...selector },
@@ -141,10 +144,11 @@ export class MockRuntime {
     await wait();
     const appId = `app-${this.appCounter++}`;
     const windowId = `win-${this.windowCounter++}`;
-    const defaultElement = createDefaultElement(
-      `el-${this.elementCounter++}`,
-      { automationId: "main-input", name: "Main Input", role: "textbox" },
-    );
+    const defaultElement = createDefaultElement(`el-${this.elementCounter++}`, {
+      automationId: "main-input",
+      name: "Main Input",
+      role: "textbox",
+    });
     const window = createDefaultWindow(windowId, options.title ?? "Main Window");
     window.elements.push(defaultElement);
     defaultElement.parentHandle = windowId;
@@ -171,18 +175,30 @@ export class MockRuntime {
     this.apps.delete(appId);
   }
 
-  public async findElement(windowRecord: MockWindowRecord, selector: ElementSelector): Promise<MockElementRecord | null> {
+  public async findElement(
+    windowRecord: MockWindowRecord,
+    selector: ElementSelector,
+  ): Promise<MockElementRecord | null> {
     await wait();
-    const match = windowRecord.elements.find((record) => selectorMatches(record.selector, selector));
+    const match = windowRecord.elements.find((record) =>
+      selectorMatches(record.selector, selector),
+    );
     return match ?? null;
   }
 
-  public async listElements(windowRecord: MockWindowRecord, selector: ElementSelector): Promise<MockElementRecord[]> {
+  public async listElements(
+    windowRecord: MockWindowRecord,
+    selector: ElementSelector,
+  ): Promise<MockElementRecord[]> {
     await wait();
     return windowRecord.elements.filter((record) => selectorMatches(record.selector, selector));
   }
 
-  public async setElementText(windowRecord: MockWindowRecord, elementId: string, text: string): Promise<void> {
+  public async setElementText(
+    windowRecord: MockWindowRecord,
+    elementId: string,
+    text: string,
+  ): Promise<void> {
     await wait();
     const element = windowRecord.elements.find((record) => record.id === elementId);
     if (!element) {

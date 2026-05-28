@@ -1,6 +1,15 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementNode, ElementPath, ElementSelector, FindFirstOptions, HwndNode, ImageMatch, LocatorFilter, WindowBounds } from "./types";
+import type {
+  ElementNode,
+  ElementPath,
+  ElementSelector,
+  FindFirstOptions,
+  HwndNode,
+  ImageMatch,
+  LocatorFilter,
+  WindowBounds,
+} from "./types";
 import { Element } from "./element";
 import { Locator } from "./locator";
 import { classNamesForSelector } from "../native/classNames";
@@ -39,9 +48,7 @@ export class Window {
     const start = Date.now();
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (parallel) {
-        const results = await Promise.all(
-          selectors.map((s) => this.findElement(s)),
-        );
+        const results = await Promise.all(selectors.map((s) => this.findElement(s)));
         for (const el of results) {
           if (el) return el;
         }
@@ -189,7 +196,10 @@ export class Window {
     await this.backend.focusWindow(this.handle);
   }
 
-  public async highlightElement(selector: ElementSelector, options?: { color?: string; durationMs?: number }): Promise<void> {
+  public async highlightElement(
+    selector: ElementSelector,
+    options?: { color?: string; durationMs?: number },
+  ): Promise<void> {
     const element = await this.findElement(selector);
     if (!element) {
       throw new AutomationError(`Element not found for highlight`);
@@ -246,7 +256,10 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, {
+      timeoutMs,
+      intervalMs,
+    });
   }
 
   public async waitForVisible(
@@ -265,7 +278,10 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, {
+      timeoutMs,
+      intervalMs,
+    });
   }
 
   public async waitForEnabled(
@@ -284,7 +300,10 @@ export class Window {
       await this.backend.waitForUiChange(intervalMs);
     }
 
-    throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+    throw await buildElementNotFoundError(this.handle, selector, this.backend, {
+      timeoutMs,
+      intervalMs,
+    });
   }
 
   public async waitForClosed(timeoutMs: number = 10_000): Promise<void> {

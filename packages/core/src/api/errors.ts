@@ -100,14 +100,21 @@ function formatSelector(selector: ElementSelector): string {
   return parts.join(", ");
 }
 
-function flattenTree(nodes: ElementNode[], depth: number, maxDepth: number, indent: string): string[] {
+function flattenTree(
+  nodes: ElementNode[],
+  depth: number,
+  maxDepth: number,
+  indent: string,
+): string[] {
   const lines: string[] = [];
   for (const node of nodes) {
     const attrs = [
       node.name ? `"${node.name}"` : "",
       node.role || "",
       node.automationId ? `#${node.automationId}` : "",
-    ].filter(Boolean).join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
     lines.push(`${indent}${node.handle} ${attrs || "(unnamed)"}`);
     if (depth < maxDepth && node.children.length > 0) {
       lines.push(...flattenTree(node.children.slice(0, 3), depth + 1, maxDepth, indent + "  "));
@@ -146,11 +153,10 @@ export async function buildElementNotFoundError(
     treeMsg = "\n(Could not inspect window tree)";
   }
 
-  const message = (
+  const message =
     `Element not found after ${timeoutMs}ms\n` +
     `  Selector: { ${selectorStr} }\n` +
-    `  Window handle: ${windowHandle}${treeMsg}`
-  );
+    `  Window handle: ${windowHandle}${treeMsg}`;
 
   return new ElementNotFoundError(message, selector, windowHandle, snapshot);
 }
@@ -171,11 +177,10 @@ export async function buildWindowNotFoundError(
     // ignore
   }
 
-  const message = (
+  const message =
     `No top-level window found for process ${processId} within ${timeoutMs}ms.` +
     processesMsg +
-    `\n  Verify the process is running and has a visible window.`
-  );
+    `\n  Verify the process is running and has a visible window.`;
 
   return new WindowNotFoundError(message, processId, timeoutMs, imageName);
 }
@@ -185,9 +190,11 @@ export async function buildWindowNotFoundError(
  *  Non-retriable errors (PermissionDeniedError, TimeoutError, PatternNotSupportedError)
  *  propagate immediately instead of triggering a useless retry cycle. */
 export function isStaleError(err: unknown): boolean {
-  return err instanceof ElementNotFoundError
-    || err instanceof StaleElementError
-    || err instanceof BackendError;
+  return (
+    err instanceof ElementNotFoundError ||
+    err instanceof StaleElementError ||
+    err instanceof BackendError
+  );
 }
 
 export { formatSelector };

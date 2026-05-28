@@ -138,8 +138,8 @@ describe("Locator", () => {
       const [winHandle] = await backend.enumerateWindows(pid);
       const win = new Window(winHandle, pid, backend, new AutomationEvents());
       const locator = win.locator({ name: "Main Input" });
-      expect(typeof await locator.isVisible()).toBe("boolean");
-      expect(typeof await locator.isEnabled()).toBe("boolean");
+      expect(typeof (await locator.isVisible())).toBe("boolean");
+      expect(typeof (await locator.isEnabled())).toBe("boolean");
     });
 
     it("getValue on found element", async () => {
@@ -147,7 +147,7 @@ describe("Locator", () => {
       const [winHandle] = await backend.enumerateWindows(pid);
       const win = new Window(winHandle, pid, backend, new AutomationEvents());
       const locator = win.locator({ name: "Main Input" });
-      expect(typeof await locator.getValue({ timeoutMs: 1000 })).toBe("string");
+      expect(typeof (await locator.getValue({ timeoutMs: 1000 }))).toBe("string");
     });
 
     it("setValue on found element", async () => {
@@ -238,19 +238,18 @@ describe("Locator", () => {
       const pid = await backend.launch("C:\\test.exe");
       const [winHandle] = await backend.enumerateWindows(pid);
       const win = new Window(winHandle, pid, backend, new AutomationEvents());
-      const el = await win.findFirst([
-        { name: "DoesNotExist" },
-        { name: "Main Input" },
-      ], { timeoutMs: 500 });
+      const el = await win.findFirst([{ name: "DoesNotExist" }, { name: "Main Input" }], {
+        timeoutMs: 500,
+      });
       expect(el).not.toBeNull();
     });
 
     it("returns null when no selector matches", async () => {
       const win = createTestWindow(backend);
-      const el = await win.findFirst([
-        { name: "AAA" },
-        { name: "BBB" },
-      ], { timeoutMs: 50, intervalMs: 10 });
+      const el = await win.findFirst([{ name: "AAA" }, { name: "BBB" }], {
+        timeoutMs: 50,
+        intervalMs: 10,
+      });
       expect(el).toBeNull();
     });
 
@@ -258,10 +257,10 @@ describe("Locator", () => {
       const pid = await backend.launch("C:\\test.exe");
       const [winHandle] = await backend.enumerateWindows(pid);
       const win = new Window(winHandle, pid, backend, new AutomationEvents());
-      const el = await win.findFirst([
-        { name: "DoesNotExist" },
-        { name: "Main Input" },
-      ], { timeoutMs: 500, parallel: false });
+      const el = await win.findFirst([{ name: "DoesNotExist" }, { name: "Main Input" }], {
+        timeoutMs: 500,
+        parallel: false,
+      });
       expect(el).not.toBeNull();
     });
   });
@@ -271,7 +270,7 @@ describe("Locator", () => {
       const pid = await backend.launch("C:\\test.exe");
       const [winHandle] = await backend.enumerateWindows(pid);
       const win = new Window(winHandle, pid, backend, new AutomationEvents());
-      const match = await win.findImage([0x42, 0x4D, 0x00]);
+      const match = await win.findImage([0x42, 0x4d, 0x00]);
       expect(match).not.toBeNull();
       expect(match!.confidence).toBeGreaterThan(0);
       expect(match!.x).toBeGreaterThanOrEqual(0);

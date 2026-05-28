@@ -1,5 +1,14 @@
 import type { Backend } from "./backend";
-import type { DialogControl, DialogInfo, ElementNode, ElementPathStep, HwndNode, ImageMatch, NativeBindings, ProcessEntry } from "./types";
+import type {
+  DialogControl,
+  DialogInfo,
+  ElementNode,
+  ElementPathStep,
+  HwndNode,
+  ImageMatch,
+  NativeBindings,
+  ProcessEntry,
+} from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 import { BackendError } from "./errors";
 
@@ -188,11 +197,19 @@ export class NativeBackend implements Backend {
     return this.native.focusElement(elementHandle);
   }
 
-  async getWindowBounds(windowHandle: string): Promise<{ left: number; top: number; width: number; height: number }> {
+  async getWindowBounds(
+    windowHandle: string,
+  ): Promise<{ left: number; top: number; width: number; height: number }> {
     return this.native.getWindowBounds(windowHandle);
   }
 
-  async setWindowBounds(windowHandle: string, left: number, top: number, width: number, height: number): Promise<void> {
+  async setWindowBounds(
+    windowHandle: string,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
     return this.native.setWindowBounds(windowHandle, left, top, width, height);
   }
 
@@ -324,35 +341,54 @@ export class NativeBackend implements Backend {
 
   inspectHwndTree(windowHandle: string, maxDepth?: number): HwndNode[] {
     if (!this.native.inspectHwndTree) {
-      throw new BackendError("inspectHwndTree is not available in the loaded native module.", "native");
+      throw new BackendError(
+        "inspectHwndTree is not available in the loaded native module.",
+        "native",
+      );
     }
     return this.native.inspectHwndTree(windowHandle, maxDepth ?? null);
   }
 
   debugDiscovery(processId: number) {
     if (!this.native.debugDiscovery) {
-      throw new BackendError("debugDiscovery is not available in the loaded native module.", "native");
+      throw new BackendError(
+        "debugDiscovery is not available in the loaded native module.",
+        "native",
+      );
     }
     return this.native.debugDiscovery(processId);
   }
 
-  async highlightElement(elementHandle: string, color?: string | null, durationMs?: number | null): Promise<void> {
+  async highlightElement(
+    elementHandle: string,
+    color?: string | null,
+    durationMs?: number | null,
+  ): Promise<void> {
     if (!this.native.highlightElement) {
-      throw new BackendError("highlightElement is not available in the loaded native module.", "native");
+      throw new BackendError(
+        "highlightElement is not available in the loaded native module.",
+        "native",
+      );
     }
     return this.native.highlightElement(elementHandle, color ?? null, durationMs ?? null);
   }
 
   buildElementPath(elementHandle: string): ElementPathStep[] {
     if (!this.native.buildElementPath) {
-      throw new BackendError("buildElementPath is not available in the loaded native module.", "native");
+      throw new BackendError(
+        "buildElementPath is not available in the loaded native module.",
+        "native",
+      );
     }
     return this.native.buildElementPath(elementHandle);
   }
 
   async resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null> {
     if (!this.native.resolveElementPath) {
-      throw new BackendError("resolveElementPath is not available in the loaded native module.", "native");
+      throw new BackendError(
+        "resolveElementPath is not available in the loaded native module.",
+        "native",
+      );
     }
     return this.native.resolveElementPath(windowHandle, path);
   }

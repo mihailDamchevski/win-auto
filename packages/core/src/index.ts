@@ -21,7 +21,21 @@ export {
   PatternNotSupportedError,
 } from "./api/errors";
 export type { Backend } from "./api/backend";
-export type { AppSelector, ElementSelector, ElementNode, ElementPathStep, ElementPath, HwndNode, ImageMatch, LaunchOptions, LocatorFilter, MatchMode, ProcessEntry, WaitOptions, WindowBounds } from "./api/types";
+export type {
+  AppSelector,
+  ElementSelector,
+  ElementNode,
+  ElementPathStep,
+  ElementPath,
+  HwndNode,
+  ImageMatch,
+  LaunchOptions,
+  LocatorFilter,
+  MatchMode,
+  ProcessEntry,
+  WaitOptions,
+  WindowBounds,
+} from "./api/types";
 export type {
   AutomationEventType,
   AutomationEventPayload,

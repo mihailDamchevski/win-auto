@@ -343,7 +343,8 @@ describe("MockBackend", () => {
     it("findElement filters by classNames", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
+        role: "pane",
+        children: [
           { role: "textbox", name: "Input A", className: "Edit" },
           { role: "button", name: "OK", className: "Button" },
           { role: "textbox", name: "Input B", className: "Edit" },
@@ -358,9 +359,8 @@ describe("MockBackend", () => {
     it("findElement returns null when classNames has no match", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
-          { role: "textbox", name: "Input", className: "Edit" },
-        ],
+        role: "pane",
+        children: [{ role: "textbox", name: "Input", className: "Edit" }],
       });
       const result = await backend.findElement(winHandle, ["Button"], null, "Input", "textbox");
       expect(result).toBeNull();
@@ -369,22 +369,26 @@ describe("MockBackend", () => {
     it("findElement ignores classNames when null/undefined", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
-          { role: "textbox", name: "Input", className: "Edit" },
-        ],
+        role: "pane",
+        children: [{ role: "textbox", name: "Input", className: "Edit" }],
       });
       const withNull = await backend.findElement(winHandle, null, null, "Input", "textbox");
       expect(withNull).not.toBeNull();
-      const withUndefined = await backend.findElement(winHandle, undefined, null, "Input", "textbox");
+      const withUndefined = await backend.findElement(
+        winHandle,
+        undefined,
+        null,
+        "Input",
+        "textbox",
+      );
       expect(withUndefined).not.toBeNull();
     });
 
     it("findElement with empty classNames array ignores filter", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
-          { role: "textbox", name: "Input", className: "Edit" },
-        ],
+        role: "pane",
+        children: [{ role: "textbox", name: "Input", className: "Edit" }],
       });
       const result = await backend.findElement(winHandle, [], null, "Input", "textbox");
       expect(result).not.toBeNull();
@@ -393,7 +397,8 @@ describe("MockBackend", () => {
     it("findAll filters by classNames", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
+        role: "pane",
+        children: [
           { role: "textbox", name: "A", className: "Edit" },
           { role: "button", name: "B", className: "Button" },
           { role: "textbox", name: "C", className: "Edit" },
@@ -409,9 +414,8 @@ describe("MockBackend", () => {
     it("findAll returns empty when classNames match no elements", async () => {
       const pid = await backend.launch("C:\\app.exe");
       const winHandle = backend.setupElementTree(pid, {
-        role: "pane", children: [
-          { role: "textbox", className: "Edit" },
-        ],
+        role: "pane",
+        children: [{ role: "textbox", className: "Edit" }],
       });
       const result = await backend.findAll(winHandle, ["NonExistentClass"], null, null, "textbox");
       expect(result).toEqual([]);

@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, onTestFailed, describe as vitestDescribe, expect as vitestExpect } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  onTestFailed,
+  describe as vitestDescribe,
+  expect as vitestExpect,
+} from "vitest";
 import { closeTrackedApps, captureScreenshotsFromTrackedApps } from "./context";
 import { it } from "./vitest";
 import { loadWinAutoConfig } from "../api/config";
@@ -10,17 +16,19 @@ type GlobalTesting = typeof globalThis & {
 };
 
 // Load win-auto.config.ts and apply settings
-loadWinAutoConfig().then((config) => {
-  if (config?.runtime === "mock" && !process.env.WIN_AUTO_BACKEND) {
-    process.env.WIN_AUTO_BACKEND = "mock";
-  }
-  if (config?.timeoutMs) {
-    const key = "WIN_AUTO_TIMEOUT_MS" as string;
-    process.env[key] = String(config.timeoutMs);
-  }
-}).catch(() => {
-  // config not present or failed to load — use defaults
-});
+loadWinAutoConfig()
+  .then((config) => {
+    if (config?.runtime === "mock" && !process.env.WIN_AUTO_BACKEND) {
+      process.env.WIN_AUTO_BACKEND = "mock";
+    }
+    if (config?.timeoutMs) {
+      const key = "WIN_AUTO_TIMEOUT_MS" as string;
+      process.env[key] = String(config.timeoutMs);
+    }
+  })
+  .catch(() => {
+    // config not present or failed to load — use defaults
+  });
 
 beforeEach(() => {
   onTestFailed(async () => {

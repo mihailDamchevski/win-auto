@@ -33,7 +33,11 @@ export type AppLaunchedPayload = { processId: number; executablePath: string; ti
 export type AppClosedPayload = { processId: number; timestamp: number };
 export type WindowFoundPayload = { handle: string; processId: number; timestamp: number };
 export type WindowClosedPayload = { handle: string; timestamp: number };
-export type WindowBoundsChangedPayload = { handle: string; bounds: WindowBounds; timestamp: number };
+export type WindowBoundsChangedPayload = {
+  handle: string;
+  bounds: WindowBounds;
+  timestamp: number;
+};
 export type WindowMaximizedPayload = { handle: string; timestamp: number };
 export type WindowMinimizedPayload = { handle: string; timestamp: number };
 export type WindowRestoredPayload = { handle: string; timestamp: number };
@@ -82,19 +86,28 @@ export type AutomationEventPayload = {
   "process:connected": ProcessConnectedPayload;
   "process:killed": ProcessKilledPayload;
   "process:exited": ProcessExitedPayload;
-  "debug": DebugPayload;
+  debug: DebugPayload;
 };
 
 export class AutomationEvents extends EventEmitter {
-  public on<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+  public on<E extends AutomationEventType>(
+    event: E,
+    listener: (payload: AutomationEventPayload[E]) => void,
+  ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
 
-  public once<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+  public once<E extends AutomationEventType>(
+    event: E,
+    listener: (payload: AutomationEventPayload[E]) => void,
+  ): this {
     return super.once(event, listener as (...args: unknown[]) => void);
   }
 
-  public off<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+  public off<E extends AutomationEventType>(
+    event: E,
+    listener: (payload: AutomationEventPayload[E]) => void,
+  ): this {
     return super.off(event, listener as (...args: unknown[]) => void);
   }
 

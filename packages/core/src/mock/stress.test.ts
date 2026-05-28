@@ -25,10 +25,28 @@ describe("MockBackend stress/volume", () => {
 
     const treeWinHandle = backend.setupElementTree(pid, tree, "Stress Window");
 
-    const allElements = await backend.findAll(treeWinHandle, null, null, null, null, null, null, null);
+    const allElements = await backend.findAll(
+      treeWinHandle,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    );
     expect(allElements.length).toBe(101); // list + 100 items
 
-    const items = await backend.findAll(treeWinHandle, null, null, null, "listitem", null, null, null);
+    const items = await backend.findAll(
+      treeWinHandle,
+      null,
+      null,
+      null,
+      "listitem",
+      null,
+      null,
+      null,
+    );
     expect(items.length).toBe(100);
 
     const found = await backend.findElement(treeWinHandle, null, null, "item-42", "listitem");
@@ -51,7 +69,16 @@ describe("MockBackend stress/volume", () => {
 
     const treeWinHandle = backend.setupElementTree(pid, tree, "Big Stress Window");
 
-    const allElements = await backend.findAll(treeWinHandle, null, null, null, null, null, null, null);
+    const allElements = await backend.findAll(
+      treeWinHandle,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    );
     expect(allElements.length).toBe(1001);
 
     const lastItem = await backend.findElement(treeWinHandle, null, null, "item-999", "listitem");
@@ -79,7 +106,13 @@ describe("MockBackend stress/volume", () => {
     expect(setupTime).toBeLessThan(2000);
 
     const findStart = performance.now();
-    const found = await backend.findElement(treeWinHandle, null, null, "perf-item-2500", "listitem");
+    const found = await backend.findElement(
+      treeWinHandle,
+      null,
+      null,
+      "perf-item-2500",
+      "listitem",
+    );
     const findTime = performance.now() - findStart;
 
     expect(found).not.toBeNull();
@@ -100,10 +133,25 @@ describe("MockBackend stress/volume", () => {
     const tree = buildNestedTree(50, "root");
     const treeWinHandle = backend.setupElementTree(pid, tree, "Deep Tree");
 
-    const allElements = await backend.findAll(treeWinHandle, null, null, null, null, null, null, null);
+    const allElements = await backend.findAll(
+      treeWinHandle,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    );
     expect(allElements.length).toBe(51);
 
-    const found = await backend.findElement(treeWinHandle, null, null, "root-child-child-child", "group");
+    const found = await backend.findElement(
+      treeWinHandle,
+      null,
+      null,
+      "root-child-child-child",
+      "group",
+    );
     expect(found).not.toBeNull();
   });
 
@@ -153,10 +201,14 @@ describe("MockBackend stress/volume", () => {
       children: [
         { name: "header", role: "text" },
         { name: "content", role: "group", children: buttons },
-        { name: "footer", role: "group", children: [
-          { name: "OK", role: "button" },
-          { name: "Cancel", role: "button" },
-        ]},
+        {
+          name: "footer",
+          role: "group",
+          children: [
+            { name: "OK", role: "button" },
+            { name: "Cancel", role: "button" },
+          ],
+        },
       ],
     };
 

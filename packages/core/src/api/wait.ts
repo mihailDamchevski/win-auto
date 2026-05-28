@@ -128,7 +128,10 @@ export class WaitCondition<T> {
           } else {
             let anyOk = false;
             for (const check of this.compoundChecks) {
-              if (await check()) { anyOk = true; break; }
+              if (await check()) {
+                anyOk = true;
+                break;
+              }
             }
             if (!anyOk) return null;
           }
@@ -156,13 +159,13 @@ export class ElementWait extends WaitCondition<Element> {
 
   isVisible(): this {
     const el = this.element;
-    this.condition = async (): Promise<Element | null> => (await el.isVisible()) ? el : null;
+    this.condition = async (): Promise<Element | null> => ((await el.isVisible()) ? el : null);
     return this;
   }
 
   isEnabled(): this {
     const el = this.element;
-    this.condition = async (): Promise<Element | null> => (await el.isEnabled()) ? el : null;
+    this.condition = async (): Promise<Element | null> => ((await el.isEnabled()) ? el : null);
     return this;
   }
 
@@ -186,13 +189,13 @@ export class ElementWait extends WaitCondition<Element> {
 
   notVisible(): this {
     const el = this.element;
-    this.condition = async (): Promise<Element | null> => (await el.isVisible()) ? null : el;
+    this.condition = async (): Promise<Element | null> => ((await el.isVisible()) ? null : el);
     return this;
   }
 
   notEnabled(): this {
     const el = this.element;
-    this.condition = async (): Promise<Element | null> => (await el.isEnabled()) ? null : el;
+    this.condition = async (): Promise<Element | null> => ((await el.isEnabled()) ? null : el);
     return this;
   }
 
@@ -238,7 +241,7 @@ export class WindowWait extends WaitCondition<Window> {
     const w = this.win;
     this.condition = async (): Promise<Window | null> => {
       const bounds = await w.getBounds();
-      return (bounds.width > 0 && bounds.height > 0) ? w : null;
+      return bounds.width > 0 && bounds.height > 0 ? w : null;
     };
     return this;
   }
@@ -279,7 +282,10 @@ export class WaitBuilder {
     if (arg instanceof Window) {
       return new WindowWait(arg);
     }
-    return new WaitCondition<T>(arg as () => Promise<T | null | undefined>, backend ?? this.backend);
+    return new WaitCondition<T>(
+      arg as () => Promise<T | null | undefined>,
+      backend ?? this.backend,
+    );
   }
 }
 

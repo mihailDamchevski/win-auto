@@ -39,7 +39,11 @@ export class App {
   public async locator(selector: ElementSelector): Promise<Locator> {
     const mainWindow = await this.getMainWindow();
     if (!mainWindow) {
-      throw new WindowNotFoundError("App.locator: no main window found", this.processId, DEFAULT_TIMEOUT_MS);
+      throw new WindowNotFoundError(
+        "App.locator: no main window found",
+        this.processId,
+        DEFAULT_TIMEOUT_MS,
+      );
     }
     return mainWindow.locator(selector);
   }
@@ -49,7 +53,9 @@ export class App {
     selectors: ElementSelector[],
     options?: FindFirstOptions,
   ): Promise<Element | null> {
-    const mainWindow = await this.waitForMainWindow({ timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    const mainWindow = await this.waitForMainWindow({
+      timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    });
     return mainWindow.findFirst(selectors, options);
   }
 
@@ -103,10 +109,7 @@ export class App {
     return mainWindow.findElement(selector);
   }
 
-  public async close(options?: {
-    timeoutMs?: number;
-    intervalMs?: number;
-  }): Promise<void> {
+  public async close(options?: { timeoutMs?: number; intervalMs?: number }): Promise<void> {
     const mainWindow = await this.getMainWindow();
     if (mainWindow) {
       try {
@@ -123,9 +126,7 @@ export class App {
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const processRunning = this.backend.isProcessRunning(
-        this.processId,
-      );
+      const processRunning = this.backend.isProcessRunning(this.processId);
       if (!processRunning) {
         this.events.emitAppClosed(this.processId);
         this.events.emitProcessExited(this.processId);

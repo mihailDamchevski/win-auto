@@ -9,14 +9,20 @@ import { BackendError } from "../api/errors";
 // in CJS builds the try block throws and we fall back to __dirname / require.
 function getModuleUrl(): string {
   // @ts-ignore — import.meta is only valid with --module es2022+
-  try { return (import.meta as { url: string }).url; }
-  catch { return ""; }
+  try {
+    return (import.meta as { url: string }).url;
+  } catch {
+    return "";
+  }
 }
 
 function getNodeRequire(): NodeRequire {
   // @ts-ignore — import.meta is only valid with --module es2022+
-  try { return createRequire((import.meta as { url: string }).url); }
-  catch { return require; }
+  try {
+    return createRequire((import.meta as { url: string }).url);
+  } catch {
+    return require;
+  }
 }
 
 function getModuleDirname(): string {
@@ -136,7 +142,9 @@ export function loadNativeBindings(): NativeBindings {
       if (CORE_FUNCTIONS.every((fn) => typeof mod[fn] === "function")) {
         for (const fn of EXTENDED_FUNCTIONS) {
           if (typeof mod[fn] !== "function") {
-            console.warn(`[win-auto] Native module missing extended function: ${fn}. Run npm run build:native to rebuild.`);
+            console.warn(
+              `[win-auto] Native module missing extended function: ${fn}. Run npm run build:native to rebuild.`,
+            );
           }
         }
         return mod as NativeBindings;

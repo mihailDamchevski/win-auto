@@ -48,7 +48,7 @@ export function expectElement(el: Element): ElementAssertions {
 }
 
 export function toBeBMP(buffer: Uint8Array | number[]): boolean {
-  return buffer.length >= 2 && buffer[0] === 0x42 && buffer[1] === 0x4D;
+  return buffer.length >= 2 && buffer[0] === 0x42 && buffer[1] === 0x4d;
 }
 
 export function expectScreenshot(buffer: Uint8Array | number[]): { toBeBMP: () => void } {
