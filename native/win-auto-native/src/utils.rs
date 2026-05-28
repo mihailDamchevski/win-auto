@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use napi::{Error, Result};
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
@@ -35,29 +37,58 @@ pub fn physical_to_logical(hwnd: HWND, value: i32) -> i32 {
 
 use crate::error::AutomationError;
 
-/// RAII guard that calls CoInitializeEx on construction and CoUninitialize on drop.
-/// Never fails — RPC_E_CHANGED_MODE (COM already initialized) is treated as success.
-pub struct ComGuard {
-  needs_uninit: bool,
+thread_local! {
+  static COM_REFCOUNT: Cell<u32> = const { Cell::new(0) };
 }
 
-impl ComGuard {
+/// RAII scope that calls CoInitializeEx on first use per thread and CoUninitialize
+/// when the outermost scope drops, using a thread-local refcount.
+/// Unlike the old ComGuard (which initted/uninitted on every call), ComScope
+/// keeps COM alive across nested calls within the same thread.
+///
+/// Never fails — RPC_E_CHANGED_MODE (COM already initialized) is treated as success.
+pub struct ComScope;
+
+impl ComScope {
   pub fn init() -> Self {
-    // SAFETY: CoInitializeEx with COINIT_APARTMENTTHREADED is safe to call; RPC_E_CHANGED_MODE
-    // (already initialized) is handled by treating it as success per MSDN.
-    unsafe {
-      let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-      ComGuard { needs_uninit: hr.is_ok() }
-    }
+    COM_REFCOUNT.with(|rc| {
+      let prev = rc.get();
+      if prev == 0 {
+        // SAFETY: CoInitializeEx with COINIT_APARTMENTTHREADED is safe to call; RPC_E_CHANGED_MODE
+        // (already initialized) is handled by treating it as success per MSDN.
+        unsafe {
+          let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+          if hr.is_ok() {
+            rc.set(1);
+          } else {
+            // Already initialized by external code — mark so we don't uninit
+            rc.set(u32::MAX);
+          }
+        }
+      } else if prev != u32::MAX {
+        rc.set(prev + 1);
+      }
+    });
+    ComScope
   }
 }
 
-impl Drop for ComGuard {
+impl Drop for ComScope {
   fn drop(&mut self) {
-    if self.needs_uninit {
-      // SAFETY: needs_uninit is only true if CoInitializeEx succeeded in init().
-      unsafe { CoUninitialize(); }
-    }
+    COM_REFCOUNT.with(|rc| {
+      let prev = rc.get();
+      match prev {
+        0 | u32::MAX => {}
+        1 => {
+          rc.set(0);
+          // SAFETY: refcount was 1, so we own the last COM init — safe to uninit.
+          unsafe { CoUninitialize(); }
+        }
+        _ => {
+          rc.set(prev - 1);
+        }
+      }
+    });
   }
 }
 

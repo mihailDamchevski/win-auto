@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import type { WindowBounds, ElementSelector } from "./types";
 
 export type AutomationEventType =
   | "app:launched"
@@ -28,11 +29,75 @@ export type AutomationEventType =
   | "process:exited"
   | "debug";
 
+export type AppLaunchedPayload = { processId: number; executablePath: string; timestamp: number };
+export type AppClosedPayload = { processId: number; timestamp: number };
+export type WindowFoundPayload = { handle: string; processId: number; timestamp: number };
+export type WindowClosedPayload = { handle: string; timestamp: number };
+export type WindowBoundsChangedPayload = { handle: string; bounds: WindowBounds; timestamp: number };
+export type WindowMaximizedPayload = { handle: string; timestamp: number };
+export type WindowMinimizedPayload = { handle: string; timestamp: number };
+export type WindowRestoredPayload = { handle: string; timestamp: number };
+export type ElementFoundPayload = { handle: string; selector: ElementSelector; timestamp: number };
+export type ElementClickedPayload = { handle: string; timestamp: number };
+export type ElementRightClickedPayload = { handle: string; timestamp: number };
+export type ElementDoubleClickedPayload = { handle: string; timestamp: number };
+export type ElementHoveredPayload = { handle: string; timestamp: number };
+export type ElementTypedPayload = { handle: string; text: string; timestamp: number };
+export type ElementSelectedPayload = { handle: string; timestamp: number };
+export type ElementToggledPayload = { handle: string; timestamp: number };
+export type ElementValueChangedPayload = { handle: string; value: string; timestamp: number };
+export type MouseMovedPayload = { x: number; y: number; timestamp: number };
+export type ElementScreenshotPayload = { handle: string; timestamp: number };
+export type ProcessConnectedPayload = { pid: number; imageName: string; timestamp: number };
+export type ProcessKilledPayload = { pid: number; timestamp: number };
+export type ProcessExitedPayload = { pid: number; timestamp: number };
+export type DialogFoundPayload = { handle: string; title: string; timestamp: number };
+export type DialogButtonClickedPayload = { handle: string; buttonText: string; timestamp: number };
+export type DialogFileSelectedPayload = { handle: string; path: string; timestamp: number };
+export type DebugPayload = { message: string; data?: Record<string, unknown>; timestamp: number };
+
 export type AutomationEventPayload = {
-  [K in AutomationEventType]: Record<string, unknown>;
+  "app:launched": AppLaunchedPayload;
+  "app:closed": AppClosedPayload;
+  "window:found": WindowFoundPayload;
+  "window:closed": WindowClosedPayload;
+  "window:boundsChanged": WindowBoundsChangedPayload;
+  "window:maximized": WindowMaximizedPayload;
+  "window:minimized": WindowMinimizedPayload;
+  "window:restored": WindowRestoredPayload;
+  "element:found": ElementFoundPayload;
+  "element:clicked": ElementClickedPayload;
+  "element:rightClicked": ElementRightClickedPayload;
+  "element:doubleClicked": ElementDoubleClickedPayload;
+  "element:hovered": ElementHoveredPayload;
+  "element:typed": ElementTypedPayload;
+  "element:selected": ElementSelectedPayload;
+  "element:toggled": ElementToggledPayload;
+  "element:valueChanged": ElementValueChangedPayload;
+  "mouse:moved": MouseMovedPayload;
+  "element:screenshot": ElementScreenshotPayload;
+  "dialog:found": DialogFoundPayload;
+  "dialog:buttonClicked": DialogButtonClickedPayload;
+  "dialog:fileSelected": DialogFileSelectedPayload;
+  "process:connected": ProcessConnectedPayload;
+  "process:killed": ProcessKilledPayload;
+  "process:exited": ProcessExitedPayload;
+  "debug": DebugPayload;
 };
 
 export class AutomationEvents extends EventEmitter {
+  public on<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+    return super.on(event, listener as (...args: unknown[]) => void);
+  }
+
+  public once<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+    return super.once(event, listener as (...args: unknown[]) => void);
+  }
+
+  public off<E extends AutomationEventType>(event: E, listener: (payload: AutomationEventPayload[E]) => void): this {
+    return super.off(event, listener as (...args: unknown[]) => void);
+  }
+
   public emitAppLaunched(processId: number, executablePath: string): void {
     this.emit("app:launched", { processId, executablePath, timestamp: Date.now() });
   }
@@ -49,7 +114,7 @@ export class AutomationEvents extends EventEmitter {
     this.emit("window:closed", { handle, timestamp: Date.now() });
   }
 
-  public emitWindowBoundsChanged(handle: string, bounds: Record<string, unknown>): void {
+  public emitWindowBoundsChanged(handle: string, bounds: WindowBounds): void {
     this.emit("window:boundsChanged", { handle, bounds, timestamp: Date.now() });
   }
 
@@ -65,7 +130,7 @@ export class AutomationEvents extends EventEmitter {
     this.emit("window:restored", { handle, timestamp: Date.now() });
   }
 
-  public emitElementFound(handle: string, selector: Record<string, unknown>): void {
+  public emitElementFound(handle: string, selector: ElementSelector): void {
     this.emit("element:found", { handle, selector, timestamp: Date.now() });
   }
 

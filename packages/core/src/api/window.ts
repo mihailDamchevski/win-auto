@@ -79,7 +79,7 @@ export class Window {
     if (!elementHandle) {
       return null;
     }
-    this.events.emitElementFound(elementHandle, selector as Record<string, unknown>);
+    this.events.emitElementFound(elementHandle, selector);
     return new Element(elementHandle, this.handle, this.backend, this.events, selector);
   }
 
@@ -155,7 +155,7 @@ export class Window {
       bounds.width,
       bounds.height,
     );
-    this.events.emitWindowBoundsChanged(this.handle, bounds as Record<string, unknown>);
+    this.events.emitWindowBoundsChanged(this.handle, bounds);
   }
 
   public async maximize(): Promise<void> {

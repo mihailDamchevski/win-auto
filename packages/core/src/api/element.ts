@@ -2,7 +2,7 @@ import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
 import type { ElementPath, ElementSelector } from "./types";
 import { classNamesForSelector } from "../native/classNames";
-import { StaleElementError, TimeoutError } from "./errors";
+import { StaleElementError, TimeoutError, isStaleError } from "./errors";
 
 export class Element {
   public handle: string;
@@ -42,7 +42,7 @@ export class Element {
       );
       if (newHandle && newHandle !== this.handle) {
         this.handle = newHandle;
-        this.events.emitElementFound(newHandle, this.originalSelector as Record<string, unknown>);
+        this.events.emitElementFound(newHandle, this.originalSelector);
         return true;
       }
       return !!newHandle;
@@ -90,16 +90,18 @@ export class Element {
   public async click(): Promise<void> {
     try {
       await this.backend.clickElement(this.handle);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         await this.backend.clickElement(this.handle);
-      } else {
+      } else if (isStaleError(err)) {
         throw new StaleElementError(
           `Element ${this.handle} is stale and could not be re-resolved`,
           this.handle,
           undefined,
           this.originalSelector,
         );
+      } else {
+        throw err;
       }
     }
     this.events.emitElementClicked(this.handle);
@@ -108,16 +110,18 @@ export class Element {
   public async rightClick(): Promise<void> {
     try {
       await this.backend.rightClickElement(this.handle);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         await this.backend.rightClickElement(this.handle);
-      } else {
+      } else if (isStaleError(err)) {
         throw new StaleElementError(
           `Element ${this.handle} is stale and could not be re-resolved`,
           this.handle,
           undefined,
           this.originalSelector,
         );
+      } else {
+        throw err;
       }
     }
     this.events.emitElementRightClicked(this.handle);
@@ -126,16 +130,18 @@ export class Element {
   public async doubleClick(): Promise<void> {
     try {
       await this.backend.doubleClickElement(this.handle);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         await this.backend.doubleClickElement(this.handle);
-      } else {
+      } else if (isStaleError(err)) {
         throw new StaleElementError(
           `Element ${this.handle} is stale and could not be re-resolved`,
           this.handle,
           undefined,
           this.originalSelector,
         );
+      } else {
+        throw err;
       }
     }
     this.events.emitElementDoubleClicked(this.handle);
@@ -144,16 +150,18 @@ export class Element {
   public async hover(): Promise<void> {
     try {
       await this.backend.hoverElement(this.handle);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         await this.backend.hoverElement(this.handle);
-      } else {
+      } else if (isStaleError(err)) {
         throw new StaleElementError(
           `Element ${this.handle} is stale and could not be re-resolved`,
           this.handle,
           undefined,
           this.originalSelector,
         );
+      } else {
+        throw err;
       }
     }
     this.events.emitElementHovered(this.handle);
@@ -175,16 +183,18 @@ export class Element {
   public async typeText(text: string): Promise<void> {
     try {
       await this.backend.typeText(this.handle, text);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         await this.backend.typeText(this.handle, text);
-      } else {
+      } else if (isStaleError(err)) {
         throw new StaleElementError(
           `Element ${this.handle} is stale and could not be re-resolved`,
           this.handle,
           undefined,
           this.originalSelector,
         );
+      } else {
+        throw err;
       }
     }
     this.events.emitElementTyped(this.handle, text);
@@ -220,16 +230,19 @@ export class Element {
   public async getText(): Promise<string> {
     try {
       return await this.backend.getText(this.handle);
-    } catch {
-      if (this.originalSelector && await this.tryResolve()) {
+    } catch (err) {
+      if (isStaleError(err) && this.originalSelector && await this.tryResolve()) {
         return this.backend.getText(this.handle);
       }
-      throw new StaleElementError(
-        `Element ${this.handle} is stale and could not be re-resolved`,
-        this.handle,
-        undefined,
-        this.originalSelector,
-      );
+      if (isStaleError(err)) {
+        throw new StaleElementError(
+          `Element ${this.handle} is stale and could not be re-resolved`,
+          this.handle,
+          undefined,
+          this.originalSelector,
+        );
+      }
+      throw err;
     }
   }
 

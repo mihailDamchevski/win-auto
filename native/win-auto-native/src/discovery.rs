@@ -160,9 +160,9 @@ pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND>
 }
 
 pub fn find_element_uia(window_hwnd: HWND, query: &str) -> Option<HWND> {
-  // SAFETY: COM initialized via ComGuard; UIA COM calls follow the ABI with valid HWND.
+  // SAFETY: COM initialized via ComScope; UIA COM calls follow the ABI with valid HWND.
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().ok()?;
     let root = automation.ElementFromHandle(window_hwnd).ok()?;
     let true_condition = automation.CreateTrueCondition().ok()?;
@@ -308,7 +308,7 @@ thread_local! {
 }
 
 /// SAFETY: CoCreateInstance with CUIAutomation is safe when COM is initialized
-/// (caller must use ComGuard). The thread-local cache avoids repeated allocations.
+/// (caller must use ComScope). The thread-local cache avoids repeated allocations.
 pub unsafe fn create_uia() -> Result<IUIAutomation> {
   let mut result: Option<IUIAutomation> = None;
   let _ = UIA_INSTANCE.try_with(|cell| {
@@ -331,9 +331,9 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
 }
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
-  // SAFETY: COM initialized via ComGuard; UIA COM calls follow the ABI.
+  // SAFETY: COM initialized via ComScope; UIA COM calls follow the ABI.
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia()?;
     let root = automation.GetRootElement().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let true_condition = automation.CreateTrueCondition().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;

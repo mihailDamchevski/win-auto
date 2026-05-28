@@ -185,9 +185,9 @@ pub async fn close_app(process_id: u32) -> Result<()> {
 #[napi(js_name = "closeWindow")]
 pub async fn close_window(window_handle: String) -> Result<()> {
   let hwnd = crate::utils::parse_hwnd(&window_handle)?;
-  // SAFETY: COM is initialized via ComGuard; CoCreateInstance and UIA calls follow COM ABI rules.
+  // SAFETY: COM is initialized via ComScope; CoCreateInstance and UIA calls follow COM ABI rules.
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     // Try UIA WindowPattern.Close() first — works on UWP/modern windows
     let uia_result: windows::core::Result<IUIAutomation> = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER);
     if let Ok(automation) = uia_result {

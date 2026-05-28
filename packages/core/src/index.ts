@@ -21,4 +21,33 @@ export {
 } from "./api/errors";
 export type { Backend } from "./api/backend";
 export type { AppSelector, ElementSelector, ElementNode, ElementPathStep, ElementPath, HwndNode, ImageMatch, LaunchOptions, LocatorFilter, MatchMode, ProcessEntry, WaitOptions, WindowBounds } from "./api/types";
-export type { AutomationEventType } from "./api/events";
+export type {
+  AutomationEventType,
+  AutomationEventPayload,
+  AppLaunchedPayload,
+  AppClosedPayload,
+  WindowFoundPayload,
+  WindowClosedPayload,
+  WindowBoundsChangedPayload,
+  WindowMaximizedPayload,
+  WindowMinimizedPayload,
+  WindowRestoredPayload,
+  ElementFoundPayload,
+  ElementClickedPayload,
+  ElementRightClickedPayload,
+  ElementDoubleClickedPayload,
+  ElementHoveredPayload,
+  ElementTypedPayload,
+  ElementSelectedPayload,
+  ElementToggledPayload,
+  ElementValueChangedPayload,
+  MouseMovedPayload,
+  ElementScreenshotPayload,
+  ProcessConnectedPayload,
+  ProcessKilledPayload,
+  ProcessExitedPayload,
+  DialogFoundPayload,
+  DialogButtonClickedPayload,
+  DialogFileSelectedPayload,
+  DebugPayload,
+} from "./api/events";

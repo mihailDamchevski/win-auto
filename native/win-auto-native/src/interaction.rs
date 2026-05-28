@@ -90,9 +90,9 @@ fn find_element_uia_by_conditions(
   match_mode: Option<&str>,
 ) -> Option<HWND> {
   unsafe {
-    // SAFETY: COM initialized via ComGuard; hwnd is a valid window handle from the caller.
+    // SAFETY: COM initialized via ComScope; hwnd is a valid window handle from the caller.
     // UIA COM calls follow the COM ABI and operate on the initialized automation object.
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().ok()?;
     let root = automation.ElementFromHandle(hwnd).ok()?;
     let mm = match_mode.unwrap_or("substring");
@@ -281,8 +281,8 @@ pub async fn type_text(element_handle: String, text: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   // UIA ValuePattern.SetValue() — works on UWP/WPF/modern controls
   unsafe {
-    // SAFETY: COM initialized via ComGuard; hwnd is a valid window handle from parse_hwnd.
-    let _com_init = crate::utils::ComGuard::init();
+    // SAFETY: COM initialized via ComScope; hwnd is a valid window handle from parse_hwnd.
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
@@ -406,7 +406,7 @@ pub async fn get_text(element_handle: String) -> Result<String> {
 
   // Try UIA ValuePattern first (works for richer controls)
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
@@ -445,10 +445,10 @@ pub async fn get_text(element_handle: String) -> Result<String> {
 #[napi(js_name = "findElementName")]
 pub async fn find_element_name(window_handle: String, name: String) -> Result<Option<String>> {
   let hwnd = parse_hwnd(&window_handle)?;
-  // SAFETY: COM is initialized via ComGuard; create_uia returns a cached or new IUIAutomation.
+  // SAFETY: COM is initialized via ComScope; create_uia returns a cached or new IUIAutomation.
   // UIA property conditions and FindAll/FindFirst calls follow the UIA COM ABI.
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
     let query_lower = name.to_ascii_lowercase();
@@ -515,7 +515,7 @@ pub async fn click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   let mut cursor_set = false;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         // Try InvokePattern first
@@ -632,7 +632,7 @@ fn find_and_invoke_by_name(
 #[napi(js_name = "clickElementByName")]
 pub async fn click_element_by_name(window_handle: String, name: String) -> Result<()> {
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let hwnd = parse_hwnd(&window_handle)?;
@@ -656,7 +656,7 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
   }
 
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
 
     let hwnd = parse_hwnd(&window_handle)?;
@@ -727,7 +727,7 @@ pub struct ElementPathStep {
 pub fn build_element_path(element_handle: String) -> Result<Vec<ElementPathStep>> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia()?;
     let true_condition = automation.CreateTrueCondition()
       .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
@@ -811,7 +811,7 @@ pub fn build_element_path(element_handle: String) -> Result<Vec<ElementPathStep>
 pub async fn resolve_element_path(window_handle: String, path: Vec<ElementPathStep>) -> Result<Option<String>> {
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia()?;
     let true_condition = automation.CreateTrueCondition()
       .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
@@ -877,7 +877,7 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
   debug!("hoverElement hwnd={element_handle}");
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     // Try UIA bounding rectangle first (better for UWP/modern apps)
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
@@ -928,7 +928,7 @@ pub async fn scroll_element(element_handle: String, direction: String, amount: i
 pub async fn get_value(element_handle: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationValuePattern = element
@@ -943,7 +943,7 @@ pub async fn get_value(element_handle: String) -> Result<String> {
 pub async fn set_value(element_handle: String, value: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationValuePattern = element
@@ -959,7 +959,7 @@ pub async fn set_value(element_handle: String, value: String) -> Result<()> {
 pub async fn select_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationSelectionItemPattern = element
@@ -974,7 +974,7 @@ pub async fn select_element(element_handle: String) -> Result<()> {
 pub async fn toggle_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationTogglePattern = element
@@ -989,7 +989,7 @@ pub async fn toggle_element(element_handle: String) -> Result<()> {
 pub async fn get_toggle_state(element_handle: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
     let pattern: IUIAutomationTogglePattern = element
@@ -1051,7 +1051,7 @@ pub async fn find_all(
 
   // UIA-based search for automationId, role, name, text
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(root) = automation.ElementFromHandle(hwnd) {
         // Fast path: try native PropertyConditions (non-regex modes only)
@@ -1268,7 +1268,7 @@ pub async fn get_sibling_elements(element_handle: String) -> Result<Vec<String>>
 pub async fn is_element_visible(element_handle: String) -> Result<bool> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         let offscreen = element.CurrentIsOffscreen().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get offscreen state: {err}") }))?;
@@ -1285,7 +1285,7 @@ pub async fn is_element_visible(element_handle: String) -> Result<bool> {
 pub async fn is_element_enabled(element_handle: String) -> Result<bool> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         let enabled = element.CurrentIsEnabled().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get enabled state: {err}") }))?;
@@ -1301,7 +1301,7 @@ pub async fn is_element_enabled(element_handle: String) -> Result<bool> {
 pub async fn is_element_focused(element_handle: String) -> Result<bool> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         let focused = element.CurrentHasKeyboardFocus().map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to get focus state: {err}") }))?;
@@ -1316,7 +1316,7 @@ pub async fn is_element_focused(element_handle: String) -> Result<bool> {
 pub async fn focus_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation =
       create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
     let uia_element = automation
@@ -1716,7 +1716,7 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
 pub async fn select_text(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     // Try UIA TextPattern first
     if let Ok(automation) = create_uia() {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
@@ -1744,7 +1744,7 @@ pub async fn select_text(element_handle: String) -> Result<()> {
 
 fn get_uia_text_selection(hwnd: HWND) -> Option<String> {
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia().ok()?;
     let element = automation.ElementFromHandle(hwnd).ok()?;
     let pattern = element.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId).ok()?;
@@ -1848,7 +1848,7 @@ fn build_element_tree(
 pub fn inspect_window_tree(window_handle: String, max_depth: Option<i32>) -> Result<Vec<ElementNode>> {
   let hwnd = parse_hwnd(&window_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia()?;
     let root = automation.ElementFromHandle(hwnd)
       .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
@@ -1873,7 +1873,7 @@ pub fn inspect_window_tree(window_handle: String, max_depth: Option<i32>) -> Res
 pub async fn get_element_attribute(element_handle: String, attribute_name: String) -> Result<String> {
   let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
-    let _com_init = crate::utils::ComGuard::init();
+    let _com_init = crate::utils::ComScope::init();
     let automation = create_uia()?;
     let element = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
 
