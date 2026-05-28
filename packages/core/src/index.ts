@@ -20,7 +20,7 @@ export {
   BackendError,
   PatternNotSupportedError,
 } from "./api/errors";
-export type { Backend } from "./api/backend";
+export type { Backend, WinEventInfo } from "./api/backend";
 export type {
   AppSelector,
   ElementSelector,
@@ -58,11 +58,13 @@ export type {
   ElementValueChangedPayload,
   MouseMovedPayload,
   ElementScreenshotPayload,
+  ElementStaleRecoveredPayload,
   ProcessConnectedPayload,
   ProcessKilledPayload,
   ProcessExitedPayload,
   DialogFoundPayload,
   DialogButtonClickedPayload,
   DialogFileSelectedPayload,
+  WinEventPayload,
   DebugPayload,
 } from "./api/events";

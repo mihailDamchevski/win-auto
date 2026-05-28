@@ -25,6 +25,9 @@ loadWinAutoConfig()
       const key = "WIN_AUTO_TIMEOUT_MS" as string;
       process.env[key] = String(config.timeoutMs);
     }
+    if (config?.retryOnStale !== undefined) {
+      process.env.WIN_AUTO_RETRY_ON_STALE = String(config.retryOnStale);
+    }
   })
   .catch(() => {
     // config not present or failed to load — use defaults

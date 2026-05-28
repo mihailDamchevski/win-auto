@@ -104,6 +104,7 @@ const EXTENDED_FUNCTIONS: (keyof NativeBindings)[] = [
   "getSelection",
   "replaceSelectedText",
   "inspectWindowTree",
+  "launchProcess",
 ];
 
 function buildNativeSearchPaths(mainDir: string): string[] {

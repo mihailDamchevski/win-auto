@@ -1,4 +1,4 @@
-import type { Backend } from "./backend";
+import type { Backend, WinEventInfo } from "./backend";
 import type {
   DialogControl,
   DialogInfo,
@@ -55,6 +55,10 @@ export class NativeBackend implements Backend {
 
   async launch(executablePath: string | null, classNames?: string[] | null): Promise<number> {
     return this.native.launch(executablePath, classNames ?? null);
+  }
+
+  async launchProcess(executablePath: string, options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number> {
+    return this.call(() => this.native.launchProcess(executablePath, options ?? undefined));
   }
 
   async enumerateWindows(processId: number, executable?: string | null): Promise<string[]> {
@@ -395,5 +399,25 @@ export class NativeBackend implements Backend {
 
   async waitForUiChange(timeoutMs: number): Promise<boolean> {
     return this.native.waitForUiChange(timeoutMs);
+  }
+
+  startWinEventWatcher(callback: (event: WinEventInfo) => void): void {
+    if (!this.native.startWinEventWatcher) {
+      throw new BackendError(
+        "startWinEventWatcher is not available in the loaded native module.",
+        "native",
+      );
+    }
+    this.native.startWinEventWatcher(callback);
+  }
+
+  stopWinEventWatcher(): void {
+    if (!this.native.stopWinEventWatcher) {
+      throw new BackendError(
+        "stopWinEventWatcher is not available in the loaded native module.",
+        "native",
+      );
+    }
+    this.native.stopWinEventWatcher();
   }
 }

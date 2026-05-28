@@ -1,4 +1,4 @@
-import type { Backend } from "./backend";
+import type { Backend, WinEventInfo } from "./backend";
 import { NativeBackend } from "./native-backend";
 import { App } from "./app";
 import { AutomationEvents } from "./events";
@@ -95,5 +95,22 @@ export class Automation {
 
   public debugDiscovery(processId: number) {
     return this.backend.debugDiscovery(processId);
+  }
+
+  public startWinEventWatcher(): void {
+    this.backend.startWinEventWatcher((event: WinEventInfo) => {
+      this.events.emitWinEvent(
+        event.eventType,
+        event.hwnd,
+        event.idObject,
+        event.idChild,
+        event.idEventThread,
+        event.timestamp,
+      );
+    });
+  }
+
+  public stopWinEventWatcher(): void {
+    this.backend.stopWinEventWatcher();
   }
 }

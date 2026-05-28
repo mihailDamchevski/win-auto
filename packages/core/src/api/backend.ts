@@ -14,6 +14,7 @@ export interface Backend {
   ping(): string;
   setAppConfig(executable: string, classNames: string[]): void;
   launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
+  launchProcess(executablePath: string, options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number>;
   enumerateWindows(processId: number, executable?: string | null): Promise<string[]>;
   closeApp(processId: number): Promise<void>;
   closeWindow(windowHandle: string): Promise<void>;
@@ -106,4 +107,15 @@ export interface Backend {
   buildElementPath(elementHandle: string): ElementPathStep[];
   resolveElementPath(windowHandle: string, path: ElementPathStep[]): Promise<string | null>;
   waitForUiChange(timeoutMs: number): Promise<boolean>;
+  startWinEventWatcher(callback: (event: WinEventInfo) => void): void;
+  stopWinEventWatcher(): void;
 }
+
+export type WinEventInfo = {
+  eventType: number;
+  hwnd: string;
+  idObject: number;
+  idChild: number;
+  idEventThread: number;
+  timestamp: number;
+};

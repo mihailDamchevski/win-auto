@@ -10,166 +10,68 @@
 ## ✅ Done
 
 | # | Task | Completed |
-|---|---|---|
-| Q5 | `classNames`/`executable` filtering in MockBackend | 2026-05-27 |
+|---|---|---|---|
+| Q1 | Structured Rust errors (`thiserror` enum + napi Status mapping) | 2026-05-28 |
+| Q2 | Typed event payloads (26 payload interfaces, typed `on()`/`once()`/`off()`) | 2026-05-28 |
 | Q3 | Missing event emissions wired up | 2026-05-27 |
+| Q4 | Bare `catch {}` replaced with type-checked stale recovery | 2026-05-28 |
+| Q5 | `classNames`/`executable` filtering in MockBackend | 2026-05-27 |
+| P1.1 | TS error hierarchy (`AutomationError` → 7 subclasses) | 2026-05-28 |
+| P1.2 | Thread-safe COM init (`ComScope` refcount-based, ~27 call sites) | 2026-05-28 |
+| P1.3 | Stale-element recovery v2 (configurable retry, backoff, event emission) | 2026-05-28 |
+| P1.4 | Event system hardening (typed `AutomationEventPayload[T]`, `off()`, `removeAllListeners()`) | 2026-05-28 |
+| P2.1 | Multi-strategy healing engine (8 strategies, confidence threshold, parallel `waitFor`) | 2026-05-28 |
+| P2.2 | LegacyIAccessible pattern (`legacyName`/`legacyRole`/`legacyState` fallback) | 2026-05-28 |
+| P2.3 | Win32 `className` as top-level filter + `getClassName()` on Element | 2026-05-28 |
+| P2.4 | Structural navigation (`parent()`/`next()`/`previous()`/`ancestor()`/`findRelative()`) | 2026-05-28 |
+| P3.1 | Fluent `wait.until()` API (`WaitCondition`, `ElementWait`, `WindowWait`, `WaitBuilder`) | 2026-05-28 |
+| P3.2 | Inverse waits (`waitForNotVisible`, `waitForNotEnabled`, `waitForRemoved`, `waitForClosed`) | 2026-05-28 |
+| P3.3 | Compound conditions (`.and()`/`.or()` on wait conditions) | 2026-05-28 |
+| P3.4 | Adaptive poll intervals (10ms–500ms exponential) | 2026-05-28 |
+| P9.1 | Structured Rust errors (`AutomationError` enum, 11 variants, `thiserror`) | 2026-05-28 |
+| P9.2 | Event watcher rewrite (multi-WinEvent hooks, ThreadsafeFunction, TS integration) | 2026-05-28 |
+| P9.3 | Drag-drop via OLE + mouse-simulation fallback mode | 2026-05-28 |
+| P9.4 | Process launch via `CreateProcessW` + job objects + `launchProcess` API | 2026-05-28 |
+| P9.5 | Parallel template matching (rayon 4-quadrant NCC search) | 2026-05-28 |
 
 ---
 
-## Quick wins (1–2 weeks)
+## Quick wins ✅ (all complete)
 
-| # | Task | Why it matters now |
-|---|---|---|
-| Q1 | **Structured Rust errors** — replace `napi_error("string")` with `thiserror` enum: `ElementNotFound`, `ComInitFailed`, `PermissionDenied`, `PatternNotSupported`. Map to proper napi-rs status codes. | Every Rust error currently surfaces as `GenericFailure` — TS consumers cannot distinguish "element not found" from "access denied" without parsing message strings. |
-| Q2 | **Typed event payloads** — wire `AutomationEventPayload` mapped type into `AutomationEvents.on()` so every event has a typed payload. | Event consumers have zero type safety today. The type infrastructure already exists but is unused. |
-| Q3 | **Wire up missing event emissions** — `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:exited` are in the type union but never emitted. Emit `element:found` during poll loops. | ✅ Done |
-| Q4 | **Bare `catch {}` in stale recovery** — replace with type-checked catch that only retries on `ElementNotFound`/`StaleElement` errors, not permission or crash errors. | Current code catches ALL errors during stale-element retry, masking real backend failures. |
-| Q5 | **`classNames` filtering in MockBackend** — `findElement`/`findAll`/`enumerateWindows` now filter by `classNames` and `executable`. | ✅ Done |
+Q1–Q5 have been completed, laying the foundation for structured error handling, typed events, and mock backend fidelity.
 
 ---
 
-## Phase 1 — Foundation Hardening (Chassis)
+## Phase 1 ✅ — Foundation Hardening (Chassis)
 
-Estimated: 2 weeks  
-Impact: **Critical** — every layer depends on this.
+All P1 items are complete:
 
-### 1.1 Custom error hierarchy (TS)
-
-```
-AutomationError
-  ├── ElementNotFoundError   { selector, windowHandle, lastSnapshot? }
-  ├── WindowNotFoundError     { processId, timeoutMs }
-  ├── StaleElementError       { oldHandle, newHandle? }
-  ├── PermissionDeniedError   { handle, isUipibarrier? }
-  ├── TimeoutError            { operation, timeoutMs }
-  ├── BackendError            { backendName, cause }
-  └── PatternNotSupportedError { handle, patternName }
-```
-
-- All classes extend `AutomationError` which extends `Error`.
-- Consumers can `if (err instanceof ElementNotFoundError)` instead of parsing strings.
-- Error builders (`buildElementNotFoundError`) return typed errors.
-
-### 1.2 Thread-safe COM init (Rust)
-
-- Replace per-function `ComGuard` with a per-Tokio-task COM scope via `task_local!`.
-- Thread-local `IUIAutomation` cache should also handle COM reinitialization across threads.
-- Proper `CoUninitialize` on Tokio task exit.
-
-### 1.3 Stale-element recovery v2
-
-- Bare `catch {}` → `catch (err)` with error-type check before retry.
-- Configurable retry count (default 1) via `WinAutoConfig.retryOnStale`.
-- Exponential backoff between retries: 100ms, 200ms, 400ms.
-- Emit `element:stale-recovered` event.
-
-### 1.4 Event system hardening
-
-- Every `AutomationEventType` gets a typed payload interface.
-- `AutomationEventPayload[T]` mapped type used in `on<T>(event, handler)`.
-- Add `off()` / `removeAllListeners(event?)` typed helpers.
-- `process:exited` emission wired to `App.waitForExit()` and `App.close()`.
-- `dialog:found/buttonClicked/fileSelected` emissions wired in `Dialog` methods.
+- **1.1** — TS error hierarchy `AutomationError` → 7 subclasses with structured properties
+- **1.2** — Thread-safe COM init via `ComScope` refcounted `thread_local!`
+- **1.3** — Stale-element recovery: configurable retry count, exponential backoff, `element:staleRecovered` event
+- **1.4** — Event system hardening: typed payloads, `off()`, `removeAllListeners()`
 
 ---
 
-## Phase 2 — Element Discovery Overhaul (Handling Fragile UIs)
+## Phase 2 ✅ — Element Discovery Overhaul (Handling Fragile UIs)
 
-Estimated: 3–4 weeks  
-Impact: **Critical** — this is the #1 community pain point.
+All P2 items are complete:
 
-### 2.1 Multi-strategy healing engine
-
-Build `HealingLocator` that auto-falls back through strategies:
-
-```
-1. AutomationId          → fastest, most stable (hash lookup)
-2. Name (exact)          → human-readable, often stable
-3. Role + ClassName      → structural matching
-4. Name (substring)      → partial text match
-5. XPath path            → buildElementPath / resolveElementPath
-6. Role + sibling index  → tree-position relative
-7. className (HWND)      → Win32 class name (e.g. "ThunderRT6TextBox")
-8. Image template        → OCR / template matching (last resort)
-```
-
-- Each strategy returns `{ handle, confidence, latencyMs }`.
-- `find()` tries strategies in order, returns the first with `confidence >= threshold`.
-- `waitFor()` runs all strategies in parallel when `parallel: true`, takes the fastest high-confidence match.
-- All diagnostics logged when `WIN_AUTO_DEBUG_LOCATORS=1`.
-
-### 2.2 LegacyIAccessible pattern (Rust)
-
-- Add `IUIAutomationLegacyIAccessiblePattern` support in the native backend.
-- `getElementAttribute("legacyName")`, `getElementAttribute("legacyRole")`, `getElementAttribute("legacyState")`.
-- `findElement` falls back to `LegacyIAccessible::Name` when standard UIA properties are empty.
-- This exposes elements in VB6, MFC, Delphi, and other legacy frameworks that support MSAA but not full UIA.
-
-### 2.3 Win32 class-name first-class support
-
-- Add `className` as a top-level filter in `ElementSelector` (already in the type, promote it).
-- Native `findElement` pre-filters by class name before UIA property matching when `className` is provided.
-- Expose `getClassName()` on `Element` (returns Win32 window class).
-
-### 2.4 Scope & structural navigation
-
-- `Element.findRelative(selector, { relation: "ancestor" | "parent" | "nextSibling" | "previousSibling" })`.
-- `Locator.ancestor(selector)` / `Locator.parent()` / `Locator.next(selector)`.
-- Scope container (`within()`) uses `findAll` + tree-aware filtering, not just single `findElement`.
+- **2.1** — Healing engine: 8 auto-generated fallback strategies, confidence threshold, parallel `waitFor`
+- **2.2** — LegacyIAccessible pattern (Rust): `legacyName`/`legacyRole`/`legacyState` fallback when standard UIA is empty
+- **2.3** — `className` top-level filter + `getClassName()` on Element
+- **2.4** — Structural navigation: `parent()`, `next(selector?)`, `previous(selector?)`, `ancestor(selector)`, `findRelative()`
 
 ---
 
-## Phase 3 — Fluent Wait & Timing System
+## Phase 3 ✅ — Fluent Wait & Timing System
 
-Estimated: 2 weeks  
-Impact: **Critical** — desktop automation lives or dies by wait reliability.
+All P3 items are complete:
 
-### 3.1 `wait.until()` fluent API
-
-```typescript
-import { wait } from "@win-auto/core";
-
-await wait.until(() => element.getText()).matches(/loaded/).for(10000);
-await wait.until(window).isVisible().for(5000);
-await wait.until(element).isEnabled();
-await wait.until(() => backend.findElement(s)).exists();
-```
-
-Backed by the same `poll` + `waitForUiChange` infrastructure. Chainable:
-
-- `.until(condition)` — condition function or object with `.isVisible()`, etc.
-- `.matches(predicate)` — `(value) => boolean`
-- `.equals(expected)` — strict equality
-- `.for(timeoutMs)` — set timeout (default from config)
-- `.polling(intervalMs)` — custom poll interval
-- `.and(otherCondition)` / `.or(otherCondition)` — compound conditions
-
-### 3.2 Inverse waits
-
-```typescript
-await element.waitForNotVisible({ timeoutMs: 5000 });
-await element.waitForNotEnabled();
-await element.waitForRemoved();
-await window.waitForClosed();
-await app.waitForProcessExit(10000);
-```
-
-### 3.3 Compound conditions
-
-```typescript
-await wait.until(element).isVisible()
-  .and(el => el.getText().then(t => t.includes("ready")))
-  .for(10000);
-
-await wait.until(element).hasText("loaded")
-  .or(() => element.getText().then(t => t.includes("error")));
-```
-
-### 3.4 Adaptive poll intervals
-
-- Start at 10ms, double on each unsuccessful cycle (10 → 20 → 40 → 80 → 160 → 320 → 500 max).
-- Respect `waitForUiChange` as primary signal; only poll at minimum interval when no change detected.
-- Configurable via `WinAutoConfig.pollInterval: "adaptive" | number`.
+- **3.1** — `wait.until()` fluent API: `WaitCondition<T>`, `ElementWait`, `WindowWait`, `WaitBuilder`, global singleton
+- **3.2** — Inverse waits: `waitForNotVisible`, `waitForNotEnabled`, `waitForRemoved`, `waitForClosed`
+- **3.3** — Compound conditions: `.and()`/`.or()` on all wait conditions
+- **3.4** — Adaptive poll intervals (10ms → 500ms exponential, opt-in via `.adaptive()` or config)
 
 ---
 
@@ -434,52 +336,15 @@ const { auto, app, window, mock, elements } = createMockFixture({
 
 ---
 
-## Phase 9 — Rust Core Hardening
+## Phase 9 ✅ — Rust Core Hardening
 
-Estimated: 3 weeks  
-Impact: **High** — improves debuggability, performance, and correctness.
+All P9 items are complete:
 
-### 9.1 Structured error types (Rust)
-
-```rust
-#[derive(thiserror::Error)]
-enum AutomationError {
-    ElementNotFound { handle: String, selector: String },
-    ComInitFailed { reason: String },
-    PermissionDenied { handle: String, is_uip_barrier: bool },
-    PatternNotSupported { handle: String, pattern: &'static str },
-    WindowNotFound { pid: u32, timeout_ms: u64 },
-    ProcessLaunchFailed { path: String, os_error: i32 },
-    ScreenshotFailed { handle: String, reason: String },
-    Timeout { operation: &'static str, duration_ms: u64 },
-}
-```
-
-- Each variant maps to the appropriate napi-rs `Status` code.
-- Error messages include structured context (handle, selector, os error code).
-
-### 9.2 Event watcher rewrite
-
-- Listen for multiple WinEvent types: `EVENT_OBJECT_SHOW`, `EVENT_OBJECT_HIDE`, `EVENT_OBJECT_CREATE`, `EVENT_OBJECT_DESTROY`, `EVENT_OBJECT_VALUECHANGE`, `EVENT_SYSTEM_MENUSTART`, `EVENT_SYSTEM_MENUEND`.
-- Return event object to JS: `{ type, handle, windowHandle, processId, timestamp }`.
-- Proper thread lifecycle via napi-rs `CleanupEnv` hook.
-
-### 9.3 Drag-drop via OLE
-
-- Add `DoDragDrop` / `IDropTarget` integration for OLE-aware apps (Explorer, Office, Outlook).
-- Keep mouse-simulation fallback for non-OLE targets.
-- `dragDrop(target, { mode: "ole" | "mouse" | "auto" })`.
-
-### 9.4 Process launch via CreateProcessW
-
-- Full `STARTUPINFOEXW` support for env, cwd, extended attributes.
-- Job object creation for guaranteed cleanup.
-- `stdout`/`stderr` capture via pipe handles.
-
-### 9.5 Parallel template matching
-
-- Split search area into quadrants, search each in parallel via `rayon`.
-- Configurable thread count via `WIN_AUTO_MATCH_THREADS`.
+- **9.1** — Structured Rust errors: `AutomationError` enum (11 variants, `thiserror`, mapped to napi `Status`)
+- **9.2** — Event watcher rewrite: multi-WinEvent hooks, `ThreadsafeFunction` for JS callbacks, `startWinEventWatcher`/`stopWinEventWatcher` exports + TS integration
+- **9.3** — Drag-drop via OLE + mouse-simulation fallback (`"ole"`/`"mouse"` mode parameter)
+- **9.4** — Process launch via `CreateProcessW` + job objects + `launchProcess` options (args, cwd, env)
+- **9.5** — Parallel template matching: `rayon` 4-quadrant NCC search
 
 ---
 
@@ -569,19 +434,19 @@ Examples:
 
 ## Implementation order summary
 
-| Step | What | Time | Why first |
-|---|---|---|---|
-| Q1–Q5 | Quick wins (Q3 + Q5 ✅ done) | 1–2 wks | Foundation for everything |
-| P1 | Foundation hardening | 2 wks | Every layer depends on errors, events, COM |
-| P3 | Wait system | 2 wks | Most tests fail due to timing, not logic |
-| P2 | Element discovery | 3–4 wks | The core value proposition |
-| P9 | Rust hardening | 3 wks | Debuggability and performance |
-| P10.2 | UIPI handling | 1 wk | Silent killer in production |
-| P4 | Dual input | 3 wks | Expands supported app range |
-| P7 | Mock backend | 2 wks | Makes testing possible without desktop |
-| P8 | Testing infra | 2 wks | Makes tests reliable and easy to write |
-| P5 | Image recognition | 3–4 wks | Last-resort for invisible elements |
-| P6 | Legacy toolkit | 3 wks | The differentiator |
-| P10 | Cross-cutting | 2 wks | Production polish |
+| Step | What | Time | Status |
+|---|---|---|---|---|
+| Q1–Q5 | Quick wins | 1–2 wks | ✅ Done |
+| P1 | Foundation hardening | 2 wks | ✅ Done |
+| P3 | Wait system | 2 wks | ✅ Done |
+| P2 | Element discovery | 3–4 wks | ✅ Done |
+| P9 | Rust hardening | 3 wks | ✅ Done |
+| P10.2 | UIPI handling | 1 wk | ⏳ Pending |
+| P4 | Dual input | 3 wks | ⏳ Pending |
+| P7 | Mock backend | 2 wks | ⏳ Pending |
+| P8 | Testing infra | 2 wks | ⏳ Pending |
+| P5 | Image recognition | 3–4 wks | ⏳ Pending |
+| P6 | Legacy toolkit | 3 wks | ⏳ Pending |
+| P10 | Cross-cutting | 2 wks | ⏳ Pending |
 
-**Total estimated: ~4–6 months for one experienced developer.**
+**Completed: 5 of 12 phases. Estimated remaining: ~3–4 months for one experienced developer.**

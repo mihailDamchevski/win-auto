@@ -8,6 +8,10 @@ export type LaunchOptions = {
   executablePath: string;
   args?: string[];
   title?: string;
+  /** Working directory for the launched process. */
+  cwd?: string;
+  /** Environment variables as "KEY=VALUE" strings. */
+  env?: string[];
 };
 
 export type MatchMode = "substring" | "exact" | "regex";
@@ -69,6 +73,7 @@ export type NativeBindings = {
   ping: () => string;
   setAppConfig?: (executable: string, classNames: string[]) => void;
   launch: (executablePath?: string | null, classNames?: string[] | null) => Promise<number>;
+  launchProcess: (executablePath: string, options?: { args?: string[]; cwd?: string; env?: string[] }) => Promise<number>;
   enumerateWindows: (processId: number, executable?: string | null) => Promise<string[]>;
   debugDiscovery?: (processId: number) => WindowDebugInfo[];
   findElement: (
@@ -154,6 +159,8 @@ export type NativeBindings = {
   getSelection: (elementHandle: string) => Promise<string>;
   replaceSelectedText: (elementHandle: string, text: string) => Promise<void>;
   waitForUiChange: (timeoutMs: number) => Promise<boolean>;
+  startWinEventWatcher?: (callback: (event: { eventType: number; hwnd: string; idObject: number; idChild: number; idEventThread: number; timestamp: number }) => void) => void;
+  stopWinEventWatcher?: () => void;
   inspectWindowTree: (windowHandle: string, maxDepth?: number | null) => ElementNode[];
   inspectHwndTree?: (windowHandle: string, maxDepth?: number | null) => HwndNode[];
   highlightElement?: (

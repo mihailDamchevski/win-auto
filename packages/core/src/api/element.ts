@@ -72,6 +72,44 @@ export class Element {
     }
   }
 
+  private async retryOnStale<T>(action: (handle: string) => Promise<T>): Promise<T> {
+    const maxRetries = Math.max(
+      0,
+      parseInt(
+        typeof process !== "undefined" ? (process.env?.WIN_AUTO_RETRY_ON_STALE ?? "1") : "1",
+        10,
+      ),
+    );
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        return await action(this.handle);
+      } catch (err) {
+        if (!isStaleError(err)) throw err;
+        if (!this.originalSelector || attempt === maxRetries) {
+          throw new StaleElementError(
+            `Element ${this.handle} is stale and could not be re-resolved after ${maxRetries} retr${maxRetries === 1 ? "y" : "ies"}`,
+            this.handle,
+            undefined,
+            this.originalSelector,
+          );
+        }
+        const delay = 100 * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (await this.tryResolve()) {
+          this.events.emitElementStaleRecovered(this.handle, this.handle, attempt + 1);
+        }
+      }
+    }
+
+    throw new StaleElementError(
+      `Element ${this.handle} is stale and could not be re-resolved`,
+      this.handle,
+      undefined,
+      this.originalSelector,
+    );
+  }
+
   public async isStale(): Promise<boolean> {
     if (!this.originalSelector) {
       return false;
@@ -115,82 +153,22 @@ export class Element {
   }
 
   public async click(): Promise<void> {
-    try {
-      await this.backend.clickElement(this.handle);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        await this.backend.clickElement(this.handle);
-      } else if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      } else {
-        throw err;
-      }
-    }
+    await this.retryOnStale((h) => this.backend.clickElement(h));
     this.events.emitElementClicked(this.handle);
   }
 
   public async rightClick(): Promise<void> {
-    try {
-      await this.backend.rightClickElement(this.handle);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        await this.backend.rightClickElement(this.handle);
-      } else if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      } else {
-        throw err;
-      }
-    }
+    await this.retryOnStale((h) => this.backend.rightClickElement(h));
     this.events.emitElementRightClicked(this.handle);
   }
 
   public async doubleClick(): Promise<void> {
-    try {
-      await this.backend.doubleClickElement(this.handle);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        await this.backend.doubleClickElement(this.handle);
-      } else if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      } else {
-        throw err;
-      }
-    }
+    await this.retryOnStale((h) => this.backend.doubleClickElement(h));
     this.events.emitElementDoubleClicked(this.handle);
   }
 
   public async hover(): Promise<void> {
-    try {
-      await this.backend.hoverElement(this.handle);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        await this.backend.hoverElement(this.handle);
-      } else if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      } else {
-        throw err;
-      }
-    }
+    await this.retryOnStale((h) => this.backend.hoverElement(h));
     this.events.emitElementHovered(this.handle);
   }
 
@@ -208,22 +186,7 @@ export class Element {
   }
 
   public async typeText(text: string): Promise<void> {
-    try {
-      await this.backend.typeText(this.handle, text);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        await this.backend.typeText(this.handle, text);
-      } else if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      } else {
-        throw err;
-      }
-    }
+    await this.retryOnStale((h) => this.backend.typeText(h, text));
     this.events.emitElementTyped(this.handle, text);
   }
 
@@ -255,22 +218,7 @@ export class Element {
   }
 
   public async getText(): Promise<string> {
-    try {
-      return await this.backend.getText(this.handle);
-    } catch (err) {
-      if (isStaleError(err) && this.originalSelector && (await this.tryResolve())) {
-        return this.backend.getText(this.handle);
-      }
-      if (isStaleError(err)) {
-        throw new StaleElementError(
-          `Element ${this.handle} is stale and could not be re-resolved`,
-          this.handle,
-          undefined,
-          this.originalSelector,
-        );
-      }
-      throw err;
-    }
+    return this.retryOnStale((h) => this.backend.getText(h));
   }
 
   public async exists(): Promise<boolean> {

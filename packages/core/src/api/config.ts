@@ -6,6 +6,7 @@ export interface WinAutoConfig {
   runtime?: "mock" | "native";
   timeoutMs?: number;
   screenshotOnFailure?: boolean;
+  retryOnStale?: number;
 }
 
 export async function loadWinAutoConfig(cwd?: string): Promise<WinAutoConfig | null> {

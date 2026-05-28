@@ -1,18 +1,61 @@
-use std::process::Command;
+use std::sync::Mutex;
 use std::time::Duration;
 use napi::{Error, Result};
 use napi_derive::napi;
 use tracing::info;
-use windows::Win32::Foundation::{CloseHandle, HWND, WPARAM, LPARAM};
+use windows::core::*;
+use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
-use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE};
+use windows::Win32::System::JobObjects::*;
+use windows::Win32::System::Threading::*;
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
 use crate::discovery::{collect_all_top_level_windows, discover_windows_for_pid};
 use crate::error::AutomationError;
 use crate::utils::{get_class_name, get_window_title, is_visible, process_image_for_pid, window_pid};
+
+// ── Job-object registry ───────────────────────────────────────────────────
+// Keeps job handles alive so child processes stay bound to the job.
+// isize (raw pointer value) is Send, unlike HANDLE (*mut c_void).
+
+static JOB_HANDLES: std::sync::LazyLock<Mutex<Vec<isize>>> =
+  std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn create_job_object() -> std::result::Result<HANDLE, AutomationError> {
+  unsafe {
+    let job = CreateJobObjectW(None, None).map_err(|_| AutomationError::Generic {
+      message: "failed to create job object".into(),
+    })?;
+
+    let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+      BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+          | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    SetInformationJobObject(
+      job,
+      JobObjectExtendedLimitInformation,
+      &info as *const _ as *const std::ffi::c_void,
+      std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+    )
+    .map_err(|_| AutomationError::Generic {
+      message: "failed to set job object info".into(),
+    })?;
+
+    let mut list = JOB_HANDLES.lock().unwrap();
+    list.push(job.0 as isize);
+
+    Ok(job)
+  }
+}
+
+// ── Process helpers ───────────────────────────────────────────────────────
 
 fn is_process_running(pid: u32) -> bool {
   if pid == 0 {
@@ -56,6 +99,100 @@ fn terminate_process(pid: u32) -> Result<()> {
   Ok(())
 }
 
+// ── CreateProcessW launcher ───────────────────────────────────────────────
+
+/// Spawn a process via `CreateProcessW`, attach it to a job object, and
+/// return the PID.  The calling thread must be on an STA for COM-based
+/// window discovery afterwards.
+fn spawn_process_via_createprocess(
+  path: &str,
+  args: Option<&[String]>,
+  cwd: Option<&str>,
+  env: Option<&[String]>,
+) -> std::result::Result<u32, AutomationError> {
+  // Build command-line string (CreateProcessW expects a mutable buffer).
+  let mut cmdline = path.to_string();
+  if let Some(a) = args {
+    for arg in a {
+      cmdline.push(' ');
+      cmdline.push_str(arg);
+    }
+  }
+
+  // Environment block: "KEY=VALUE\0KEY=VALUE\0\0"
+  let env_block: Option<Vec<u16>> = env.map(|vars| {
+    let mut block = Vec::new();
+    for var in vars {
+      for c in var.encode_utf16() {
+        block.push(c);
+      }
+      block.push(0u16);
+    }
+    block.push(0u16); // double null
+    block
+  });
+
+  // Current directory as wide string.
+  let cwd_wide: Option<Vec<u16>> = cwd.map(|s| {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+  });
+
+  // Job object (keep alive via static registry).
+  let job_handle = create_job_object()?;
+
+  unsafe {
+    let mut si = STARTUPINFOW::default();
+    si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+
+    let mut pi = PROCESS_INFORMATION::default();
+
+    let mut cmdline_wide = cmdline.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let cmdline_pwstr = PWSTR(cmdline_wide.as_mut_ptr());
+
+    let env_ptr: Option<*const std::ffi::c_void> = env_block
+      .as_ref()
+      .map(|b| b.as_ptr() as *const std::ffi::c_void);
+
+    let cwd_ptr: PCWSTR = cwd_wide
+      .as_ref()
+      .map(|v| PCWSTR(v.as_ptr()))
+      .unwrap_or(PCWSTR::null());
+
+    CreateProcessW(
+      PCWSTR::null(),     // lpApplicationName – null = use command line
+      Some(cmdline_pwstr), // lpCommandLine
+      None,               // lpProcessAttributes
+      None,               // lpThreadAttributes
+      false,              // bInheritHandles
+      CREATE_SUSPENDED | CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+      env_ptr,
+      cwd_ptr,
+      &mut si,
+      &mut pi,
+    )
+    .map_err(|e| AutomationError::ProcessLaunchFailed {
+      path: path.to_string(),
+      os_error: e.code().0,
+    })?;
+
+    let pid = pi.dwProcessId;
+
+    // Assign to job object while still suspended.
+    let _ = AssignProcessToJobObject(job_handle, pi.hProcess);
+
+    // Resume the main thread.
+    ResumeThread(pi.hThread);
+
+    // Close local handles – the job keeps the process alive.
+    let _ = CloseHandle(pi.hThread);
+    let _ = CloseHandle(pi.hProcess);
+
+    Ok(pid)
+  }
+}
+
+// ── Close-app helper ──────────────────────────────────────────────────────
+
 async fn close_app_internal(process_id: u32) -> Result<()> {
   if !is_process_running(process_id) {
     return Ok(());
@@ -91,6 +228,18 @@ async fn close_app_internal(process_id: u32) -> Result<()> {
   Ok(())
 }
 
+// ── Napi exports ──────────────────────────────────────────────────────────
+
+#[napi(object)]
+pub struct LaunchOptions {
+  pub args: Option<Vec<String>>,
+  pub cwd: Option<String>,
+  pub env: Option<Vec<String>>,
+}
+
+/// High-level launch — replaces the old `std::process::Command` approach.
+/// Returns the PID of the spawned process (or the window-owning PID for
+/// ApplicationFrameHost scenarios).
 #[napi]
 pub async fn launch(
   executable_path: Option<String>,
@@ -100,31 +249,22 @@ pub async fn launch(
   let path = executable_path
     .ok_or_else(|| Error::from(AutomationError::Generic { message: "executablePath is required".into() }))?;
 
-  let child = Command::new(&path)
-    .spawn()
-    .map_err(|_err| Error::from(AutomationError::ProcessLaunchFailed { path: path.clone(), os_error: 0 }))?;
-
-  let child_pid = child.id();
+  let child_pid = spawn_process_via_createprocess(&path, None, None, None)
+    .map_err(|e| Error::from(e))?;
 
   // Phase 1: Look for windows belonging to the spawned PID directly.
-  // Handles normal Win32 apps where the process owns its own window.
   for _ in 0..30 {
     let found = {
       let windows = discover_windows_for_pid(child_pid, Some(&path));
       windows.first().map(|hwnd| window_pid(*hwnd)).filter(|pid| *pid != 0)
     };
     if let Some(owner_pid) = found {
-      // Return the actual window-owning PID (handles ApplicationFrameHost scenarios)
       return Ok(owner_pid);
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
   }
 
-  // Phase 2: For stub executables (e.g. calc.exe -> CalculatorApp via ApplicationFrameHost),
-  // the spawned process has no windows itself. Scan ALL visible top-level windows and
-  // find ones whose title contains the executable stem. Prefer ApplicationFrameWindow
-  // (owned by ApplicationFrameHost.exe, directly reachable via UIA) over CoreWindow
-  // (owned by the UWP app process, not a direct UIA root child).
+  // Phase 2: Scan visible top-level windows for the executable stem.
   let stem: Option<String> = std::path::Path::new(&path)
     .file_stem()
     .map(|s| s.to_string_lossy().to_ascii_lowercase());
@@ -144,7 +284,73 @@ pub async fn launch(
     }).collect();
 
     if !candidates.is_empty() {
-      // Prefer ApplicationFrameWindow over other window types
+      let chosen_idx = candidates.iter().position(|hwnd| {
+        get_class_name(*hwnd) == "ApplicationFrameWindow"
+      }).unwrap_or(0);
+      let chosen = candidates[chosen_idx];
+      let owner_pid = window_pid(chosen);
+      if owner_pid != 0 {
+        return Ok(owner_pid);
+      }
+    }
+  }
+
+  Ok(child_pid)
+}
+
+/// Full-featured launch with options (args, cwd, env).
+#[napi(js_name = "launchProcess")]
+pub async fn launch_process(
+  executable_path: String,
+  options: Option<LaunchOptions>,
+) -> Result<u32> {
+  info!("launchProcess path={executable_path}");
+
+  let opts = options.unwrap_or(LaunchOptions {
+    args: None,
+    cwd: None,
+    env: None,
+  });
+  let child_pid = spawn_process_via_createprocess(
+    &executable_path,
+    opts.args.as_deref(),
+    opts.cwd.as_deref(),
+    opts.env.as_deref(),
+  )
+  .map_err(|e| Error::from(e))?;
+
+  let stem: Option<String> = std::path::Path::new(&executable_path)
+    .file_stem()
+    .map(|s| s.to_string_lossy().to_ascii_lowercase());
+
+  // Phase 1: windows owned by spawned PID
+  for _ in 0..30 {
+    let found = {
+      let windows = discover_windows_for_pid(child_pid, Some(&executable_path));
+      windows.first().map(|hwnd| window_pid(*hwnd)).filter(|pid| *pid != 0)
+    };
+    if let Some(owner_pid) = found {
+      return Ok(owner_pid);
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+
+  // Phase 2: scan all visible top-level windows
+  for _ in 0..30 {
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let all = collect_all_top_level_windows();
+    let candidates: Vec<HWND> = all.into_iter().filter(|hwnd| {
+      if !is_visible(*hwnd) { return false; }
+      let pid = window_pid(*hwnd);
+      if pid == 0 || pid == child_pid { return false; }
+      if let Some(ref stem) = stem {
+        let title = get_window_title(*hwnd).to_ascii_lowercase();
+        if title.contains(stem) { return true; }
+      }
+      false
+    }).collect();
+
+    if !candidates.is_empty() {
       let chosen_idx = candidates.iter().position(|hwnd| {
         get_class_name(*hwnd) == "ApplicationFrameWindow"
       }).unwrap_or(0);

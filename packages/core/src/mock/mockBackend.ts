@@ -1,4 +1,4 @@
-import type { Backend } from "../api/backend";
+import type { Backend, WinEventInfo } from "../api/backend";
 import type {
   MockAppRecord,
   MockWindowRecord,
@@ -346,6 +346,10 @@ export class MockBackend implements Backend {
     this.registerElement(element, winHandle);
 
     return pid;
+  }
+
+  async launchProcess(_executablePath: string, _options?: { args?: string[]; cwd?: string; env?: string[] }): Promise<number> {
+    return 0;
   }
 
   async enumerateWindows(processId: number, executable?: string | null): Promise<string[]> {
@@ -979,5 +983,13 @@ export class MockBackend implements Backend {
   async waitForUiChange(_timeoutMs: number): Promise<boolean> {
     await new Promise((resolve) => setTimeout(resolve, _timeoutMs));
     return false;
+  }
+
+  startWinEventWatcher(_callback: (event: WinEventInfo) => void): void {
+    // no-op in mock
+  }
+
+  stopWinEventWatcher(): void {
+    // no-op in mock
   }
 }

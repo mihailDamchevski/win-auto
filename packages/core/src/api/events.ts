@@ -21,12 +21,14 @@ export type AutomationEventType =
   | "element:valueChanged"
   | "mouse:moved"
   | "element:screenshot"
+  | "element:staleRecovered"
   | "dialog:found"
   | "dialog:buttonClicked"
   | "dialog:fileSelected"
   | "process:connected"
   | "process:killed"
   | "process:exited"
+  | "winEvent"
   | "debug";
 
 export type AppLaunchedPayload = { processId: number; executablePath: string; timestamp: number };
@@ -52,6 +54,12 @@ export type ElementToggledPayload = { handle: string; timestamp: number };
 export type ElementValueChangedPayload = { handle: string; value: string; timestamp: number };
 export type MouseMovedPayload = { x: number; y: number; timestamp: number };
 export type ElementScreenshotPayload = { handle: string; timestamp: number };
+export type ElementStaleRecoveredPayload = {
+  handle: string;
+  oldHandle: string;
+  retryCount: number;
+  timestamp: number;
+};
 export type ProcessConnectedPayload = { pid: number; imageName: string; timestamp: number };
 export type ProcessKilledPayload = { pid: number; timestamp: number };
 export type ProcessExitedPayload = { pid: number; timestamp: number };
@@ -59,6 +67,14 @@ export type DialogFoundPayload = { handle: string; title: string; timestamp: num
 export type DialogButtonClickedPayload = { handle: string; buttonText: string; timestamp: number };
 export type DialogFileSelectedPayload = { handle: string; path: string; timestamp: number };
 export type DebugPayload = { message: string; data?: Record<string, unknown>; timestamp: number };
+export type WinEventPayload = {
+  eventType: number;
+  hwnd: string;
+  idObject: number;
+  idChild: number;
+  idEventThread: number;
+  timestamp: number;
+};
 
 export type AutomationEventPayload = {
   "app:launched": AppLaunchedPayload;
@@ -80,12 +96,14 @@ export type AutomationEventPayload = {
   "element:valueChanged": ElementValueChangedPayload;
   "mouse:moved": MouseMovedPayload;
   "element:screenshot": ElementScreenshotPayload;
+  "element:staleRecovered": ElementStaleRecoveredPayload;
   "dialog:found": DialogFoundPayload;
   "dialog:buttonClicked": DialogButtonClickedPayload;
   "dialog:fileSelected": DialogFileSelectedPayload;
   "process:connected": ProcessConnectedPayload;
   "process:killed": ProcessKilledPayload;
   "process:exited": ProcessExitedPayload;
+  winEvent: WinEventPayload;
   debug: DebugPayload;
 };
 
@@ -187,6 +205,10 @@ export class AutomationEvents extends EventEmitter {
     this.emit("element:screenshot", { handle, timestamp: Date.now() });
   }
 
+  public emitElementStaleRecovered(handle: string, oldHandle: string, retryCount: number): void {
+    this.emit("element:staleRecovered", { handle, oldHandle, retryCount, timestamp: Date.now() });
+  }
+
   public emitProcessConnected(pid: number, imageName: string): void {
     this.emit("process:connected", { pid, imageName, timestamp: Date.now() });
   }
@@ -209,6 +231,17 @@ export class AutomationEvents extends EventEmitter {
 
   public emitProcessExited(pid: number): void {
     this.emit("process:exited", { pid, timestamp: Date.now() });
+  }
+
+  public emitWinEvent(
+    eventType: number,
+    hwnd: string,
+    idObject: number,
+    idChild: number,
+    idEventThread: number,
+    timestamp: number,
+  ): void {
+    this.emit("winEvent", { eventType, hwnd, idObject, idChild, idEventThread, timestamp });
   }
 
   public emitDebug(message: string, data?: Record<string, unknown>): void {

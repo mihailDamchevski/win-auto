@@ -113,6 +113,17 @@ export class WaitCondition<T> {
     return this;
   }
 
+  /** Resolve to `true` if the condition is satisfied within the timeout,
+   *  `false` otherwise. Non-throwing version of `wait()`. */
+  async exists(): Promise<boolean> {
+    try {
+      await this.wait();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async wait(): Promise<T> {
     return pollCondition(
       async () => {
@@ -206,22 +217,6 @@ export class ElementWait extends WaitCondition<Element> {
       return exists ? null : el;
     };
     return this;
-  }
-
-  async exists(): Promise<boolean> {
-    try {
-      await pollCondition(
-        async () => {
-          const v = await this.condition();
-          return this.predicate(v as Element) ? v : null;
-        },
-        this.backend,
-        { timeoutMs: this.timeoutMs, intervalMs: this.intervalMs, adaptive: this.useAdaptive },
-      );
-      return true;
-    } catch {
-      return false;
-    }
   }
 }
 

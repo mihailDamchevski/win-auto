@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { setAppConfig, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, debugDiscovery, inspectHwndTree, waitForUiChange, highlightElement, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, buildElementPath, resolveElementPath, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, focusElement, getWindowBounds, setWindowBounds, focusWindow, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, clickAt, keyDown, keyUp, selectText, getSelection, replaceSelectedText, inspectWindowTree, getElementAttribute, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess, captureScreenshot, captureScreenshotToFile, findImage } = nativeBinding
+const { setAppConfig, findDialogs, getDialogControls, clickDialogButton, setDialogFilePath, debugDiscovery, inspectHwndTree, waitForUiChange, startWinEventWatcher, stopWinEventWatcher, highlightElement, findElement, typeText, sendKeys, pressKeyCodes, getText, findElementName, clickElement, clickElementByName, clickSequence, buildElementPath, resolveElementPath, hoverElement, scrollElement, getValue, setValue, selectElement, toggleElement, getToggleState, findAll, getParent, getChildren, getSiblings, isVisible, isEnabled, isFocused, focusElement, getWindowBounds, setWindowBounds, focusWindow, maximizeWindow, minimizeWindow, restoreWindow, pressKey, rightClickElement, doubleClickElement, mouseMove, clickAt, keyDown, keyUp, selectText, getSelection, replaceSelectedText, inspectWindowTree, getElementAttribute, dragDrop, launch, ping, enumerateWindows, closeApp, closeWindow, isProcessRunning, findProcessesByName, waitForProcessExit, getProcessImageName, killProcess, captureScreenshot, captureScreenshotToFile, findImage } = nativeBinding
 
 module.exports.setAppConfig = setAppConfig
 module.exports.findDialogs = findDialogs
@@ -320,6 +320,8 @@ module.exports.setDialogFilePath = setDialogFilePath
 module.exports.debugDiscovery = debugDiscovery
 module.exports.inspectHwndTree = inspectHwndTree
 module.exports.waitForUiChange = waitForUiChange
+module.exports.startWinEventWatcher = startWinEventWatcher
+module.exports.stopWinEventWatcher = stopWinEventWatcher
 module.exports.highlightElement = highlightElement
 module.exports.findElement = findElement
 module.exports.typeText = typeText

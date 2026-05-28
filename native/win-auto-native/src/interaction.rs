@@ -1980,42 +1980,32 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
 
 #[napi(js_name = "dragDrop")]
 pub async fn drag_drop(from_element_handle: String, to_element_handle: String) -> Result<()> {
-  let from_hwnd = parse_hwnd(&from_element_handle)?;
-  let to_hwnd = parse_hwnd(&to_element_handle)?;
+  // Try OLE-aware mode first; fall back to pure mouse simulation.
+  let fh = from_element_handle.clone();
+  let th = to_element_handle.clone();
 
-  let mut from_rect = RECT::default();
-  unsafe {
-    if GetWindowRect(from_hwnd, &mut from_rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed { handle: from_element_handle.clone(), reason: "Failed to get source window rectangle".into() }));
+  let result = tokio::task::spawn_blocking(move || {
+    crate::ole_drag::mouse_simulation_drag_drop(&fh, &th, true)
+  })
+  .await;
+
+  match result {
+    Ok(Ok(())) => return Ok(()),
+    Ok(Err(e)) => {
+      // OLE-aware attempt failed – retry with pure mouse simulation
+      tracing::warn!("dragDrop OLE-aware attempt failed, retrying with mouse: {e}");
+    }
+    Err(e) => {
+      tracing::warn!("dragDrop blocking task join failed, retrying with mouse: {e}");
     }
   }
-  let from_x = (from_rect.left + from_rect.right) / 2;
-  let from_y = (from_rect.top + from_rect.bottom) / 2;
 
-  let mut to_rect = RECT::default();
-  unsafe {
-    if GetWindowRect(to_hwnd, &mut to_rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed { handle: to_element_handle.clone(), reason: "Failed to get target window rectangle".into() }));
-    }
-  }
-  let to_x = (to_rect.left + to_rect.right) / 2;
-  let to_y = (to_rect.top + to_rect.bottom) / 2;
-
-  // SAFETY: SetCursorPos and SendInput are safe; coordinates are from valid GetWindowRect calls,
-  // INPUT structures are initialized via make_mouse_input with correct MOUSE_EVENT_FLAGS.
-  unsafe {
-    SetCursorPos(from_x, from_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to position cursor".into() }))?;
-    SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTDOWN.0)], std::mem::size_of::<INPUT>() as i32);
-  }
-  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-  unsafe {
-    SetCursorPos(to_x, to_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to position cursor".into() }))?;
-    SendInput(&[make_mouse_input(MOUSEEVENTF_MOVE.0)], std::mem::size_of::<INPUT>() as i32);
-  }
-  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-  unsafe {
-    SendInput(&[make_mouse_input(MOUSEEVENTF_LEFTUP.0)], std::mem::size_of::<INPUT>() as i32);
-  }
-
-  Ok(())
+  let fh2 = from_element_handle;
+  let th2 = to_element_handle;
+  tokio::task::spawn_blocking(move || {
+    crate::ole_drag::mouse_simulation_drag_drop(&fh2, &th2, false)
+  })
+  .await
+  .map_err(|e| Error::from(AutomationError::Generic { message: format!("dragDrop task join failed: {e}") }))?
+  .map_err(|e| Error::from(e))
 }

@@ -1,6 +1,7 @@
 use napi::{Error, Result};
 use napi_derive::napi;
 use image::{ImageBuffer, ImageEncoder, Rgba};
+use rayon::prelude::*;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HGDIOBJ, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
 
@@ -178,6 +179,79 @@ fn bgra_to_grayscale(pixels: &[u8], width: usize, height: usize) -> Vec<f64> {
   gray
 }
 
+/// Compute NCC for a single position (sx, sy).
+fn ncc_at(
+  screen: &[f64],
+  sw: usize,
+  template: &[f64],
+  template_diff: &[f64],
+  template_ss: f64,
+  tw: usize, th: usize,
+  sx: usize, sy: usize,
+) -> f64 {
+  let t_len = tw * th;
+  let mut window_sum = 0.0f64;
+  for ty in 0..th {
+    let row_start = ((sy + ty) * sw + sx) as usize;
+    let row_end = row_start + tw;
+    window_sum += screen[row_start..row_end].iter().sum::<f64>();
+  }
+  let window_mean = window_sum / t_len as f64;
+
+  let mut cross = 0.0f64;
+  let mut window_ss = 0.0f64;
+  for ty in 0..th {
+    for tx in 0..tw {
+      let screen_idx = (sy + ty) * sw + (sx + tx);
+      let screen_diff = screen[screen_idx] - window_mean;
+      cross += screen_diff * template_diff[ty * tw + tx];
+      window_ss += screen_diff * screen_diff;
+    }
+  }
+
+  let denominator = (window_ss * template_ss).sqrt();
+  if denominator > 0.0 { cross / denominator } else { -1.0 }
+}
+
+/// Search a sub-region of the screen at step resolution, returning the top match and any
+/// candidates above 0.5 for later refinement.
+fn search_region_coarse(
+  screen: &[f64],
+  sw: usize,
+  _template: &[f64],
+  template_diff: &[f64],
+  template_ss: f64,
+  tw: usize, th: usize,
+  start_x: usize, start_y: usize,
+  end_x: usize, end_y: usize,
+  step: usize,
+) -> (usize, usize, f64, Vec<(usize, usize, f64)>) {
+  let mut best_x = start_x;
+  let mut best_y = start_y;
+  let mut best_ncc = -1.0f64;
+  let mut candidates = Vec::new();
+
+  let mut sy = start_y;
+  while sy < end_y {
+    let mut sx = start_x;
+    while sx < end_x {
+      let ncc = ncc_at(screen, sw, template, template_diff, template_ss, tw, th, sx, sy);
+      if ncc > best_ncc {
+        best_ncc = ncc;
+        best_x = sx;
+        best_y = sy;
+      }
+      if ncc > 0.5 {
+        candidates.push((sx, sy, ncc));
+      }
+      sx += step;
+    }
+    sy += step;
+  }
+
+  (best_x, best_y, best_ncc, candidates)
+}
+
 fn template_match_ncc(
   screen: &[f64],
   sw: usize, sh: usize,
@@ -189,87 +263,60 @@ fn template_match_ncc(
   let template_diff: Vec<f64> = template.iter().map(|v| v - template_mean).collect();
   let template_ss: f64 = template_diff.iter().map(|v| v * v).sum();
 
+  let step = 2usize;
+  let max_sx = sw.saturating_sub(tw) + 1;
+  let max_sy = sh.saturating_sub(th) + 1;
+
+  // Split into 4 quadrants and search in parallel with rayon.
+  let mid_x = max_sx / 2;
+  let mid_y = max_sy / 2;
+  let quadrants = vec![
+    (0usize, 0usize, mid_x, mid_y),                                  // top-left
+    (mid_x, 0usize, max_sx, mid_y),                                   // top-right
+    (0usize, mid_y, mid_x, max_sy),                                   // bottom-left
+    (mid_x, mid_y, max_sx, max_sy),                                   // bottom-right
+  ];
+
+  let mut results: Vec<(usize, usize, f64, Vec<(usize, usize, f64)>)> = quadrants
+    .par_iter()
+    .map(|&(sx, sy, ex, ey)| {
+      search_region_coarse(
+        screen, sw, template, &template_diff, template_ss,
+        tw, th, sx, sy, ex, ey, step,
+      )
+    })
+    .collect();
+
+  // Merge: pick the best across quadrants, collect all candidates.
   let mut best_x = 0usize;
   let mut best_y = 0usize;
   let mut best_ncc = -1.0f64;
+  let mut all_candidates = Vec::new();
 
-  // Use step=2 for coarse pass, then will be called again for refinement
-  let step = 2usize;
-  let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+  for (bx, by, bncc, cands) in results.iter_mut() {
+    if *bncc > best_ncc {
+      best_ncc = *bncc;
+      best_x = *bx;
+      best_y = *by;
+    }
+    all_candidates.append(cands);
+  }
 
-  for sy in (0..=(sh - th)).step_by(step) {
-    for sx in (0..=(sw - tw)).step_by(step) {
-      let mut window_sum = 0.0f64;
-      for ty in 0..th {
-        let row_start = ((sy + ty) * sw + sx) as usize;
-        let row_end = row_start + tw;
-        window_sum += screen[row_start..row_end].iter().sum::<f64>();
-      }
-      let window_mean = window_sum / t_len as f64;
+  // Refine around top candidates with full resolution
+  all_candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+  for &(cx, cy, _) in all_candidates.iter().take(5) {
+    let refine_start_x = if cx >= step { cx - step } else { 0 };
+    let refine_start_y = if cy >= step { cy - step } else { 0 };
+    let refine_end_x = std::cmp::min(cx + step + 1, max_sx);
+    let refine_end_y = std::cmp::min(cy + step + 1, max_sy);
 
-      let mut cross = 0.0f64;
-      let mut window_ss = 0.0f64;
-      for ty in 0..th {
-        for tx in 0..tw {
-          let screen_idx = (sy + ty) * sw + (sx + tx);
-          let screen_diff = screen[screen_idx] - window_mean;
-          cross += screen_diff * template_diff[ty * tw + tx];
-          window_ss += screen_diff * screen_diff;
-        }
-      }
-
-      let denominator = (window_ss * template_ss).sqrt();
-      if denominator > 0.0 {
-        let ncc = cross / denominator;
+    for sy in refine_start_y..refine_end_y {
+      for sx in refine_start_x..refine_end_x {
+        let ncc = ncc_at(screen, sw, template, &template_diff, template_ss, tw, th, sx, sy);
         if ncc > best_ncc {
           best_ncc = ncc;
           best_x = sx;
           best_y = sy;
-        }
-        if ncc > 0.5 {
-          candidates.push((sx, sy, ncc));
-        }
-      }
-    }
-  }
-
-  // Refine around top candidates with full resolution
-  candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-  for &(cx, cy, _) in candidates.iter().take(5) {
-    let refine_start_x = if cx >= step { cx - step } else { 0 };
-    let refine_start_y = if cy >= step { cy - step } else { 0 };
-    let refine_end_x = std::cmp::min(cx + step + 1, sw - tw + 1);
-    let refine_end_y = std::cmp::min(cy + step + 1, sh - th + 1);
-
-    for sy in refine_start_y..refine_end_y {
-      for sx in refine_start_x..refine_end_x {
-        let mut window_sum = 0.0f64;
-        for ty in 0..th {
-          let row_start = ((sy + ty) * sw + sx) as usize;
-          let row_end = row_start + tw;
-          window_sum += screen[row_start..row_end].iter().sum::<f64>();
-        }
-        let window_mean = window_sum / t_len as f64;
-
-        let mut cross = 0.0f64;
-        let mut window_ss = 0.0f64;
-        for ty in 0..th {
-          for tx in 0..tw {
-            let screen_idx = (sy + ty) * sw + (sx + tx);
-            let screen_diff = screen[screen_idx] - window_mean;
-            cross += screen_diff * template_diff[ty * tw + tx];
-            window_ss += screen_diff * screen_diff;
-          }
-        }
-
-        let denominator = (window_ss * template_ss).sqrt();
-        if denominator > 0.0 {
-          let ncc = cross / denominator;
-          if ncc > best_ncc {
-            best_ncc = ncc;
-            best_x = sx;
-            best_y = sy;
-          }
         }
       }
     }

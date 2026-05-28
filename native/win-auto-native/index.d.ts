@@ -45,11 +45,31 @@ export interface HwndNode {
  * hierarchy with class names and window text — essential for legacy app debugging.
  */
 export declare function inspectHwndTree(windowHandle: string, maxDepth?: number | undefined | null): Array<HwndNode>
+export interface WinEventInfo {
+  eventType: number
+  hwnd: string
+  idObject: number
+  idChild: number
+  idEventThread: number
+  timestamp: number
+}
 /**
- * Blocks for up to `timeout_ms` waiting for a UI focus-change event.
+ * Blocks for up to `timeout_ms` waiting for a UI event.
  * Returns `true` if a change was detected, `false` on timeout.
  */
 export declare function waitForUiChange(timeoutMs: number): Promise<boolean>
+/**
+ * Start the WinEvent watcher with a JS callback invoked on each WinEvent.
+ * The callback receives a WinEventInfo object. Call `stopWinEventWatcher`
+ * to unregister the callback. The underlying hook thread runs for the
+ * lifetime of the process (or until stopWinEventWatcher is called).
+ */
+export declare function startWinEventWatcher(callback: (...args: any[]) => any): void
+/**
+ * Unregister the WinEvent JS callback. The underlying hook thread continues
+ * running (for `waitForUiChange`), but no further JS callbacks are made.
+ */
+export declare function stopWinEventWatcher(): void
 export declare function highlightElement(elementHandle: string, color?: string | undefined | null, durationMs?: number | undefined | null): Promise<void>
 export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
 export declare function typeText(elementHandle: string, text: string): Promise<void>

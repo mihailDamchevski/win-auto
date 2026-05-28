@@ -10,6 +10,7 @@ mod error;
 mod event_watcher;
 mod highlight;
 mod interaction;
+mod ole_drag;
 mod process_control;
 mod screenshot;
 mod trace;
