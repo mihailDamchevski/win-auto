@@ -4,18 +4,21 @@ import { App } from "./app";
 import { AutomationEvents } from "./events";
 import { ProcessManager } from "./process";
 import { AutomationError } from "./errors";
+import { WaitBuilder } from "./wait";
 import type { AppSelector, LaunchOptions } from "./types";
 
 
 export class Automation {
   public readonly events: AutomationEvents;
   public readonly processes: ProcessManager;
+  public readonly wait: WaitBuilder;
   private readonly backend: Backend;
 
   constructor(backend?: Backend) {
     this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
     this.events = new AutomationEvents();
     this.processes = new ProcessManager(this.backend);
+    this.wait = new WaitBuilder(this.backend);
   }
 
   private static detectBackend(): Backend | null {

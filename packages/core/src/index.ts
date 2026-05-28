@@ -9,6 +9,7 @@ export { TestAutomation, trackApp, closeTrackedApps } from "./api/testAutomation
 export { NativeBackend } from "./api/native-backend";
 export { MockBackend } from "./mock/mockBackend";
 export { AutomationEvents } from "./api/events";
+export { wait, WaitCondition, ElementWait, WindowWait, WaitBuilder } from "./api/wait";
 export {
   AutomationError,
   ElementNotFoundError,

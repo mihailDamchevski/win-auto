@@ -403,4 +403,70 @@ export class Element {
       timeoutMs,
     );
   }
+
+  public async waitForNotVisible(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<this> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!(await this.isVisible())) {
+        return this;
+      }
+      await this.backend.waitForUiChange(intervalMs);
+    }
+
+    throw new TimeoutError(
+      `Element ${this.handle} did not become hidden within ${timeoutMs}ms`,
+      "waitForNotVisible",
+      timeoutMs,
+    );
+  }
+
+  public async waitForNotEnabled(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<this> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!(await this.isEnabled())) {
+        return this;
+      }
+      await this.backend.waitForUiChange(intervalMs);
+    }
+
+    throw new TimeoutError(
+      `Element ${this.handle} did not become disabled within ${timeoutMs}ms`,
+      "waitForNotEnabled",
+      timeoutMs,
+    );
+  }
+
+  public async waitForRemoved(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<this> {
+    const timeoutMs = options?.timeoutMs ?? 10_000;
+    const intervalMs = options?.intervalMs ?? 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!(await this.exists())) {
+        return this;
+      }
+      await this.backend.waitForUiChange(intervalMs);
+    }
+
+    throw new TimeoutError(
+      `Element ${this.handle} was not removed within ${timeoutMs}ms`,
+      "waitForRemoved",
+      timeoutMs,
+    );
+  }
 }

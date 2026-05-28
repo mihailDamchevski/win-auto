@@ -4,14 +4,14 @@ import type { ElementNode, ElementPath, ElementSelector, FindFirstOptions, HwndN
 import { Element } from "./element";
 import { Locator } from "./locator";
 import { classNamesForSelector } from "../native/classNames";
-import { buildElementNotFoundError, AutomationError } from "./errors";
+import { buildElementNotFoundError, AutomationError, TimeoutError } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export class Window {
   public readonly handle: string;
   public readonly processId: number;
-  private readonly backend: Backend;
+  public readonly backend: Backend;
   private readonly events: AutomationEvents;
 
   constructor(handle: string, processId: number, backend: Backend, events: AutomationEvents) {
@@ -285,5 +285,24 @@ export class Window {
     }
 
     throw await buildElementNotFoundError(this.handle, selector, this.backend, { timeoutMs, intervalMs });
+  }
+
+  public async waitForClosed(timeoutMs: number = 10_000): Promise<void> {
+    const intervalMs = 100;
+    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const windows = await this.backend.enumerateWindows(0);
+      if (!windows.some((wh) => wh === this.handle)) {
+        return;
+      }
+      await this.backend.waitForUiChange(intervalMs);
+    }
+
+    throw new TimeoutError(
+      `Window ${this.handle} did not close within ${timeoutMs}ms`,
+      "waitForClosed",
+      timeoutMs,
+    );
   }
 }
