@@ -183,7 +183,7 @@ fn bgra_to_grayscale(pixels: &[u8], width: usize, height: usize) -> Vec<f64> {
 fn ncc_at(
   screen: &[f64],
   sw: usize,
-  template: &[f64],
+  _template: &[f64],
   template_diff: &[f64],
   template_ss: f64,
   tw: usize, th: usize,
@@ -235,7 +235,7 @@ fn search_region_coarse(
   while sy < end_y {
     let mut sx = start_x;
     while sx < end_x {
-      let ncc = ncc_at(screen, sw, template, template_diff, template_ss, tw, th, sx, sy);
+      let ncc = ncc_at(screen, sw, _template, template_diff, template_ss, tw, th, sx, sy);
       if ncc > best_ncc {
         best_ncc = ncc;
         best_x = sx;
