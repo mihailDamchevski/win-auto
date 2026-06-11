@@ -143,7 +143,24 @@ export interface ElementNode {
 export declare function inspectWindowTree(windowHandle: string, maxDepth?: number | undefined | null): Array<ElementNode>
 export declare function getElementAttribute(elementHandle: string, attributeName: string): Promise<string>
 export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
+export declare function gridGetRowCount(elementHandle: string): number
+export declare function gridGetColumnCount(elementHandle: string): number
+export declare function gridGetItem(elementHandle: string, row: number, column: number): string
+export declare function tableGetRowHeaders(elementHandle: string): Array<string>
+export declare function tableGetColumnHeaders(elementHandle: string): Array<string>
+export declare function selectionItemSelect(elementHandle: string): void
+export declare function selectionItemAddToSelection(elementHandle: string): void
+export declare function selectionItemRemoveFromSelection(elementHandle: string): void
+export declare function selectionItemIsSelected(elementHandle: string): boolean
 export declare function launch(executablePath?: string | undefined | null, classNames?: Array<string> | undefined | null): Promise<number>
+export interface LaunchOptions {
+  args?: Array<string> | undefined | null
+  cwd?: string | undefined | null
+  env?: Array<string> | undefined | null
+  /** If "admin", spawn the process elevated (triggers UAC prompt). */
+  runAs?: string | undefined | null
+}
+export declare function launchProcess(executablePath: string, options?: LaunchOptions | undefined | null): Promise<number>
 /** Health check function exposed to Node.js. */
 export declare function ping(): string
 /** Discovers windows for a process and returns handles as strings. */
@@ -159,6 +176,16 @@ export declare function findProcessesByName(imageName: string): Array<ProcessEnt
 export declare function waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean>
 export declare function getProcessImageName(processId: number): string
 export declare function killProcess(processId: number): void
+/**
+ * Check whether a process is running elevated (admin).
+ * Returns `true` if the process has an elevated token.
+ */
+export declare function isProcessElevated(processId: number): boolean
+/**
+ * Launch a process elevated (admin) using ShellExecuteExW with "runas" verb.
+ * This triggers a UAC prompt. Returns the PID of the spawned process.
+ */
+export declare function runElevated(executablePath: string, args?: Array<string> | undefined | null, cwd?: string | undefined | null): Promise<number>
 export declare function captureScreenshot(elementHandle: string): Promise<Array<number>>
 export declare function captureScreenshotToFile(elementHandle: string, path: string): Promise<void>
 export interface ImageMatch {
@@ -169,3 +196,12 @@ export interface ImageMatch {
   confidence: number
 }
 export declare function findImage(elementHandle: string, template: Array<number>): Promise<ImageMatch | null>
+export declare function expandCollapseExpand(elementHandle: string): void
+export declare function expandCollapseCollapse(elementHandle: string): void
+export declare function scrollPatternScroll(elementHandle: string, horizontalAmount: number, verticalAmount: number): void
+export declare function scrollPatternSetScrollPercent(elementHandle: string, horizontalPercent: number, verticalPercent: number): void
+export declare function rangeValueGetValue(elementHandle: string): Promise<number>
+export declare function rangeValueSetValue(elementHandle: string, value: number): Promise<void>
+export declare function windowPatternSetVisualState(elementHandle: string, state: number): void
+export declare function windowPatternWaitForInputIdle(elementHandle: string, timeoutMs: number): boolean
+export declare function selectionGetSelection(elementHandle: string): Array<string>

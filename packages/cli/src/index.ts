@@ -2,12 +2,19 @@
 import { initProject } from "./commands/init";
 import { inspectCommand } from "./commands/inspect";
 import { queryCommand } from "./commands/query";
+import { elevateCommand } from "./commands/elevate";
 import { Automation, App, Window, Element } from "@win-auto/core";
 
 export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
 
 async function runCli(): Promise<void> {
   const [, , command, ...args] = process.argv;
+
+  if (command === "elevate") {
+    await elevateCommand();
+    return;
+  }
+
   if (command === "init") {
     await initProject(args[0] ?? "");
     return;
@@ -77,6 +84,7 @@ async function runCli(): Promise<void> {
   process.stdout.write(
     "  win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]\n",
   );
+  process.stdout.write("  win-auto elevate\n");
 }
 
 if (require.main === module) {

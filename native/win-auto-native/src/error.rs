@@ -18,6 +18,9 @@ pub enum AutomationError {
   #[error("Access denied: handle={handle}, uip_barrier={is_uip_barrier}")]
   PermissionDenied { handle: String, is_uip_barrier: bool },
 
+  #[error("Elevation required: the target process is running elevated. Use runAs: \"admin\" or run \"win-auto elevate\".")]
+  ElevationRequired { pid: u32, operation: String },
+
   #[error("Pattern not supported: {pattern} on handle={handle}")]
   PatternNotSupported { handle: String, pattern: &'static str },
 
@@ -45,11 +48,4 @@ impl From<AutomationError> for Error {
     };
     Error::new(status, err.to_string())
   }
-}
-
-pub fn napi_error(message: impl Into<String>) -> Error {
-  AutomationError::Generic {
-    message: message.into(),
-  }
-  .into()
 }

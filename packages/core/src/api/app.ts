@@ -4,7 +4,7 @@ import { Element } from "./element";
 import { Locator } from "./locator";
 import { DialogManager } from "./dialog";
 import type { AutomationEvents } from "./events";
-import type { ElementSelector, FindFirstOptions } from "./types";
+import type { ElementSelector, FindFirstOptions, InputMode } from "./types";
 import { buildWindowNotFoundError, WindowNotFoundError, TimeoutError } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -14,6 +14,7 @@ export class App {
   public readonly executablePath: string;
   public readonly title: string;
   public readonly dialogs: DialogManager;
+  public readonly inputMode: InputMode;
   private readonly initialMainWindowHandle: string | null;
   private readonly backend: Backend;
   private readonly events: AutomationEvents;
@@ -25,6 +26,7 @@ export class App {
     backend: Backend,
     events: AutomationEvents,
     initialMainWindowHandle?: string | null,
+    inputMode?: InputMode,
   ) {
     this.processId = processId;
     this.executablePath = executablePath;
@@ -33,6 +35,7 @@ export class App {
     this.events = events;
     this.dialogs = new DialogManager(processId, backend, events);
     this.initialMainWindowHandle = initialMainWindowHandle ?? null;
+    this.inputMode = inputMode ?? "auto";
   }
 
   /** Create a fluent locator on the main window. */
@@ -61,13 +64,13 @@ export class App {
 
   public async listWindows(): Promise<Window[]> {
     const handles = await this.backend.enumerateWindows(this.processId, this.executablePath);
-    return handles.map((handle) => new Window(handle, this.processId, this.backend, this.events));
+    return handles.map((handle) => new Window(handle, this.processId, this.backend, this.events, this.inputMode));
   }
 
   public async getMainWindow(): Promise<Window | null> {
     if (this.initialMainWindowHandle) {
       this.events.emitWindowFound(this.initialMainWindowHandle, this.processId);
-      return new Window(this.initialMainWindowHandle, this.processId, this.backend, this.events);
+      return new Window(this.initialMainWindowHandle, this.processId, this.backend, this.events, this.inputMode);
     }
 
     const windows = await this.listWindows();

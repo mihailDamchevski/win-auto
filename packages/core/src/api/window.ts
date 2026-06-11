@@ -7,6 +7,7 @@ import type {
   FindFirstOptions,
   HwndNode,
   ImageMatch,
+  InputMode,
   LocatorFilter,
   WindowBounds,
 } from "./types";
@@ -21,13 +22,15 @@ export class Window {
   public readonly handle: string;
   public readonly processId: number;
   public readonly backend: Backend;
+  public readonly inputMode: InputMode;
   private readonly events: AutomationEvents;
 
-  constructor(handle: string, processId: number, backend: Backend, events: AutomationEvents) {
+  constructor(handle: string, processId: number, backend: Backend, events: AutomationEvents, inputMode?: InputMode) {
     this.handle = handle;
     this.processId = processId;
     this.backend = backend;
     this.events = events;
+    this.inputMode = inputMode ?? "auto";
   }
 
   /** Create a fluent locator for chained queries. */
@@ -87,7 +90,7 @@ export class Window {
       return null;
     }
     this.events.emitElementFound(elementHandle, selector);
-    return new Element(elementHandle, this.handle, this.backend, this.events, selector);
+    return new Element(elementHandle, this.handle, this.backend, this.events, selector, this.inputMode);
   }
 
   public async find(selector: ElementSelector): Promise<Element | null> {

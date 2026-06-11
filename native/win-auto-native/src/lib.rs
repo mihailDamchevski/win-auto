@@ -8,6 +8,7 @@ mod dialogs;
 mod discovery;
 mod error;
 mod event_watcher;
+mod patterns;
 mod highlight;
 mod interaction;
 mod ole_drag;

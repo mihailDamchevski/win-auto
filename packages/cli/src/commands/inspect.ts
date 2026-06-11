@@ -41,6 +41,9 @@ export async function inspectCommand(
       process.stdout.write(`No windows found for PID ${pid}\n`);
       return;
     }
+    let elevated = false;
+    try { elevated = backend.isProcessElevated(pid); } catch { /* ignore */ }
+    process.stdout.write(`  ${elevated ? "⚡ Elevated" : "  Not elevated"}\n`);
     for (const winHandle of windows) {
       process.stdout.write(`\nWindow: ${formatHandle(winHandle)}\n`);
       process.stdout.write(`  PID: ${pid}\n`);
@@ -103,7 +106,9 @@ export async function inspectCommand(
     return;
   }
   for (const proc of processes) {
-    process.stdout.write(`\nProcess: ${proc.imageName} (PID: ${proc.pid})\n`);
+    let elevated = false;
+    try { elevated = backend.isProcessElevated(proc.pid); } catch { /* ignore */ }
+    process.stdout.write(`\nProcess: ${proc.imageName} (PID: ${proc.pid})${elevated ? " ⚡ Elevated" : ""}\n`);
     const windows = await backend.enumerateWindows(proc.pid);
     if (windows.length === 0) {
       process.stdout.write(`  No windows found\n`);

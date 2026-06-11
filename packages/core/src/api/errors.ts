@@ -1,6 +1,17 @@
 import type { Backend } from "./backend";
 import type { ElementNode, ElementSelector, WaitOptions } from "./types";
 
+/**
+ * If the user hits a PermissionDeniedError with isUipibarrier=true,
+ * this message guides them toward a fix.
+ */
+export const UIPI_HELP_MESSAGE =
+  "This error may be caused by UIPI (User Interface Privilege Isolation): " +
+  "the target process is running at a higher integrity level than win-auto.\n" +
+  "  • Re-launch the target with runAs: 'admin' in launchApp()\n" +
+  "  • Or run the CLI as admin: win-auto elevate\n" +
+  "  • Or use pattern-based input (background mode) which bypasses UIPI";
+
 const MAX_ELEMENTS_IN_ERROR = 8;
 const MAX_TREE_DEPTH = 2;
 
@@ -52,7 +63,8 @@ export class PermissionDeniedError extends AutomationError {
     public readonly handle: string,
     public readonly isUipibarrier: boolean = false,
   ) {
-    super(message);
+    const finalMsg = isUipibarrier ? `${message}\n\n${UIPI_HELP_MESSAGE}` : message;
+    super(finalMsg);
   }
 }
 

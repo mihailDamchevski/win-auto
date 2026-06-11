@@ -1,8 +1,9 @@
 import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
-import type { ElementPath, ElementSelector, MatchMode } from "./types";
+import type { ElementPath, ElementSelector, MatchMode, InputMode } from "./types";
 import { classNamesForSelector } from "../native/classNames";
 import { StaleElementError, TimeoutError, isStaleError } from "./errors";
+import { resolvePattern, type PatternMap, type PatternName } from "./patterns";
 
 function handleMatchesValue(
   actual: string,
@@ -31,6 +32,7 @@ export class Element {
   public readonly backend: Backend;
   public readonly events: AutomationEvents;
   public readonly originalSelector?: ElementSelector;
+  public readonly inputMode: InputMode;
 
   constructor(
     handle: string,
@@ -38,12 +40,14 @@ export class Element {
     backend: Backend,
     events: AutomationEvents,
     originalSelector?: ElementSelector,
+    inputMode?: InputMode,
   ) {
     this.handle = handle;
     this.windowHandle = windowHandle;
     this.backend = backend;
     this.events = events;
     this.originalSelector = originalSelector;
+    this.inputMode = inputMode ?? "auto";
   }
 
   private async tryResolve(): Promise<boolean> {
@@ -544,8 +548,39 @@ export class Element {
 
     throw new TimeoutError(
       `Element ${this.handle} was not removed within ${timeoutMs}ms`,
-      "waitForRemoved",
+      "removed",
       timeoutMs,
     );
+  }
+
+  // ─── UIA Pattern API ─────────────────────────────────────────────────
+
+  public getPattern<T extends PatternName>(name: T): PatternMap[T] {
+    return resolvePattern(name, this.backend, this.handle);
+  }
+
+  /** Expand if the element supports ExpandCollapsePattern. */
+  public expand(): void {
+    this.backend.expandCollapseExpand(this.handle);
+  }
+
+  /** Collapse if the element supports ExpandCollapsePattern. */
+  public collapse(): void {
+    this.backend.expandCollapseCollapse(this.handle);
+  }
+
+  /** Scroll the element using UIA ScrollPattern. */
+  public scrollPattern(horizontalAmount: number, verticalAmount: number): void {
+    this.backend.scrollPatternScroll(this.handle, horizontalAmount, verticalAmount);
+  }
+
+  /** Get the current value if the element supports RangeValuePattern. */
+  public async getRangeValue(): Promise<number> {
+    return this.backend.rangeValueGetValue(this.handle);
+  }
+
+  /** Set the value if the element supports RangeValuePattern. */
+  public async setRangeValue(value: number): Promise<void> {
+    return this.backend.rangeValueSetValue(this.handle, value);
   }
 }

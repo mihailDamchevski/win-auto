@@ -10,7 +10,10 @@ use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Pr
 use windows::Win32::System::JobObjects::*;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
+use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+use windows::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY};
+use windows::Win32::System::Threading::{OpenProcessToken, GetProcessId};
 
 use crate::discovery::{collect_all_top_level_windows, discover_windows_for_pid};
 use crate::error::AutomationError;
@@ -191,6 +194,114 @@ fn spawn_process_via_createprocess(
   }
 }
 
+// ── Elevation helpers ─────────────────────────────────────────────────────
+
+/// Check whether a given process is running elevated (admin).
+fn is_process_elevated_rust(pid: u32) -> Result<bool> {
+  if pid == 0 {
+    return Ok(false);
+  }
+
+  unsafe {
+    let process = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
+    let Ok(handle) = process else {
+      return Ok(false);
+    };
+    if handle.is_invalid() {
+      return Ok(false);
+    }
+
+    let mut token_handle = HANDLE::default();
+    if OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle).is_err() {
+      let _ = CloseHandle(handle);
+      return Ok(false);
+    }
+
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut return_length = 0u32;
+    let result = GetTokenInformation(
+      token_handle,
+      windows::Win32::Security::TokenElevation,
+      Some(&mut elevation as *mut _ as *mut std::ffi::c_void),
+      std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+      &mut return_length,
+    );
+
+    let _ = CloseHandle(token_handle);
+    let _ = CloseHandle(handle);
+
+    match result {
+      Ok(()) => Ok(elevation.TokenIsElevated != 0),
+      Err(_) => Ok(false),
+    }
+  }
+}
+
+/// Launch a process elevated (admin) using ShellExecuteExW with "runas" verb.
+/// Returns the PID of the spawned process.
+fn run_elevated_rust(
+  path: &str,
+  args: Option<&[String]>,
+  cwd: Option<&str>,
+) -> std::result::Result<u32, AutomationError> {
+  let mut cmdline = String::new();
+  if let Some(a) = args {
+    for arg in a {
+      if !cmdline.is_empty() { cmdline.push(' '); }
+      cmdline.push_str(arg);
+    }
+  }
+
+  let path_wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+  let args_wide: Vec<u16> = if cmdline.is_empty() {
+    vec![0u16]
+  } else {
+    cmdline.encode_utf16().chain(std::iter::once(0)).collect()
+  };
+  let cwd_wide: Vec<u16> = cwd
+    .map(|s| s.encode_utf16().chain(std::iter::once(0)).collect())
+    .unwrap_or_else(|| vec![0u16]);
+
+  unsafe {
+    let mut info = SHELLEXECUTEINFOW {
+      cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+      fMask: SEE_MASK_NOCLOSEPROCESS,
+      hwnd: HWND::default(),
+      lpVerb: windows::core::w!("runas"),
+      lpFile: PCWSTR::from_raw(path_wide.as_ptr()),
+      lpParameters: PCWSTR::from_raw(args_wide.as_ptr()),
+      lpDirectory: PCWSTR::from_raw(cwd_wide.as_ptr()),
+      nShow: windows::Win32::UI::WindowsAndMessaging::SW_SHOWDEFAULT.0,
+      hProcess: windows::Win32::Foundation::HANDLE::default(),
+      ..Default::default()
+    };
+
+    ShellExecuteExW(&mut info).map_err(|e: windows::core::Error| AutomationError::ProcessLaunchFailed {
+      path: path.to_string(),
+      os_error: e.code().0,
+    })?;
+
+    if info.hProcess.is_invalid() {
+      return Err(AutomationError::ProcessLaunchFailed {
+        path: path.to_string(),
+        os_error: 0,
+      });
+    }
+
+    let pid = GetProcessId(info.hProcess);
+    let _ = CloseHandle(info.hProcess);
+
+    if pid == 0 {
+      Err(AutomationError::ProcessLaunchFailed {
+        path: path.to_string(),
+        os_error: 0,
+      })
+    } else {
+      Ok(pid)
+    }
+  }
+}
+
 // ── Close-app helper ──────────────────────────────────────────────────────
 
 async fn close_app_internal(process_id: u32) -> Result<()> {
@@ -235,6 +346,8 @@ pub struct LaunchOptions {
   pub args: Option<Vec<String>>,
   pub cwd: Option<String>,
   pub env: Option<Vec<String>>,
+  /// If "admin", spawn the process elevated (triggers UAC prompt).
+  pub run_as: Option<String>,
 }
 
 /// High-level launch — replaces the old `std::process::Command` approach.
@@ -310,7 +423,20 @@ pub async fn launch_process(
     args: None,
     cwd: None,
     env: None,
+    run_as: None,
   });
+
+  // If run_as is "admin", use elevated launch path
+  if opts.run_as.as_deref() == Some("admin") {
+    let child_pid = run_elevated_rust(
+      &executable_path,
+      opts.args.as_deref(),
+      opts.cwd.as_deref(),
+    )
+    .map_err(|e| Error::from(e))?;
+    return Ok(child_pid);
+  }
+
   let child_pid = spawn_process_via_createprocess(
     &executable_path,
     opts.args.as_deref(),
@@ -488,4 +614,21 @@ pub fn get_process_image_name(process_id: u32) -> Result<String> {
 #[napi(js_name = "killProcess")]
 pub fn kill_process(process_id: u32) -> Result<()> {
   terminate_process(process_id)
+}
+
+#[napi(js_name = "isProcessElevated")]
+pub fn is_process_elevated_export(process_id: u32) -> Result<bool> {
+  is_process_elevated_rust(process_id)
+}
+
+/// Launch a process elevated (admin) via ShellExecuteExW with "runas" verb.
+/// Returns the PID of the spawned process.
+#[napi(js_name = "runElevated")]
+pub async fn run_elevated_export(
+  executable_path: String,
+  args: Option<Vec<String>>,
+  cwd: Option<String>,
+) -> Result<u32> {
+  run_elevated_rust(&executable_path, args.as_deref(), cwd.as_deref())
+    .map_err(|e| Error::from(e))
 }

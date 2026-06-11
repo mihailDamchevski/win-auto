@@ -16,7 +16,7 @@ export interface Backend {
   launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
   launchProcess(
     executablePath: string,
-    options?: { args?: string[]; cwd?: string; env?: string[] },
+    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
   ): Promise<number>;
   enumerateWindows(processId: number, executable?: string | null): Promise<string[]>;
   closeApp(processId: number): Promise<void>;
@@ -93,6 +93,12 @@ export interface Backend {
   waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean>;
   getProcessImageName(processId: number): string;
   killProcess(processId: number): Promise<void>;
+  isProcessElevated(processId: number): boolean;
+  runElevated(
+    executablePath: string,
+    args?: string[] | null,
+    cwd?: string | null,
+  ): Promise<number>;
   getElementAttribute(elementHandle: string, attributeName: string): Promise<string>;
   keyDown(windowHandle: string, key: string): Promise<void>;
   keyUp(windowHandle: string, key: string): Promise<void>;
@@ -112,6 +118,24 @@ export interface Backend {
   waitForUiChange(timeoutMs: number): Promise<boolean>;
   startWinEventWatcher(callback: (event: WinEventInfo) => void): void;
   stopWinEventWatcher(): void;
+  expandCollapseExpand(elementHandle: string): void;
+  expandCollapseCollapse(elementHandle: string): void;
+  scrollPatternScroll(elementHandle: string, horizontalAmount: number, verticalAmount: number): void;
+  scrollPatternSetScrollPercent(elementHandle: string, horizontalPercent: number, verticalPercent: number): void;
+  rangeValueGetValue(elementHandle: string): Promise<number>;
+  rangeValueSetValue(elementHandle: string, value: number): Promise<void>;
+  windowPatternSetVisualState(elementHandle: string, state: number): void;
+  windowPatternWaitForInputIdle(elementHandle: string, timeoutMs: number): boolean;
+  selectionGetSelection(elementHandle: string): string[];
+  gridGetRowCount(elementHandle: string): number;
+  gridGetColumnCount(elementHandle: string): number;
+  gridGetItem(elementHandle: string, row: number, column: number): string;
+  tableGetRowHeaders(elementHandle: string): string[];
+  tableGetColumnHeaders(elementHandle: string): string[];
+  selectionItemSelect(elementHandle: string): void;
+  selectionItemAddToSelection(elementHandle: string): void;
+  selectionItemRemoveFromSelection(elementHandle: string): void;
+  selectionItemIsSelected(elementHandle: string): boolean;
 }
 
 export type WinEventInfo = {

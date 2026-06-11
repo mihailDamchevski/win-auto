@@ -18,6 +18,10 @@ export class ProcessInfo {
     return backend.isProcessRunning(this.pid);
   }
 
+  public async isElevated(backend: Backend): Promise<boolean> {
+    return backend.isProcessElevated(this.pid);
+  }
+
   public async waitForExit(backend: Backend, timeoutMs?: number): Promise<boolean> {
     return backend.waitForProcessExit(this.pid, timeoutMs ?? 30_000);
   }

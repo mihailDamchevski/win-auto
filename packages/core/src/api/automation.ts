@@ -5,16 +5,18 @@ import { AutomationEvents } from "./events";
 import { ProcessManager } from "./process";
 import { AutomationError } from "./errors";
 import { WaitBuilder } from "./wait";
-import type { AppSelector, LaunchOptions } from "./types";
+import type { AppSelector, InputMode, LaunchOptions } from "./types";
 
 export class Automation {
   public readonly events: AutomationEvents;
   public readonly processes: ProcessManager;
   public readonly wait: WaitBuilder;
+  public readonly inputMode: InputMode;
   private readonly backend: Backend;
 
-  constructor(backend?: Backend) {
+  constructor(backend?: Backend, inputMode?: InputMode) {
     this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
+    this.inputMode = inputMode ?? "auto";
     this.events = new AutomationEvents();
     this.processes = new ProcessManager(this.backend);
     this.wait = new WaitBuilder(this.backend);
@@ -38,7 +40,20 @@ export class Automation {
   }
 
   public async launchApp(options: LaunchOptions): Promise<App> {
-    const processId = await this.backend.launch(options.executablePath);
+    const hasAdvancedOpts =
+      options.args !== undefined ||
+      options.cwd !== undefined ||
+      options.env !== undefined ||
+      options.runAs !== undefined;
+
+    const processId = hasAdvancedOpts
+      ? await this.backend.launchProcess(options.executablePath, {
+          args: options.args,
+          cwd: options.cwd,
+          env: options.env,
+          runAs: options.runAs,
+        })
+      : await this.backend.launch(options.executablePath);
     const windows = await this.backend.enumerateWindows(processId, options.executablePath);
     const initialMainWindowHandle = windows.length > 0 ? windows[0] : undefined;
     const app = new App(
@@ -48,6 +63,7 @@ export class Automation {
       this.backend,
       this.events,
       initialMainWindowHandle,
+      this.inputMode,
     );
     this.events.emitAppLaunched(processId, options.executablePath);
     return app;
@@ -58,12 +74,16 @@ export class Automation {
       throw new AutomationError("connectApp currently requires processId for the native backend.");
     }
 
+    const appInputMode = selector.mode === "background" ? "pattern" : this.inputMode;
+
     return new App(
       selector.processId,
       selector.executablePath ?? "unknown",
       selector.title ?? "Connected App",
       this.backend,
       this.events,
+      undefined,
+      appInputMode,
     );
   }
 
@@ -81,6 +101,8 @@ export class Automation {
       imagePath || entry.imageName,
       this.backend,
       this.events,
+      undefined,
+      this.inputMode,
     );
   }
 

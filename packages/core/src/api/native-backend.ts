@@ -10,7 +10,7 @@ import type {
   ProcessEntry,
 } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
-import { BackendError } from "./errors";
+import { BackendError, UIPI_HELP_MESSAGE } from "./errors";
 
 export class NativeBackend implements Backend {
   private native: NativeBindings;
@@ -22,7 +22,13 @@ export class NativeBackend implements Backend {
   private wrapError(err: unknown): never {
     if (err instanceof BackendError) throw err;
     if (err instanceof Error) {
-      throw new BackendError(err.message, "native", err);
+      const msg = err.message;
+      const isUipi = /elevat|uip|permission denied|access denied/i.test(msg);
+      throw new BackendError(
+        isUipi ? `${msg}\n\n${UIPI_HELP_MESSAGE}` : msg,
+        "native",
+        err,
+      );
     }
     throw new BackendError(String(err), "native", err);
   }
@@ -59,7 +65,7 @@ export class NativeBackend implements Backend {
 
   async launchProcess(
     executablePath: string,
-    options?: { args?: string[]; cwd?: string; env?: string[] },
+    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
   ): Promise<number> {
     return this.call(() => this.native.launchProcess(executablePath, options ?? undefined));
   }
@@ -318,6 +324,18 @@ export class NativeBackend implements Backend {
     return this.native.killProcess(processId);
   }
 
+  isProcessElevated(processId: number): boolean {
+    return this.callSync(() => this.native.isProcessElevated(processId));
+  }
+
+  async runElevated(
+    executablePath: string,
+    args?: string[] | null,
+    cwd?: string | null,
+  ): Promise<number> {
+    return this.call(() => this.native.runElevated(executablePath, args ?? null, cwd ?? null));
+  }
+
   async getElementAttribute(elementHandle: string, attributeName: string): Promise<string> {
     return this.native.getElementAttribute(elementHandle, attributeName);
   }
@@ -422,5 +440,79 @@ export class NativeBackend implements Backend {
       );
     }
     this.native.stopWinEventWatcher();
+  }
+
+  // ── UIA Patterns ──────────────────────────────────────────────────────
+
+  expandCollapseExpand(elementHandle: string): void {
+    return this.callSync(() => this.native.expandCollapseExpand(elementHandle));
+  }
+
+  expandCollapseCollapse(elementHandle: string): void {
+    return this.callSync(() => this.native.expandCollapseCollapse(elementHandle));
+  }
+
+  scrollPatternScroll(elementHandle: string, horizontalAmount: number, verticalAmount: number): void {
+    return this.callSync(() => this.native.scrollPatternScroll(elementHandle, horizontalAmount, verticalAmount));
+  }
+
+  scrollPatternSetScrollPercent(elementHandle: string, horizontalPercent: number, verticalPercent: number): void {
+    return this.callSync(() => this.native.scrollPatternSetScrollPercent(elementHandle, horizontalPercent, verticalPercent));
+  }
+
+  async rangeValueGetValue(elementHandle: string): Promise<number> {
+    return this.call(() => this.native.rangeValueGetValue(elementHandle));
+  }
+
+  async rangeValueSetValue(elementHandle: string, value: number): Promise<void> {
+    return this.call(() => this.native.rangeValueSetValue(elementHandle, value));
+  }
+
+  windowPatternSetVisualState(elementHandle: string, state: number): void {
+    return this.callSync(() => this.native.windowPatternSetVisualState(elementHandle, state));
+  }
+
+  windowPatternWaitForInputIdle(elementHandle: string, timeoutMs: number): boolean {
+    return this.callSync(() => this.native.windowPatternWaitForInputIdle(elementHandle, timeoutMs));
+  }
+
+  selectionGetSelection(elementHandle: string): string[] {
+    return this.callSync(() => this.native.selectionGetSelection(elementHandle));
+  }
+
+  gridGetRowCount(elementHandle: string): number {
+    return this.callSync(() => this.native.gridGetRowCount(elementHandle));
+  }
+
+  gridGetColumnCount(elementHandle: string): number {
+    return this.callSync(() => this.native.gridGetColumnCount(elementHandle));
+  }
+
+  gridGetItem(elementHandle: string, row: number, column: number): string {
+    return this.callSync(() => this.native.gridGetItem(elementHandle, row, column));
+  }
+
+  tableGetRowHeaders(elementHandle: string): string[] {
+    return this.callSync(() => this.native.tableGetRowHeaders(elementHandle));
+  }
+
+  tableGetColumnHeaders(elementHandle: string): string[] {
+    return this.callSync(() => this.native.tableGetColumnHeaders(elementHandle));
+  }
+
+  selectionItemSelect(elementHandle: string): void {
+    return this.callSync(() => this.native.selectionItemSelect(elementHandle));
+  }
+
+  selectionItemAddToSelection(elementHandle: string): void {
+    return this.callSync(() => this.native.selectionItemAddToSelection(elementHandle));
+  }
+
+  selectionItemRemoveFromSelection(elementHandle: string): void {
+    return this.callSync(() => this.native.selectionItemRemoveFromSelection(elementHandle));
+  }
+
+  selectionItemIsSelected(elementHandle: string): boolean {
+    return this.callSync(() => this.native.selectionItemIsSelected(elementHandle));
   }
 }

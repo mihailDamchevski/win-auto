@@ -350,7 +350,7 @@ export class MockBackend implements Backend {
 
   async launchProcess(
     _executablePath: string,
-    _options?: { args?: string[]; cwd?: string; env?: string[] },
+    _options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
   ): Promise<number> {
     return 0;
   }
@@ -807,6 +807,19 @@ export class MockBackend implements Backend {
     await this.closeApp(processId);
   }
 
+  isProcessElevated(_processId: number): boolean {
+    return false; // Mock — never elevated
+  }
+
+  async runElevated(
+    executablePath: string,
+    _args?: string[] | null,
+    _cwd?: string | null,
+  ): Promise<number> {
+    // Mock — just run normally
+    return this.launch(executablePath);
+  }
+
   // --- attributes ---
 
   async getElementAttribute(elementHandle: string, attributeName: string): Promise<string> {
@@ -994,5 +1007,79 @@ export class MockBackend implements Backend {
 
   stopWinEventWatcher(): void {
     // no-op in mock
+  }
+
+  // ── UIA Patterns (mock) ───────────────────────────────────────────────
+
+  expandCollapseExpand(_elementHandle: string): void {
+    // no-op in mock
+  }
+
+  expandCollapseCollapse(_elementHandle: string): void {
+    // no-op in mock
+  }
+
+  scrollPatternScroll(_elementHandle: string, _horizontalAmount: number, _verticalAmount: number): void {
+    // no-op in mock
+  }
+
+  scrollPatternSetScrollPercent(_elementHandle: string, _horizontalPercent: number, _verticalPercent: number): void {
+    // no-op in mock
+  }
+
+  async rangeValueGetValue(_elementHandle: string): Promise<number> {
+    return 0;
+  }
+
+  async rangeValueSetValue(_elementHandle: string, _value: number): Promise<void> {
+    // no-op in mock
+  }
+
+  windowPatternSetVisualState(_elementHandle: string, _state: number): void {
+    // no-op in mock
+  }
+
+  windowPatternWaitForInputIdle(_elementHandle: string, _timeoutMs: number): boolean {
+    return true;
+  }
+
+  selectionGetSelection(_elementHandle: string): string[] {
+    return [];
+  }
+
+  gridGetRowCount(_elementHandle: string): number {
+    return 0;
+  }
+
+  gridGetColumnCount(_elementHandle: string): number {
+    return 0;
+  }
+
+  gridGetItem(_elementHandle: string, _row: number, _column: number): string {
+    return "";
+  }
+
+  tableGetRowHeaders(_elementHandle: string): string[] {
+    return [];
+  }
+
+  tableGetColumnHeaders(_elementHandle: string): string[] {
+    return [];
+  }
+
+  selectionItemSelect(_elementHandle: string): void {
+    // no-op in mock
+  }
+
+  selectionItemAddToSelection(_elementHandle: string): void {
+    // no-op in mock
+  }
+
+  selectionItemRemoveFromSelection(_elementHandle: string): void {
+    // no-op in mock
+  }
+
+  selectionItemIsSelected(_elementHandle: string): boolean {
+    return false;
   }
 }

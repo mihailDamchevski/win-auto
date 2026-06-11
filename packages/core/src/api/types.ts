@@ -2,6 +2,8 @@ export type AppSelector = {
   executablePath?: string;
   processId?: number;
   title?: string;
+  /** If "background", use pattern-only input (no focus required) for CI/CD. */
+  mode?: "foreground" | "background";
 };
 
 export type LaunchOptions = {
@@ -12,6 +14,8 @@ export type LaunchOptions = {
   cwd?: string;
   /** Environment variables as "KEY=VALUE" strings. */
   env?: string[];
+  /** Run the process with restricted or admin integrity level: "limited" | "admin". */
+  runAs?: "limited" | "admin";
 };
 
 export type MatchMode = "substring" | "exact" | "regex";
@@ -75,7 +79,7 @@ export type NativeBindings = {
   launch: (executablePath?: string | null, classNames?: string[] | null) => Promise<number>;
   launchProcess: (
     executablePath: string,
-    options?: { args?: string[]; cwd?: string; env?: string[] },
+    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
   ) => Promise<number>;
   enumerateWindows: (processId: number, executable?: string | null) => Promise<string[]>;
   debugDiscovery?: (processId: number) => WindowDebugInfo[];
@@ -155,6 +159,12 @@ export type NativeBindings = {
   waitForProcessExit: (processId: number, timeoutMs: number) => Promise<boolean>;
   getProcessImageName: (processId: number) => string;
   killProcess: (processId: number) => Promise<void>;
+  isProcessElevated: (processId: number) => boolean;
+  runElevated: (
+    executablePath: string,
+    args?: string[] | null,
+    cwd?: string | null,
+  ) => Promise<number>;
   getElementAttribute: (elementHandle: string, attributeName: string) => Promise<string>;
   keyDown: (windowHandle: string, key: string) => Promise<void>;
   keyUp: (windowHandle: string, key: string) => Promise<void>;
@@ -182,6 +192,24 @@ export type NativeBindings = {
   ) => Promise<void>;
   buildElementPath?: (elementHandle: string) => ElementPathStep[];
   resolveElementPath?: (windowHandle: string, path: ElementPathStep[]) => Promise<string | null>;
+  expandCollapseExpand: (elementHandle: string) => void;
+  expandCollapseCollapse: (elementHandle: string) => void;
+  scrollPatternScroll: (elementHandle: string, horizontalAmount: number, verticalAmount: number) => void;
+  scrollPatternSetScrollPercent: (elementHandle: string, horizontalPercent: number, verticalPercent: number) => void;
+  rangeValueGetValue: (elementHandle: string) => Promise<number>;
+  rangeValueSetValue: (elementHandle: string, value: number) => Promise<void>;
+  windowPatternSetVisualState: (elementHandle: string, state: number) => void;
+  windowPatternWaitForInputIdle: (elementHandle: string, timeoutMs: number) => boolean;
+  selectionGetSelection: (elementHandle: string) => string[];
+  gridGetRowCount: (elementHandle: string) => number;
+  gridGetColumnCount: (elementHandle: string) => number;
+  gridGetItem: (elementHandle: string, row: number, column: number) => string;
+  tableGetRowHeaders: (elementHandle: string) => string[];
+  tableGetColumnHeaders: (elementHandle: string) => string[];
+  selectionItemSelect: (elementHandle: string) => void;
+  selectionItemAddToSelection: (elementHandle: string) => void;
+  selectionItemRemoveFromSelection: (elementHandle: string) => void;
+  selectionItemIsSelected: (elementHandle: string) => boolean;
 };
 
 export type ProcessEntry = {
@@ -213,6 +241,9 @@ export type LocatorFilter = {
   automationId?: string;
   role?: string;
 };
+
+/** Input mode for element interactions. */
+export type InputMode = "pattern" | "hardware" | "auto";
 
 export type WaitOptions = {
   timeoutMs?: number;
