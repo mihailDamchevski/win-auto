@@ -63,6 +63,14 @@ export type MockAppRecord = {
   dialogs: MockDialogRecord[];
 };
 
+/** A scheduled event (timer) in the mock, used to simulate delayed state changes. */
+export type ScheduledEvent = {
+  id: string;
+  callback: () => void;
+  delayMs: number;
+  timer: NodeJS.Timeout;
+};
+
 /** Tree structure for MockBackend.setupElementTree() */
 export type MockTreeElement = {
   id?: string;

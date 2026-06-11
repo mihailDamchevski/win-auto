@@ -4,6 +4,7 @@ import type {
   MockWindowRecord,
   MockElementRecord,
   MockTreeElement,
+  ScheduledEvent,
 } from "./mockRuntime";
 import { createDefaultElement, createDefaultWindow, createDefaultApp } from "./mockRuntime";
 import type {
@@ -24,6 +25,55 @@ const MOCK_DELAY_MS = 5;
 
 function delay(): Promise<void> {
   return new Promise((r) => setTimeout(r, MOCK_DELAY_MS));
+}
+
+// ─── Event tracker for mock assertions ─────────────────────────────────
+
+export type MockEventName =
+  | "app:launched"
+  | "app:closed"
+  | "window:found"
+  | "window:closed"
+  | "element:clicked"
+  | "element:rightClicked"
+  | "element:doubleClicked"
+  | "element:hovered"
+  | "element:typed"
+  | "element:selected"
+  | "element:toggled"
+  | "element:focused"
+  | "element:valueChanged"
+  | "mouse:moved"
+  | "dialog:found"
+  | "dialog:buttonClicked"
+  | "dialog:fileSelected"
+  | "process:connected"
+  | "process:killed"
+  | "process:exited";
+
+class MockEventTracker {
+  private counts = new Map<string, number>();
+  private history: Array<{ event: string; data?: unknown }> = [];
+
+  emit(event: string, data?: unknown): void {
+    this.counts.set(event, (this.counts.get(event) ?? 0) + 1);
+    this.history.push({ event, data });
+  }
+
+  /** Return how many times `event` was emitted. */
+  emitted(event: string): number {
+    return this.counts.get(event) ?? 0;
+  }
+
+  /** Full emission history (for detailed assertion). */
+  all(): Array<{ event: string; data?: unknown }> {
+    return [...this.history];
+  }
+
+  clear(): void {
+    this.counts.clear();
+    this.history = [];
+  }
 }
 
 function matchesValue(
@@ -72,7 +122,7 @@ function selectorMatches(
   name?: string | null,
   role?: string | null,
   className?: string | null,
-  _text?: string | null,
+  text?: string | null,
   matchMode?: MatchMode | string | null,
 ): boolean {
   if (
@@ -89,7 +139,29 @@ function selectorMatches(
     return false;
   if (!matchesValue(recordSelector.className, className, matchMode as MatchMode | undefined | null))
     return false;
+  if (text != null && text !== "" && !matchesValue(recordSelector.text, text, null))
+    return false;
   return true;
+}
+
+/** Walk the element tree depth-first, yielding elements that match the filter. */
+function* traverseTree(
+  elementHandleToEl: Map<string, MockElementRecord>,
+  rootHandles: string[],
+  filter: (el: MockElementRecord) => boolean,
+): Generator<string> {
+  const visited = new Set<string>();
+  const stack = [...rootHandles];
+  while (stack.length > 0) {
+    const handle = stack.shift()!;
+    if (visited.has(handle)) continue;
+    visited.add(handle);
+    const el = elementHandleToEl.get(handle);
+    if (!el) continue;
+    if (filter(el)) yield handle;
+    // Push children to the front for depth-first order
+    stack.unshift(...el.childHandles.filter((h) => !visited.has(h)));
+  }
 }
 
 export class MockBackend implements Backend {
@@ -103,6 +175,12 @@ export class MockBackend implements Backend {
   private elementHandleToEl = new Map<string, MockElementRecord>();
   private winHandleToPid = new Map<string, number>();
   private elHandleToPid = new Map<string, number>();
+
+  /** Event tracker for test assertions. */
+  readonly events = new MockEventTracker();
+
+  private dirty = false;
+  private scheduledEvents: ScheduledEvent[] = [];
 
   // --- helpers ---
 
@@ -270,7 +348,7 @@ export class MockBackend implements Backend {
       return handle;
     };
 
-    buildTree(tree, null);
+    buildTree(tree, winHandle);
     app.windows.push(window);
 
     return winHandle;
@@ -303,6 +381,45 @@ export class MockBackend implements Backend {
     this.elHandleToPid.set(handle, this.findPidByElementId(el.id));
     el.parentHandle = parentHandle;
     return handle;
+  }
+
+  /** Mark the UI state as having changed (for waitForUiChange). */
+  private markDirty(): void {
+    this.dirty = true;
+  }
+
+  /** Schedule a callback to run after `delayMs` milliseconds. Returns a handle for cancellation. */
+  public scheduleEvent(callback: () => void, delayMs: number): string {
+    const id = `sched-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const timer = setTimeout(() => {
+      callback();
+      this.markDirty();
+      this.scheduledEvents = this.scheduledEvents.filter((s) => s.id !== id);
+    }, delayMs);
+    this.scheduledEvents.push({ id, callback, delayMs, timer });
+    return id;
+  }
+
+  /** Cancel a specific scheduled event by its handle. */
+  public cancelScheduledEvent(id: string): void {
+    const idx = this.scheduledEvents.findIndex((s) => s.id === id);
+    if (idx >= 0) {
+      clearTimeout(this.scheduledEvents[idx].timer);
+      this.scheduledEvents.splice(idx, 1);
+    }
+  }
+
+  /** Cancel all pending scheduled events. */
+  public cancelScheduledEvents(): void {
+    for (const s of this.scheduledEvents) {
+      clearTimeout(s.timer);
+    }
+    this.scheduledEvents = [];
+  }
+
+  /** Whether any scheduled events are pending (for waitForUiChange). */
+  private hasPendingScheduledEvents(): boolean {
+    return this.scheduledEvents.length > 0;
   }
 
   private setFocused(handle: string): void {
@@ -345,14 +462,18 @@ export class MockBackend implements Backend {
     // Register element
     this.registerElement(element, winHandle);
 
+    this.markDirty();
+    this.events.emit("app:launched", { pid, executablePath });
     return pid;
   }
 
   async launchProcess(
-    _executablePath: string,
+    executablePath: string,
     _options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
   ): Promise<number> {
-    return 0;
+    const pid = await this.launch(executablePath);
+    this.events.emit("process:connected", { pid, executablePath });
+    return pid;
   }
 
   async enumerateWindows(processId: number, executable?: string | null): Promise<string[]> {
@@ -380,6 +501,8 @@ export class MockBackend implements Backend {
       this.removeWindowMappings(win.id);
     }
     this.pidToApp.delete(processId);
+    this.markDirty();
+    this.events.emit("app:closed", { pid: processId });
     await delay();
   }
 
@@ -395,6 +518,8 @@ export class MockBackend implements Backend {
     }
     this.windowHandleToWin.delete(windowHandle);
     this.winHandleToPid.delete(windowHandle);
+    this.markDirty();
+    this.events.emit("window:closed", { windowHandle });
     await delay();
   }
 
@@ -403,6 +528,30 @@ export class MockBackend implements Backend {
   }
 
   // --- element finding ---
+
+  /** Get the root element handles for a window (elements whose parent is the window itself). */
+  private getTreeRoots(windowHandle: string): string[] {
+    const roots: string[] = [];
+    for (const [handle, el] of this.elementHandleToEl) {
+      if (el.parentHandle === windowHandle) {
+        roots.push(handle);
+      }
+    }
+    return roots;
+  }
+
+  /** Traverse the element tree depth-first and collect matching handles. */
+  private findInTree(
+    windowHandle: string,
+    filter: (el: MockElementRecord) => boolean,
+  ): string[] {
+    const roots = this.getTreeRoots(windowHandle);
+    const results: string[] = [];
+    for (const handle of traverseTree(this.elementHandleToEl, roots, filter)) {
+      results.push(handle);
+    }
+    return results;
+  }
 
   async findElement(
     windowHandle: string,
@@ -416,13 +565,12 @@ export class MockBackend implements Backend {
   ): Promise<string | null> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return null;
-    const match = win.elements.find(
-      (el) =>
-        classNamesMatch(el.selector.className, classNames) &&
-        selectorMatches(el.selector, automationId, name, role, className, text, matchMode),
-    );
-    if (!match) return null;
-    return this.ensureElementHandle(match);
+    const matches = this.findInTree(windowHandle, (el) => {
+      if (!classNamesMatch(el.selector.className, classNames)) return false;
+      return selectorMatches(el.selector, automationId, name, role, className, text, matchMode);
+    });
+    if (matches.length === 0) return null;
+    return matches[0];
   }
 
   async findElementName(windowHandle: string, name: string): Promise<string | null> {
@@ -441,28 +589,10 @@ export class MockBackend implements Backend {
   ): Promise<string[]> {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win) return [];
-    let matches = win.elements;
-    if (classNames || automationId || name || role || className || text) {
-      matches = matches.filter((el) => {
-        const r1 = classNamesMatch(el.selector.className, classNames);
-        if (!r1) return false;
-        if (automationId || name || role || className || text) {
-          const r2 = selectorMatches(
-            el.selector,
-            automationId,
-            name,
-            role,
-            className,
-            text,
-            matchMode,
-          );
-          return r2;
-        }
-        return true;
-      });
-    }
-
-    return matches.map((el) => this.ensureElementHandle(el));
+    return this.findInTree(windowHandle, (el) => {
+      if (!classNamesMatch(el.selector.className, classNames)) return false;
+      return selectorMatches(el.selector, automationId, name, role, className, text, matchMode);
+    });
   }
 
   // --- interactions (with state tracking) ---
@@ -470,23 +600,27 @@ export class MockBackend implements Backend {
   async clickElement(elementHandle: string): Promise<void> {
     this.assertElement(elementHandle);
     this.setFocused(elementHandle);
+    this.events.emit("element:clicked", { elementHandle });
     await delay();
   }
 
   async rightClickElement(elementHandle: string): Promise<void> {
     this.assertElement(elementHandle);
     this.setFocused(elementHandle);
+    this.events.emit("element:rightClicked", { elementHandle });
     await delay();
   }
 
   async doubleClickElement(elementHandle: string): Promise<void> {
     this.assertElement(elementHandle);
     this.setFocused(elementHandle);
+    this.events.emit("element:doubleClicked", { elementHandle });
     await delay();
   }
 
   async hoverElement(elementHandle: string): Promise<void> {
     this.assertElement(elementHandle);
+    this.events.emit("element:hovered", { elementHandle });
     await delay();
   }
 
@@ -512,6 +646,8 @@ export class MockBackend implements Backend {
     const el = this.assertElement(elementHandle);
     el.text = text;
     this.setFocused(elementHandle);
+    this.markDirty();
+    this.events.emit("element:typed", { elementHandle, text });
     await delay();
   }
 
@@ -521,6 +657,7 @@ export class MockBackend implements Backend {
     if (textbox) {
       textbox.text = text;
     }
+    this.markDirty();
     await delay();
   }
 
@@ -534,6 +671,8 @@ export class MockBackend implements Backend {
 
   async setValue(elementHandle: string, value: string): Promise<void> {
     this.assertElement(elementHandle).text = value;
+    this.markDirty();
+    this.events.emit("element:valueChanged", { elementHandle, value });
     await delay();
   }
 
@@ -541,6 +680,7 @@ export class MockBackend implements Backend {
     const el = this.assertElement(elementHandle);
     el.isSelected = true;
     this.setFocused(elementHandle);
+    this.events.emit("element:selected", { elementHandle });
     await delay();
   }
 
@@ -549,6 +689,7 @@ export class MockBackend implements Backend {
     el.isToggled = !el.isToggled;
     el.toggleState = el.isToggled ? "On" : "Off";
     el.isSelected = true;
+    this.events.emit("element:toggled", { elementHandle, state: el.toggleState });
     await delay();
   }
 
@@ -629,6 +770,7 @@ export class MockBackend implements Backend {
 
   async focusElement(elementHandle: string): Promise<void> {
     this.setFocused(elementHandle);
+    this.events.emit("element:focused", { elementHandle });
   }
 
   // --- window operations (with state tracking) ---
@@ -697,18 +839,21 @@ export class MockBackend implements Backend {
 
   // --- mouse ---
 
-  async mouseMove(_x: number, _y: number): Promise<void> {
+  async mouseMove(x: number, y: number): Promise<void> {
+    this.events.emit("mouse:moved", { x, y });
     await delay();
   }
 
-  async scrollElement(elementHandle: string, _direction: string, _amount: number): Promise<void> {
+  async scrollElement(elementHandle: string, direction: string, amount: number): Promise<void> {
     this.assertElement(elementHandle);
+    this.events.emit("element:valueChanged", { elementHandle, direction, amount });
     await delay();
   }
 
   async dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void> {
     this.assertElement(fromElementHandle);
     this.assertElement(toElementHandle);
+    this.markDirty();
     await delay();
   }
 
@@ -729,7 +874,7 @@ export class MockBackend implements Backend {
     return { x: 100, y: 100, width: 32, height: 32, confidence: 0.95 };
   }
 
-  async clickAt(x: number, y: number): Promise<void> {
+  async clickAt(_x: number, _y: number): Promise<void> {
     await delay();
   }
 
@@ -804,7 +949,9 @@ export class MockBackend implements Backend {
   }
 
   async killProcess(processId: number): Promise<void> {
+    this.events.emit("process:killed", { pid: processId });
     await this.closeApp(processId);
+    this.events.emit("process:exited", { pid: processId });
   }
 
   isProcessElevated(_processId: number): boolean {
@@ -959,7 +1106,7 @@ export class MockBackend implements Backend {
     const win = this.windowHandleToWin.get(windowHandle);
     if (!win || path.length === 0) return null;
 
-    let candidates = win.elements.filter((el) => {
+    const candidates = win.elements.filter((el) => {
       for (const step of path) {
         if (step.role && el.selector.role !== step.role) return false;
         if (step.name && el.selector.name !== step.name) return false;
@@ -996,8 +1143,18 @@ export class MockBackend implements Backend {
     }));
   }
 
-  async waitForUiChange(_timeoutMs: number): Promise<boolean> {
-    await new Promise((resolve) => setTimeout(resolve, _timeoutMs));
+  async waitForUiChange(timeoutMs: number): Promise<boolean> {
+    // If the UI is already dirty or has pending scheduled events, return immediately
+    if (this.dirty || this.hasPendingScheduledEvents()) {
+      // Consume the dirty flag (snapshot state)
+      await delay();
+      const changed = this.dirty || this.hasPendingScheduledEvents();
+      this.dirty = false;
+      return changed;
+    }
+    // Otherwise wait for the full timeout (simulating a real wait) and return false
+    await new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, MOCK_DELAY_MS)));
+    this.dirty = false;
     return false;
   }
 
