@@ -666,8 +666,6 @@ pub fn launch_app_by_aumid(aumid: String) -> Result<u32> {
   unsafe {
     let _com = crate::utils::ComScope::init();
 
-    // IApplicationActivationManager CLSID
-    let clsid = windows::core::GUID::zeroed();
     // CLSID_ApplicationActivationManager
     let clsid_activate = windows::core::GUID {
       data1: 0x45BA127D,
@@ -676,7 +674,7 @@ pub fn launch_app_by_aumid(aumid: String) -> Result<u32> {
       data4: [0x8A, 0xB7, 0x56, 0xEA, 0x90, 0x78, 0x94, 0x3C],
     };
     // IID_IApplicationActivationManager
-    let iid_activate = windows::core::GUID {
+    let _iid_activate = windows::core::GUID {
       data1: 0x00000035,
       data2: 0x0000,
       data3: 0x0000,

@@ -5,9 +5,11 @@ import type {
   ElementNode,
   ElementPathStep,
   FindImageOptions,
+  FindTextOptions,
   HwndNode,
   ImageMatch,
   NativeBindings,
+  OcrResult,
   ProcessEntry,
   WindowInfo,
   InputMode,
@@ -300,6 +302,15 @@ export class NativeBackend implements Backend {
     if (options?.scales) nativeOpts.scales = options.scales;
     if (options?.debug) nativeOpts.debug = true;
     return this.native.findImage(windowHandle, template, nativeOpts);
+  }
+
+  async findText(windowHandle: string, options?: FindTextOptions): Promise<OcrResult | null> {
+    if (!this.native.findText) {
+      throw new BackendError("findText is not available in the loaded native module.", "native");
+    }
+    const nativeOpts: Record<string, unknown> = {};
+    if (options?.language) nativeOpts.language = options.language;
+    return this.native.findText(windowHandle, nativeOpts);
   }
 
   async clickAt(x: number, y: number): Promise<void> {

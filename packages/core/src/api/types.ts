@@ -218,6 +218,9 @@ export type NativeBindings = {
   selectionItemRemoveFromSelection: (elementHandle: string) => void;
   selectionItemIsSelected: (elementHandle: string) => boolean;
 
+  // ---- P5: Image & OCR ----
+  findText?: (elementHandle: string, options?: Record<string, unknown>) => Promise<OcrResult | null>;
+
   // ---- P6: Legacy App Toolkit ----
   getWindowInfo: (windowHandle: string) => WindowInfo;
   sendWmCommand: (windowHandle: string, controlId: number, commandId: number) => void;
@@ -263,6 +266,24 @@ export type ImageMatch = {
   scale: number;
   /** Optional PNG debug overlay with bounding box drawn. */
   debug_overlay?: number[];
+};
+
+export type OcrLine = {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export type OcrResult = {
+  text: string;
+  lines: OcrLine[];
+};
+
+export type FindTextOptions = {
+  /** Language code (e.g. "en", "zh"). Defaults to user profile language. */
+  language?: string;
 };
 
 export type FindImageOptions = {

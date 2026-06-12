@@ -4,9 +4,11 @@ import type {
   ElementNode,
   ElementPathStep,
   FindImageOptions,
+  FindTextOptions,
   HwndNode,
   ImageMatch,
   InputMode,
+  OcrResult,
   ProcessEntry,
   WindowBounds,
   WindowDebugInfo,
@@ -87,6 +89,7 @@ export interface Backend {
   captureScreenshot(elementHandle: string): Promise<number[]>;
   captureScreenshotToFile(elementHandle: string, path: string): Promise<void>;
   findImage(windowHandle: string, template: number[], options?: FindImageOptions): Promise<ImageMatch | null>;
+  findText(windowHandle: string, options?: FindTextOptions): Promise<OcrResult | null>;
   clickAt(x: number, y: number): Promise<void>;
   findDialogs(processId: number): DialogInfo[];
   getDialogControls(windowHandle: string): DialogControl[];

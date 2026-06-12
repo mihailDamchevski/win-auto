@@ -13,10 +13,12 @@ import type {
   ElementNode,
   ElementPathStep,
   FindImageOptions,
+  FindTextOptions,
   HwndNode,
   ImageMatch,
   InputMode,
   MatchMode,
+  OcrResult,
   ProcessEntry,
   WindowBounds,
   WindowDebugInfo,
@@ -875,6 +877,11 @@ export class MockBackend implements Backend {
 
   async findImage(_windowHandle: string, _template: number[], _options?: FindImageOptions): Promise<ImageMatch | null> {
     return { x: 100, y: 100, width: 32, height: 32, confidence: 0.95, scale: 1.0 };
+  }
+
+  async findText(_windowHandle: string, _options?: FindTextOptions): Promise<OcrResult | null> {
+    await delay();
+    return null;
   }
 
   async clickAt(_x: number, _y: number): Promise<void> {

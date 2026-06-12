@@ -9,9 +9,12 @@ crate-type = ["cdylib"]
 [features]
 default = []
 input-hardware = ["enigo"]
+image-fft = ["rustfft"]
+image-ocr = []
 
 [dependencies]
 enigo = { version = "0.2", optional = true }
+rustfft = { version = "6", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 napi = { version = "2", features = ["tokio_rt", "napi4"] }
@@ -41,7 +44,13 @@ windows = { version = "0.62", features = [
   "Win32_Graphics",
   "Win32_Graphics_Gdi",
   "Win32_UI_HiDpi",
-  "Win32_UI_Shell"
+  "Win32_UI_Shell",
+  "Foundation",
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams"
 ] }
 
 [build-dependencies]

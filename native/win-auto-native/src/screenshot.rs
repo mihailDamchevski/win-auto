@@ -8,13 +8,13 @@ use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER
 use crate::error::AutomationError;
 use crate::utils::parse_hwnd;
 
-struct CapturedBitmap {
-  pixels: Vec<u8>,
-  width: i32,
-  height: i32,
+pub struct CapturedBitmap {
+  pub pixels: Vec<u8>,
+  pub width: i32,
+  pub height: i32,
 }
 
-fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
+pub fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
   // SAFETY: GDI handle lifecycle is managed: GetWindowDC/CreateCompatibleDC/CreateCompatibleBitmap
   // resources are released via DeleteObject/DeleteDC/ReleaseDC on all error paths and at the end.
   // The buffer passed to GetDIBits is a valid Vec<u8> with correct size for the bitmap format.
@@ -276,7 +276,77 @@ fn search_region_coarse(
   (best_x, best_y, best_ncc, candidates)
 }
 
+/// Template matching entry point: uses FFT when `image-fft` feature is enabled,
+/// otherwise falls back to spatial NCC.
 fn template_match_ncc(
+  screen: &[f64],
+  sw: usize, sh: usize,
+  template: &[f64],
+  tw: usize, th: usize,
+) -> (usize, usize, f64) {
+  #[cfg(feature = "image-fft")]
+  {
+    template_match_fft_ncc(screen, sw, sh, template, tw, th)
+  }
+  #[cfg(not(feature = "image-fft"))]
+  {
+    template_match_ncc_spatial(screen, sw, sh, template, tw, th)
+  }
+}
+
+/// FFT-accelerated NCC: uses FFT cross-correlation for coarse scan,
+/// then spatial refinement around top candidates.
+#[cfg(feature = "image-fft")]
+fn template_match_fft_ncc(
+  screen: &[f64],
+  sw: usize, sh: usize,
+  template: &[f64],
+  tw: usize, th: usize,
+) -> (usize, usize, f64) {
+  let t_len = tw * th;
+  let template_mean = template.iter().sum::<f64>() / t_len as f64;
+  let template_ss: f64 = template.iter().map(|v| (v - template_mean).powi(2)).sum();
+  if template_ss == 0.0 { return (0, 0, -1.0); }
+
+  // FFT cross-correlation → full correlation map
+  use crate::template_match;
+  let corr = template_match::fft_cross_correlate(screen, sw, sh, template, tw, th);
+
+  let result_w = sw - tw + 1;
+  let result_h = sh - th + 1;
+
+  // Find top candidates from correlation map
+  let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+  let mut best_corr = f64::NEG_INFINITY;
+
+  for y in 0..result_h {
+    for x in 0..result_w {
+      let val = corr[y * result_w + x];
+      if val > best_corr {
+        best_corr = val;
+      }
+      if val > best_corr * 0.9 {
+        candidates.push((x, y, val));
+      }
+    }
+  }
+
+  // Sort by correlation descending, take top 10
+  candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+  candidates.truncate(10);
+
+  // Refine top candidates with full NCC via spatial domain
+  let refine_candidates: Vec<(usize, usize)> = candidates.iter().map(|&(x, y, _)| (x, y)).collect();
+  let (bx, by, bncc) = template_match::refine_candidates(
+    screen, sw, template, tw, th, &refine_candidates, 2,
+    result_w, result_h,
+  );
+
+  (bx, by, bncc)
+}
+
+/// Spatial-domain NCC with coarse-to-fine scanning.
+fn template_match_ncc_spatial(
   screen: &[f64],
   sw: usize, sh: usize,
   template: &[f64],

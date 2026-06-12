@@ -13,9 +13,12 @@ mod legacy_messages;
 mod patterns;
 mod highlight;
 mod interaction;
+#[cfg(feature = "image-ocr")]
+mod ocr;
 mod ole_drag;
 mod process_control;
 mod screenshot;
+mod template_match;
 mod trace;
 mod utils;
   

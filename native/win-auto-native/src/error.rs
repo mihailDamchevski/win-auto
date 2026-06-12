@@ -36,6 +36,9 @@ pub enum AutomationError {
   #[error("Dialog operation failed: {message}")]
   DialogFailed { message: String },
 
+  #[error("OCR operation failed: {message}")]
+  OcrFailed { message: String },
+
   #[error("{message}")]
   Generic { message: String },
 }
