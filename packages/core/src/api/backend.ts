@@ -8,6 +8,7 @@ import type {
   ProcessEntry,
   WindowBounds,
   WindowDebugInfo,
+  WindowInfo,
 } from "./types";
 
 export interface Backend {
@@ -16,7 +17,7 @@ export interface Backend {
   launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
   launchProcess(
     executablePath: string,
-    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
+    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string; job?: boolean; createNoWindow?: boolean; aumid?: string },
   ): Promise<number>;
   enumerateWindows(processId: number, executable?: string | null): Promise<string[]>;
   closeApp(processId: number): Promise<void>;
@@ -136,6 +137,14 @@ export interface Backend {
   selectionItemAddToSelection(elementHandle: string): void;
   selectionItemRemoveFromSelection(elementHandle: string): void;
   selectionItemIsSelected(elementHandle: string): boolean;
+
+  // ---- P6: Legacy App Toolkit ----
+  getWindowInfo(windowHandle: string): WindowInfo;
+  sendWmCommand(windowHandle: string, controlId: number, commandId: number): void;
+  sendWmSetText(controlHandle: string, text: string): void;
+  sendWmNotify(windowHandle: string, controlId: number, notificationCode: number): void;
+  detectDialogType(windowHandle: string): string;
+  launchByAumid(aumid: string): Promise<number>;
 }
 
 export type WinEventInfo = {

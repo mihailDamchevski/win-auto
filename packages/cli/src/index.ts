@@ -3,6 +3,7 @@ import { initProject } from "./commands/init";
 import { inspectCommand } from "./commands/inspect";
 import { queryCommand } from "./commands/query";
 import { elevateCommand } from "./commands/elevate";
+import { diagnoseCommand } from "./commands/diagnose";
 import { Automation, App, Window, Element } from "@win-auto/core";
 
 export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
@@ -75,6 +76,23 @@ async function runCli(): Promise<void> {
     return;
   }
 
+  if (command === "diagnose") {
+    const pidIdx = args.indexOf("--pid");
+    const nameIdx = args.indexOf("--name");
+    const outputIdx = args.indexOf("--output");
+    await diagnoseCommand({
+      pid: pidIdx >= 0 && pidIdx + 1 < args.length ? Number(args[pidIdx + 1]) : undefined,
+      name: nameIdx >= 0 && nameIdx + 1 < args.length ? args[nameIdx + 1] : undefined,
+      tree: args.includes("--tree"),
+      hwnd: args.includes("--hwnd"),
+      uia: args.includes("--uia"),
+      events: args.includes("--events"),
+      recommend: args.includes("--recommend"),
+      output: outputIdx >= 0 && outputIdx + 1 < args.length ? args[outputIdx + 1] : undefined,
+    });
+    return;
+  }
+
   process.stdout.write("win-auto CLI\n");
   process.stdout.write("Usage:\n");
   process.stdout.write("  win-auto init <project-name>\n");
@@ -84,6 +102,8 @@ async function runCli(): Promise<void> {
   process.stdout.write(
     "  win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]\n",
   );
+  process.stdout.write("  win-auto diagnose [--pid <pid>] [--name <name>] [--tree] [--hwnd]\n");
+  process.stdout.write("                 [--uia] [--events] [--recommend] [--output <file>]\n");
   process.stdout.write("  win-auto elevate\n");
 }
 

@@ -4,7 +4,7 @@ use napi_derive::napi;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Children, TreeScope_Descendants};
-use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetWindow, GetWindowThreadProcessId, GW_OWNER};
+use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, FindWindowExW, GetAncestor, GetWindow, GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowUnicode, GWL_EXSTYLE, GWL_STYLE, GA_PARENT, GW_OWNER};
 
 use crate::error::AutomationError;
 use crate::utils::{get_class_name, get_window_title, matches_window_by_class_or_title, is_top_level_visible, is_visible, process_image_for_pid, window_pid, hwnd_to_string, sort_windows_for_selection, dedupe_hwnds, to_wide_null_terminated, window_process_ends_with};
@@ -422,4 +422,77 @@ pub fn inspect_hwnd_tree(window_handle: String, max_depth: Option<i32>) -> Resul
   let depth = max_depth.unwrap_or(10);
   let children = build_hwnd_tree(hwnd, depth);
   Ok(children)
+}
+
+/// Detailed Win32 legacy info about a window handle.
+/// Returns className, text, style, exStyle, pid, threadId, isUnicode,
+/// parentHwnd, ownerHwnd, dpi.
+#[napi(object)]
+pub struct WindowInfo {
+  pub class_name: String,
+  pub text: String,
+  pub style: i32,
+  pub ex_style: i32,
+  pub pid: u32,
+  pub thread_id: u32,
+  pub is_unicode: bool,
+  pub parent_hwnd: String,
+  pub owner_hwnd: String,
+  pub dpi: u32,
+}
+
+#[napi(js_name = "getWindowInfo")]
+pub fn get_window_info(window_handle: String) -> Result<WindowInfo> {
+  let hwnd = crate::utils::parse_hwnd(&window_handle)?;
+  unsafe {
+    let class_name = crate::utils::get_class_name(hwnd);
+
+    let text_length = GetWindowTextLengthW(hwnd);
+    let text = if text_length > 0 {
+      let mut buffer = vec![0u16; (text_length + 1) as usize];
+      let copied = GetWindowTextW(hwnd, &mut buffer);
+      if copied > 0 {
+        String::from_utf16_lossy(&buffer[..copied as usize])
+      } else {
+        String::new()
+      }
+    } else {
+      String::new()
+    };
+
+    let style = GetWindowLongW(hwnd, GWL_STYLE);
+    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+
+    let mut pid = 0u32;
+    let mut thread_id = 0u32;
+    thread_id = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+
+    let is_unicode = IsWindowUnicode(hwnd).as_bool();
+
+    let parent_hwnd = unsafe { GetAncestor(hwnd, GA_PARENT) };
+    let parent_hwnd_str = if parent_hwnd.is_invalid() {
+      "0".to_string()
+    } else {
+      hwnd_to_string(parent_hwnd)
+    };
+
+    let owner_hwnd = GetWindow(hwnd, GW_OWNER)
+      .map(|h| hwnd_to_string(h))
+      .unwrap_or_else(|_| "0".to_string());
+
+    let dpi = crate::utils::get_dpi_for_window(hwnd);
+
+    Ok(WindowInfo {
+      class_name,
+      text,
+      style,
+      ex_style,
+      pid,
+      thread_id,
+      is_unicode,
+      parent_hwnd: parent_hwnd_str,
+      owner_hwnd,
+      dpi,
+    })
+  }
 }

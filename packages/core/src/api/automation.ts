@@ -5,14 +5,18 @@ import { AutomationEvents } from "./events";
 import { ProcessManager } from "./process";
 import { AutomationError } from "./errors";
 import { WaitBuilder } from "./wait";
-import type { AppSelector, InputMode, LaunchOptions } from "./types";
+import { Diagnostics } from "./diagnostics";
+import { loadNativeBindings } from "../native/loadNative";
+import type { NativeBindings, AppSelector, InputMode, LaunchOptions } from "./types";
 
 export class Automation {
   public readonly events: AutomationEvents;
   public readonly processes: ProcessManager;
   public readonly wait: WaitBuilder;
+  public readonly diagnostics: Diagnostics;
   public readonly inputMode: InputMode;
-  private readonly backend: Backend;
+  public readonly backend: Backend;
+  private nativeBindings?: NativeBindings;
 
   constructor(backend?: Backend, inputMode?: InputMode) {
     this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
@@ -20,6 +24,12 @@ export class Automation {
     this.events = new AutomationEvents();
     this.processes = new ProcessManager(this.backend);
     this.wait = new WaitBuilder(this.backend);
+    try {
+      this.nativeBindings = loadNativeBindings();
+    } catch {
+      // Native module not available
+    }
+    this.diagnostics = new Diagnostics(this.backend, this.nativeBindings);
   }
 
   private static detectBackend(): Backend | null {
@@ -39,18 +49,29 @@ export class Automation {
     return this.launchApp({ executablePath });
   }
 
+  private normalizeEnv(env?: string[] | Record<string, string>): string[] | undefined {
+    if (env === undefined) return undefined;
+    if (Array.isArray(env)) return env;
+    return Object.entries(env).map(([k, v]) => `${k}=${v}`);
+  }
+
   public async launchApp(options: LaunchOptions): Promise<App> {
     const hasAdvancedOpts =
       options.args !== undefined ||
       options.cwd !== undefined ||
       options.env !== undefined ||
-      options.runAs !== undefined;
+      options.runAs !== undefined ||
+      options.job !== undefined ||
+      options.createNoWindow !== undefined ||
+      options.aumid !== undefined;
+
+    const env = this.normalizeEnv(options.env);
 
     const processId = hasAdvancedOpts
       ? await this.backend.launchProcess(options.executablePath, {
           args: options.args,
           cwd: options.cwd,
-          env: options.env,
+          env,
           runAs: options.runAs,
         })
       : await this.backend.launch(options.executablePath);

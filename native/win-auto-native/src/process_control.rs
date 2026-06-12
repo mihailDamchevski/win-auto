@@ -104,14 +104,16 @@ fn terminate_process(pid: u32) -> Result<()> {
 
 // ── CreateProcessW launcher ───────────────────────────────────────────────
 
-/// Spawn a process via `CreateProcessW`, attach it to a job object, and
-/// return the PID.  The calling thread must be on an STA for COM-based
+/// Spawn a process via `CreateProcessW`, optionally attach it to a job object,
+/// and return the PID.  The calling thread must be on an STA for COM-based
 /// window discovery afterwards.
 fn spawn_process_via_createprocess(
   path: &str,
   args: Option<&[String]>,
   cwd: Option<&str>,
   env: Option<&[String]>,
+  job: bool,
+  create_no_window: bool,
 ) -> std::result::Result<u32, AutomationError> {
   // Build command-line string (CreateProcessW expects a mutable buffer).
   let mut cmdline = path.to_string();
@@ -141,7 +143,14 @@ fn spawn_process_via_createprocess(
   });
 
   // Job object (keep alive via static registry).
-  let job_handle = create_job_object()?;
+  let job_handle = if job { Some(create_job_object()?) } else { None };
+
+  let mut creation_flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
+  if create_no_window {
+    creation_flags = creation_flags | DETACHED_PROCESS;
+  } else if job {
+    creation_flags = creation_flags | CREATE_NEW_CONSOLE;
+  }
 
   unsafe {
     let mut si = STARTUPINFOW::default();
@@ -167,7 +176,7 @@ fn spawn_process_via_createprocess(
       None,               // lpProcessAttributes
       None,               // lpThreadAttributes
       false,              // bInheritHandles
-      CREATE_SUSPENDED | CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+      creation_flags,
       env_ptr,
       cwd_ptr,
       &mut si,
@@ -180,8 +189,10 @@ fn spawn_process_via_createprocess(
 
     let pid = pi.dwProcessId;
 
-    // Assign to job object while still suspended.
-    let _ = AssignProcessToJobObject(job_handle, pi.hProcess);
+    // Assign to job object while still suspended (if requested).
+    if let Some(ref jh) = job_handle {
+      let _ = AssignProcessToJobObject(*jh, pi.hProcess);
+    }
 
     // Resume the main thread.
     ResumeThread(pi.hThread);
@@ -348,6 +359,12 @@ pub struct LaunchOptions {
   pub env: Option<Vec<String>>,
   /// If "admin", spawn the process elevated (triggers UAC prompt).
   pub run_as: Option<String>,
+  /// Attach process to a job object so it's killed when the parent exits.
+  pub job: Option<bool>,
+  /// If true, don't create a console window (DETACHED_PROCESS).
+  pub create_no_window: Option<bool>,
+  /// AUMID for UWP app activation (alternative to executablePath).
+  pub aumid: Option<String>,
 }
 
 /// High-level launch — replaces the old `std::process::Command` approach.
@@ -362,7 +379,7 @@ pub async fn launch(
   let path = executable_path
     .ok_or_else(|| Error::from(AutomationError::Generic { message: "executablePath is required".into() }))?;
 
-  let child_pid = spawn_process_via_createprocess(&path, None, None, None)
+  let child_pid = spawn_process_via_createprocess(&path, None, None, None, true, false)
     .map_err(|e| Error::from(e))?;
 
   // Phase 1: Look for windows belonging to the spawned PID directly.
@@ -424,6 +441,9 @@ pub async fn launch_process(
     cwd: None,
     env: None,
     run_as: None,
+    job: None,
+    create_no_window: None,
+    aumid: None,
   });
 
   // If run_as is "admin", use elevated launch path
@@ -437,11 +457,16 @@ pub async fn launch_process(
     return Ok(child_pid);
   }
 
+  let use_job = opts.job.unwrap_or(true);
+  let no_window = opts.create_no_window.unwrap_or(false);
+
   let child_pid = spawn_process_via_createprocess(
     &executable_path,
     opts.args.as_deref(),
     opts.cwd.as_deref(),
     opts.env.as_deref(),
+    use_job,
+    no_window,
   )
   .map_err(|e| Error::from(e))?;
 
@@ -631,4 +656,63 @@ pub async fn run_elevated_export(
 ) -> Result<u32> {
   run_elevated_rust(&executable_path, args.as_deref(), cwd.as_deref())
     .map_err(|e| Error::from(e))
+}
+
+/// Launch a UWP app by its AUMID (Application User Model ID) using
+/// IApplicationActivationManager::ActivateApplication.
+/// Returns the PID of the activated process.
+#[napi(js_name = "launchAppByAumid")]
+pub fn launch_app_by_aumid(aumid: String) -> Result<u32> {
+  unsafe {
+    let _com = crate::utils::ComScope::init();
+
+    // IApplicationActivationManager CLSID
+    let clsid = windows::core::GUID::zeroed();
+    // CLSID_ApplicationActivationManager
+    let clsid_activate = windows::core::GUID {
+      data1: 0x45BA127D,
+      data2: 0x10A8,
+      data3: 0x46EA,
+      data4: [0x8A, 0xB7, 0x56, 0xEA, 0x90, 0x78, 0x94, 0x3C],
+    };
+    // IID_IApplicationActivationManager
+    let iid_activate = windows::core::GUID {
+      data1: 0x00000035,
+      data2: 0x0000,
+      data3: 0x0000,
+      data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+
+    let activate_manager: windows::core::Result<IUnknown> = CoCreateInstance(
+      &clsid_activate,
+      None,
+      CLSCTX_INPROC_SERVER,
+    );
+    match activate_manager {
+      Ok(unk) => {
+        // Try to query for IApplicationActivationManager
+        let app_activate: windows::core::Result<windows::Win32::UI::Shell::IApplicationActivationManager> =
+          unk.cast();
+        if let Ok(manager) = app_activate {
+          let aumid_wide: Vec<u16> = aumid.encode_utf16().chain(std::iter::once(0)).collect();
+          let pid = manager.ActivateApplication(
+            windows::core::PCWSTR(aumid_wide.as_ptr()),
+            windows::core::PCWSTR::null(),
+            windows::Win32::UI::Shell::ACTIVATEOPTIONS(0),
+          );
+          if let Ok(pid) = pid {
+            if pid > 0 {
+              return Ok(pid);
+            }
+          }
+        }
+        Err(Error::from(AutomationError::Generic {
+          message: format!("IApplicationActivationManager failed for AUMID: {aumid}"),
+        }))
+      }
+      Err(e) => Err(Error::from(AutomationError::Generic {
+        message: format!("CoCreateInstance IApplicationActivationManager failed: {e}"),
+      })),
+    }
+  }
 }

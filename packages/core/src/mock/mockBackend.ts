@@ -18,6 +18,7 @@ import type {
   ProcessEntry,
   WindowBounds,
   WindowDebugInfo,
+  WindowInfo,
 } from "../api/types";
 import { AutomationError } from "../api/errors";
 
@@ -469,7 +470,7 @@ export class MockBackend implements Backend {
 
   async launchProcess(
     executablePath: string,
-    _options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
+    _options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string; job?: boolean; createNoWindow?: boolean; aumid?: string },
   ): Promise<number> {
     const pid = await this.launch(executablePath);
     this.events.emit("process:connected", { pid, executablePath });
@@ -890,6 +891,7 @@ export class MockBackend implements Backend {
         title: d.title,
         class_name: "#32770",
         visible: true,
+        dialog_type: "standard" as const,
       };
     });
   }
@@ -1238,5 +1240,41 @@ export class MockBackend implements Backend {
 
   selectionItemIsSelected(_elementHandle: string): boolean {
     return false;
+  }
+
+  // ---- P6: Legacy App Toolkit (mock stubs) ----
+  getWindowInfo(_windowHandle: string): WindowInfo {
+    return {
+      class_name: "MockClass",
+      text: "",
+      style: 0,
+      ex_style: 0,
+      pid: 0,
+      thread_id: 0,
+      is_unicode: true,
+      parent_hwnd: "0",
+      owner_hwnd: "0",
+      dpi: 96,
+    };
+  }
+
+  sendWmCommand(_windowHandle: string, _controlId: number, _commandId: number): void {
+    // no-op in mock
+  }
+
+  sendWmSetText(_controlHandle: string, _text: string): void {
+    // no-op in mock
+  }
+
+  sendWmNotify(_windowHandle: string, _controlId: number, _notificationCode: number): void {
+    // no-op in mock
+  }
+
+  detectDialogType(_windowHandle: string): string {
+    return "standard";
+  }
+
+  async launchByAumid(_aumid: string): Promise<number> {
+    return 0;
   }
 }

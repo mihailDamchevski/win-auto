@@ -9,7 +9,10 @@ export interface DialogInfo {
   title: string
   className: string
   visible: boolean
+  /** "standard" for #32770, "directui" for DirectUIHWND, "uwp" for Windows.UI.Core.CoreWindow */
+  dialogType: string
 }
+export declare function detectDialogType(windowHandle: string): string
 export interface DialogControl {
   handle: string
   name: string
@@ -45,6 +48,24 @@ export interface HwndNode {
  * hierarchy with class names and window text — essential for legacy app debugging.
  */
 export declare function inspectHwndTree(windowHandle: string, maxDepth?: number | undefined | null): Array<HwndNode>
+/**
+ * Detailed Win32 legacy info about a window handle.
+ * Returns className, text, style, exStyle, pid, threadId, isUnicode,
+ * parentHwnd, ownerHwnd, dpi.
+ */
+export interface WindowInfo {
+  className: string
+  text: string
+  style: number
+  exStyle: number
+  pid: number
+  threadId: number
+  isUnicode: boolean
+  parentHwnd: string
+  ownerHwnd: string
+  dpi: number
+}
+export declare function getWindowInfo(windowHandle: string): WindowInfo
 export interface WinEventInfo {
   eventType: number
   hwnd: string
@@ -70,6 +91,51 @@ export declare function startWinEventWatcher(callback: (...args: any[]) => any):
  * running (for `waitForUiChange`), but no further JS callbacks are made.
  */
 export declare function stopWinEventWatcher(): void
+/**
+ * Send a WM_COMMAND message to a window (for legacy controls that only
+ * respond to Win32 messages, not UIA).
+ */
+export declare function sendWmCommand(windowHandle: string, controlId: number, commandId: number): void
+/** Send a WM_SETTEXT message to set the text of a control (legacy fallback). */
+export declare function sendWmSetText(controlHandle: string, text: string): void
+/** Send a WM_NOTIFY message to a window (for legacy control notifications). */
+export declare function sendWmNotify(windowHandle: string, controlId: number, notificationCode: number): void
+export const enum InputMode {
+  /** Use UIA patterns only – fail if pattern is unavailable. */
+  Pattern = 0,
+  /** Use Win32 / SendInput hardware simulation only. */
+  Hardware = 1,
+  /** Try pattern first, fall back to hardware on PatternNotSupported. */
+  Auto = 2
+}
+export declare function expandCollapseExpand(elementHandle: string): void
+export declare function expandCollapseCollapse(elementHandle: string): void
+/**
+ * ScrollAmount enum values mapped from windows-rs UIA ScrollAmount:
+ *   0 = LargeDecrement, 1 = SmallDecrement, 2 = NoAmount, 3 = LargeIncrement, 4 = SmallIncrement
+ */
+export declare function scrollPatternScroll(elementHandle: string, horizontalAmount: number, verticalAmount: number): void
+export declare function scrollPatternSetScrollPercent(elementHandle: string, horizontalPercent: number, verticalPercent: number): void
+export declare function rangeValueGetValue(elementHandle: string): number
+export declare function rangeValueSetValue(elementHandle: string, value: number): void
+/** WindowVisualState enum values: 0 = Normal, 1 = Maximized, 2 = Minimized */
+export declare function windowPatternSetVisualState(elementHandle: string, state: number): void
+export declare function windowPatternWaitForInputIdle(elementHandle: string, timeoutMs: number): boolean
+export declare function selectionGetSelection(elementHandle: string): Array<string>
+/** Returns the row count for a grid element. */
+export declare function gridGetRowCount(elementHandle: string): number
+/** Returns the column count for a grid element. */
+export declare function gridGetColumnCount(elementHandle: string): number
+/** Returns the element handle at the specified row and column in a grid. */
+export declare function gridGetItem(elementHandle: string, row: number, column: number): string
+/** Returns row header element handles for a table element. */
+export declare function tableGetRowHeaders(elementHandle: string): Array<string>
+/** Returns column header element handles for a table element. */
+export declare function tableGetColumnHeaders(elementHandle: string): Array<string>
+export declare function selectionItemSelect(elementHandle: string): void
+export declare function selectionItemAddToSelection(elementHandle: string): void
+export declare function selectionItemRemoveFromSelection(elementHandle: string): void
+export declare function selectionItemIsSelected(elementHandle: string): boolean
 export declare function highlightElement(elementHandle: string, color?: string | undefined | null, durationMs?: number | undefined | null): Promise<void>
 export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
 export declare function typeText(elementHandle: string, text: string): Promise<void>
@@ -143,23 +209,26 @@ export interface ElementNode {
 export declare function inspectWindowTree(windowHandle: string, maxDepth?: number | undefined | null): Array<ElementNode>
 export declare function getElementAttribute(elementHandle: string, attributeName: string): Promise<string>
 export declare function dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>
-export declare function gridGetRowCount(elementHandle: string): number
-export declare function gridGetColumnCount(elementHandle: string): number
-export declare function gridGetItem(elementHandle: string, row: number, column: number): string
-export declare function tableGetRowHeaders(elementHandle: string): Array<string>
-export declare function tableGetColumnHeaders(elementHandle: string): Array<string>
-export declare function selectionItemSelect(elementHandle: string): void
-export declare function selectionItemAddToSelection(elementHandle: string): void
-export declare function selectionItemRemoveFromSelection(elementHandle: string): void
-export declare function selectionItemIsSelected(elementHandle: string): boolean
-export declare function launch(executablePath?: string | undefined | null, classNames?: Array<string> | undefined | null): Promise<number>
 export interface LaunchOptions {
-  args?: Array<string> | undefined | null
-  cwd?: string | undefined | null
-  env?: Array<string> | undefined | null
+  args?: Array<string>
+  cwd?: string
+  env?: Array<string>
   /** If "admin", spawn the process elevated (triggers UAC prompt). */
-  runAs?: string | undefined | null
+  runAs?: string
+  /** Attach process to a job object so it's killed when the parent exits. */
+  job?: boolean
+  /** If true, don't create a console window (DETACHED_PROCESS). */
+  createNoWindow?: boolean
+  /** AUMID for UWP app activation (alternative to executablePath). */
+  aumid?: string
 }
+/**
+ * High-level launch — replaces the old `std::process::Command` approach.
+ * Returns the PID of the spawned process (or the window-owning PID for
+ * ApplicationFrameHost scenarios).
+ */
+export declare function launch(executablePath?: string | undefined | null, classNames?: Array<string> | undefined | null): Promise<number>
+/** Full-featured launch with options (args, cwd, env). */
 export declare function launchProcess(executablePath: string, options?: LaunchOptions | undefined | null): Promise<number>
 /** Health check function exposed to Node.js. */
 export declare function ping(): string
@@ -176,16 +245,18 @@ export declare function findProcessesByName(imageName: string): Array<ProcessEnt
 export declare function waitForProcessExit(processId: number, timeoutMs: number): Promise<boolean>
 export declare function getProcessImageName(processId: number): string
 export declare function killProcess(processId: number): void
-/**
- * Check whether a process is running elevated (admin).
- * Returns `true` if the process has an elevated token.
- */
 export declare function isProcessElevated(processId: number): boolean
 /**
- * Launch a process elevated (admin) using ShellExecuteExW with "runas" verb.
- * This triggers a UAC prompt. Returns the PID of the spawned process.
+ * Launch a process elevated (admin) via ShellExecuteExW with "runas" verb.
+ * Returns the PID of the spawned process.
  */
 export declare function runElevated(executablePath: string, args?: Array<string> | undefined | null, cwd?: string | undefined | null): Promise<number>
+/**
+ * Launch a UWP app by its AUMID (Application User Model ID) using
+ * IApplicationActivationManager::ActivateApplication.
+ * Returns the PID of the activated process.
+ */
+export declare function launchAppByAumid(aumid: string): number
 export declare function captureScreenshot(elementHandle: string): Promise<Array<number>>
 export declare function captureScreenshotToFile(elementHandle: string, path: string): Promise<void>
 export interface ImageMatch {
@@ -196,12 +267,3 @@ export interface ImageMatch {
   confidence: number
 }
 export declare function findImage(elementHandle: string, template: Array<number>): Promise<ImageMatch | null>
-export declare function expandCollapseExpand(elementHandle: string): void
-export declare function expandCollapseCollapse(elementHandle: string): void
-export declare function scrollPatternScroll(elementHandle: string, horizontalAmount: number, verticalAmount: number): void
-export declare function scrollPatternSetScrollPercent(elementHandle: string, horizontalPercent: number, verticalPercent: number): void
-export declare function rangeValueGetValue(elementHandle: string): Promise<number>
-export declare function rangeValueSetValue(elementHandle: string, value: number): Promise<void>
-export declare function windowPatternSetVisualState(elementHandle: string, state: number): void
-export declare function windowPatternWaitForInputIdle(elementHandle: string, timeoutMs: number): boolean
-export declare function selectionGetSelection(elementHandle: string): Array<string>

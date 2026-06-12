@@ -8,6 +8,7 @@ import type {
   ImageMatch,
   NativeBindings,
   ProcessEntry,
+  WindowInfo,
 } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 import { BackendError, UIPI_HELP_MESSAGE } from "./errors";
@@ -65,7 +66,7 @@ export class NativeBackend implements Backend {
 
   async launchProcess(
     executablePath: string,
-    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string },
+    options?: { args?: string[]; cwd?: string; env?: string[]; runAs?: string; job?: boolean; createNoWindow?: boolean; aumid?: string },
   ): Promise<number> {
     return this.call(() => this.native.launchProcess(executablePath, options ?? undefined));
   }
@@ -514,5 +515,30 @@ export class NativeBackend implements Backend {
 
   selectionItemIsSelected(elementHandle: string): boolean {
     return this.callSync(() => this.native.selectionItemIsSelected(elementHandle));
+  }
+
+  // ---- P6: Legacy App Toolkit ----
+  getWindowInfo(windowHandle: string): WindowInfo {
+    return this.callSync(() => this.native.getWindowInfo(windowHandle));
+  }
+
+  sendWmCommand(windowHandle: string, controlId: number, commandId: number): void {
+    this.callSync(() => this.native.sendWmCommand(windowHandle, controlId, commandId));
+  }
+
+  sendWmSetText(controlHandle: string, text: string): void {
+    this.callSync(() => this.native.sendWmSetText(controlHandle, text));
+  }
+
+  sendWmNotify(windowHandle: string, controlId: number, notificationCode: number): void {
+    this.callSync(() => this.native.sendWmNotify(windowHandle, controlId, notificationCode));
+  }
+
+  detectDialogType(windowHandle: string): string {
+    return this.callSync(() => this.native.detectDialogType(windowHandle));
+  }
+
+  async launchByAumid(aumid: string): Promise<number> {
+    return this.call(() => this.native.launchByAumid(aumid));
   }
 }

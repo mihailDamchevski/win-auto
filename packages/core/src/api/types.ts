@@ -12,10 +12,16 @@ export type LaunchOptions = {
   title?: string;
   /** Working directory for the launched process. */
   cwd?: string;
-  /** Environment variables as "KEY=VALUE" strings. */
-  env?: string[];
+  /** Environment variables as "KEY=VALUE" strings or key-value map. */
+  env?: string[] | Record<string, string>;
   /** Run the process with restricted or admin integrity level: "limited" | "admin". */
   runAs?: "limited" | "admin";
+  /** Attach the child process to a job object so it is killed when the parent exits. */
+  job?: boolean;
+  /** If true, the process is created with no console window. */
+  createNoWindow?: boolean;
+  /** Application User Model ID for launching via shell activation. */
+  aumid?: string;
 };
 
 export type MatchMode = "substring" | "exact" | "regex";
@@ -210,6 +216,14 @@ export type NativeBindings = {
   selectionItemAddToSelection: (elementHandle: string) => void;
   selectionItemRemoveFromSelection: (elementHandle: string) => void;
   selectionItemIsSelected: (elementHandle: string) => boolean;
+
+  // ---- P6: Legacy App Toolkit ----
+  getWindowInfo: (windowHandle: string) => WindowInfo;
+  sendWmCommand: (windowHandle: string, controlId: number, commandId: number) => void;
+  sendWmSetText: (controlHandle: string, text: string) => void;
+  sendWmNotify: (windowHandle: string, controlId: number, notificationCode: number) => void;
+  detectDialogType: (windowHandle: string) => string;
+  launchByAumid: (aumid: string) => Promise<number>;
 };
 
 export type ProcessEntry = {
@@ -222,6 +236,20 @@ export type DialogInfo = {
   title: string;
   class_name: string;
   visible: boolean;
+  dialog_type: "standard" | "directui" | "uwp";
+};
+
+export type WindowInfo = {
+  class_name: string;
+  text: string;
+  style: number;
+  ex_style: number;
+  pid: number;
+  thread_id: number;
+  is_unicode: boolean;
+  parent_hwnd: string;
+  owner_hwnd: string;
+  dpi: number;
 };
 
 export type ImageMatch = {

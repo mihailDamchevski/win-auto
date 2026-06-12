@@ -75,4 +75,34 @@ E2E tests run in a separate job that downloads the native build artifact.
 win-auto init <project-name>
 win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]
 win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]
+
+## Anchored Summary (last updated: 2026-06-12)
+
+### Completed
+
+- **P6 (Legacy App Toolkit)**: All 5 sub-items implemented and verified.
+  - P6.1 — DirectUIHWND/CoreWindow detection in `dialogs.rs::detectDialogType`; `Dialog.type` property (`"standard"|"directui"|"uwp"`)
+  - P6.2 — `Window.getLegacyInfo()` via `get_window_info` native fn (className, text, style, pid, threadId, dpi, etc.)
+  - P6.3 — `sendWmCommand`/`sendWmSetText`/`sendWmNotify` native fns in `legacy_messages.rs`
+  - P6.4 — `LaunchOptions` expanded with `job`, `create_no_window`, `aumid` fields in Rust struct + TS types
+  - P6.5 — AUMID launch via `IApplicationActivationManager::ActivateApplication` in `process_control.rs::launchAppByAumid`
+
+### Test Status
+
+- 95 unit tests + 1 e2e test (`native-ping`) pass
+- Pre-existing: `loadNative.ts` has 4 `import.meta` typecheck errors (CJS limitation); 3 lint errors (`@ts-ignore`, `require()`)
+- Native `.node` binary builds successfully with `npm run build:native` (8 warnings, 0 errors)
+
+### Relevant Files
+
+- `native/win-auto-native/src/discovery.rs` — `get_window_info`
+- `native/win-auto-native/src/legacy_messages.rs` — WM_* message injection
+- `native/win-auto-native/src/dialogs.rs` — `detectDialogType`, dialog_type field
+- `native/win-auto-native/src/process_control.rs` — `launchAppByAumid`, expanded `LaunchOptions`
+- `packages/core/src/api/window.ts` — `getLegacyInfo()`, `sendWmCommand()`, `sendWmSetText()`, `sendWmNotify()`
+- `packages/core/src/api/dialog.ts` — `type: DialogType`
+- `packages/core/src/api/types.ts` — `WindowInfo`, expanded `DialogInfo`, expanded `LaunchOptions`, expanded `NativeBindings`
+- `packages/core/src/api/backend.ts` — P6 methods on `Backend` interface
+- `packages/core/src/api/native-backend.ts` — P6 implementations delegating to native
+- `packages/core/src/mock/mockBackend.ts` — P6 mock stubs
 ```

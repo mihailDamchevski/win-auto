@@ -2,15 +2,14 @@ import {
   afterEach,
   beforeEach,
   onTestFailed,
-  describe as vitestDescribe,
   expect as vitestExpect,
 } from "vitest";
 import { closeTrackedApps, captureScreenshotsFromTrackedApps } from "./context";
-import { it } from "./vitest";
+import { describe, it } from "./vitest";
 import { loadWinAutoConfig } from "../api/config";
 
 type GlobalTesting = typeof globalThis & {
-  describe: typeof vitestDescribe;
+  describe: typeof describe;
   it: typeof it;
   expect: typeof vitestExpect;
 };
@@ -48,6 +47,6 @@ afterEach(async () => {
 
 const globals = globalThis as GlobalTesting;
 
-globals.describe = vitestDescribe;
+globals.describe = describe;
 globals.it = it;
 globals.expect = vitestExpect;

@@ -4,15 +4,19 @@ import type { DialogControl, DialogInfo, ElementSelector } from "./types";
 import { Element } from "./element";
 import { TimeoutError, AutomationError } from "./errors";
 
+export type DialogType = "standard" | "directui" | "uwp";
+
 export class Dialog {
   public readonly handle: string;
   public readonly title: string;
+  public readonly type: DialogType;
   private readonly backend: Backend;
   private readonly events: AutomationEvents;
 
   constructor(info: DialogInfo, backend: Backend, events: AutomationEvents) {
     this.handle = info.handle;
     this.title = info.title;
+    this.type = info.dialog_type ?? "standard";
     this.backend = backend;
     this.events = events;
   }

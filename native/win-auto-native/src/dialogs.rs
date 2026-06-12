@@ -19,6 +19,28 @@ pub struct DialogInfo {
   pub title: String,
   pub class_name: String,
   pub visible: bool,
+  /// "standard" for #32770, "directui" for DirectUIHWND, "uwp" for Windows.UI.Core.CoreWindow
+  pub dialog_type: String,
+}
+
+/// Detect whether a window is a DirectUIHWND or UWP CoreWindow.
+fn get_dialog_type(hwnd: HWND) -> String {
+  let class_name = get_class_name(hwnd);
+  if class_name == "#32770" {
+    "standard".to_string()
+  } else if class_name == "DirectUIHWND" {
+    "directui".to_string()
+  } else if class_name.contains("Windows.UI.Core.CoreWindow") {
+    "uwp".to_string()
+  } else {
+    "standard".to_string()
+  }
+}
+
+#[napi(js_name = "detectDialogType")]
+pub fn detect_dialog_type(window_handle: String) -> Result<String> {
+  let hwnd = parse_hwnd(&window_handle)?;
+  Ok(get_dialog_type(hwnd))
 }
 
 #[napi(object)]
@@ -38,12 +60,14 @@ pub fn find_dialogs(process_id: u32) -> Result<Vec<DialogInfo>> {
   let windows = collect_windows_for_pid(process_id);
   let mut dialogs = Vec::new();
   for hwnd in windows {
-    if is_dialog_window(hwnd) {
+    let class_name = get_class_name(hwnd);
+    if class_name == "#32770" || class_name == "DirectUIHWND" || class_name.contains("Windows.UI.Core") {
       dialogs.push(DialogInfo {
         handle: hwnd_to_string(hwnd),
         title: get_window_title(hwnd),
-        class_name: DIALOG_CLASS.to_string(),
+        class_name: class_name.clone(),
         visible: is_visible(hwnd),
+        dialog_type: get_dialog_type(hwnd),
       });
     }
   }

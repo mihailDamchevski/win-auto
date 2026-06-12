@@ -10,6 +10,7 @@ import type {
   InputMode,
   LocatorFilter,
   WindowBounds,
+  WindowInfo,
 } from "./types";
 import { Element } from "./element";
 import { Locator } from "./locator";
@@ -326,5 +327,27 @@ export class Window {
       "waitForClosed",
       timeoutMs,
     );
+  }
+
+  // ---- P6: Legacy App Toolkit ----
+
+  /** Get detailed Win32 legacy info about this window handle. */
+  public getLegacyInfo(): WindowInfo {
+    return this.backend.getWindowInfo(this.handle);
+  }
+
+  /** Send a WM_COMMAND message to a legacy control. */
+  public sendWmCommand(controlId: number, commandId: number): void {
+    this.backend.sendWmCommand(this.handle, controlId, commandId);
+  }
+
+  /** Send WM_SETTEXT to a legacy control. */
+  public sendWmSetText(controlHandle: string, text: string): void {
+    this.backend.sendWmSetText(controlHandle, text);
+  }
+
+  /** Send a WM_NOTIFY message to a legacy control. */
+  public sendWmNotify(controlId: number, notificationCode: number): void {
+    this.backend.sendWmNotify(this.handle, controlId, notificationCode);
   }
 }
