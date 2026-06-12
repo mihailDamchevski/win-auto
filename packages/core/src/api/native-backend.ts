@@ -479,6 +479,10 @@ export class NativeBackend implements Backend {
     return this.call(() => this.native.rangeValueSetValue(elementHandle, value));
   }
 
+  invokePattern(elementHandle: string): void {
+    this.callSync(() => this.native.invokePattern(elementHandle));
+  }
+
   windowPatternSetVisualState(elementHandle: string, state: number): void {
     return this.callSync(() => this.native.windowPatternSetVisualState(elementHandle, state));
   }

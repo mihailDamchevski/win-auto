@@ -105,6 +105,7 @@ export declare function sendWmCommand(windowHandle: string, controlId: number, c
 export declare function sendWmSetText(controlHandle: string, text: string): void
 /** Send a WM_NOTIFY message to a window (for legacy control notifications). */
 export declare function sendWmNotify(windowHandle: string, controlId: number, notificationCode: number): void
+export declare function invokePattern(elementHandle: string): void
 export const enum InputMode {
   /** Use UIA patterns only – fail if pattern is unavailable. */
   Pattern = 0,

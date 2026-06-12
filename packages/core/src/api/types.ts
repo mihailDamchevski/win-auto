@@ -198,6 +198,7 @@ export type NativeBindings = {
   ) => Promise<void>;
   buildElementPath?: (elementHandle: string) => ElementPathStep[];
   resolveElementPath?: (windowHandle: string, path: ElementPathStep[]) => Promise<string | null>;
+  invokePattern: (elementHandle: string) => void;
   expandCollapseExpand: (elementHandle: string) => void;
   expandCollapseCollapse: (elementHandle: string) => void;
   scrollPatternScroll: (elementHandle: string, horizontalAmount: number, verticalAmount: number) => void;

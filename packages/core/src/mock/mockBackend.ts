@@ -1171,6 +1171,10 @@ export class MockBackend implements Backend {
 
   // ── UIA Patterns (mock) ───────────────────────────────────────────────
 
+  invokePattern(_elementHandle: string): void {
+    // no-op in mock
+  }
+
   expandCollapseExpand(_elementHandle: string): void {
     // no-op in mock
   }

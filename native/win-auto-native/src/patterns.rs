@@ -13,6 +13,27 @@ use windows::Win32::UI::Accessibility::*;
 use crate::error::AutomationError;
 use crate::utils::{hwnd_to_string, parse_hwnd, ComScope};
 
+// ── InvokePattern ─────────────────────────────────────────────────────────
+
+#[napi]
+pub fn invoke_pattern(element_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  unsafe {
+    let _com = ComScope::init();
+    let element = get_uia_element(hwnd)?;
+    let pattern = element
+      .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+      .map_err(|_| Error::from(AutomationError::PatternNotSupported {
+        handle: element_handle,
+        pattern: "InvokePattern",
+      }))?;
+    pattern.Invoke().map_err(|e| Error::from(AutomationError::Generic {
+      message: format!("InvokePattern.Invoke failed: {e}"),
+    }))?;
+  }
+  Ok(())
+}
+
 // ── Input mode ───────────────────────────────────────────────────────────
 
 #[napi]

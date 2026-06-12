@@ -139,6 +139,8 @@ export interface Backend {
   selectionItemRemoveFromSelection(elementHandle: string): void;
   selectionItemIsSelected(elementHandle: string): boolean;
 
+  invokePattern(elementHandle: string): void;
+
   // ---- P6: Legacy App Toolkit ----
   getWindowInfo(windowHandle: string): WindowInfo;
   sendWmCommand(windowHandle: string, controlId: number, commandId: number): void;

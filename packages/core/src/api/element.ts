@@ -559,6 +559,11 @@ export class Element {
     return resolvePattern(name, this.backend, this.handle);
   }
 
+  /** Invoke the element using UIA InvokePattern (programmatic click). */
+  public invoke(): void {
+    this.backend.invokePattern(this.handle);
+  }
+
   /** Expand if the element supports ExpandCollapsePattern. */
   public expand(): void {
     this.backend.expandCollapseExpand(this.handle);

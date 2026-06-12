@@ -37,6 +37,10 @@ export interface TablePattern {
   getColumnHeaders(): string[];
 }
 
+export interface InvokePattern {
+  invoke(): void;
+}
+
 export interface SelectionItemPattern {
   select(): void;
   addToSelection(): void;
@@ -52,7 +56,8 @@ export type PatternName =
   | "Selection"
   | "Grid"
   | "Table"
-  | "SelectionItem";
+  | "SelectionItem"
+  | "Invoke";
 
 export type PatternMap = {
   ExpandCollapse: ExpandCollapsePattern;
@@ -63,6 +68,7 @@ export type PatternMap = {
   Grid: GridPattern;
   Table: TablePattern;
   SelectionItem: SelectionItemPattern;
+  Invoke: InvokePattern;
 };
 
 // ─── Resolver ─────────────────────────────────────────────────────────
@@ -115,6 +121,10 @@ export function resolvePattern<T extends PatternName>(
         addToSelection: () => backend.selectionItemAddToSelection(el),
         removeFromSelection: () => backend.selectionItemRemoveFromSelection(el),
         isSelected: () => backend.selectionItemIsSelected(el),
+      } as PatternMap[T];
+    case "Invoke":
+      return {
+        invoke: () => backend.invokePattern(el),
       } as PatternMap[T];
   }
 }
