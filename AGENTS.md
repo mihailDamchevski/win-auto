@@ -78,14 +78,25 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 
 ## Anchored Summary (last updated: 2026-06-12)
 
-### Completed
+### Completed (all sub-items)
 
-- **P6 (Legacy App Toolkit)**: All 5 sub-items implemented and verified.
-  - P6.1 — DirectUIHWND/CoreWindow detection in `dialogs.rs::detectDialogType`; `Dialog.type` property (`"standard"|"directui"|"uwp"`)
-  - P6.2 — `Window.getLegacyInfo()` via `get_window_info` native fn (className, text, style, pid, threadId, dpi, etc.)
-  - P6.3 — `sendWmCommand`/`sendWmSetText`/`sendWmNotify` native fns in `legacy_messages.rs`
-  - P6.4 — `LaunchOptions` expanded with `job`, `create_no_window`, `aumid` fields in Rust struct + TS types
-  - P6.5 — AUMID launch via `IApplicationActivationManager::ActivateApplication` in `process_control.rs::launchAppByAumid`
+| Phase | Description | Evidence |
+|---|---|---|
+| **P4 (Dual Input)** | enigo hardware (`input-hardware` feature), InputMode dispatching (Pattern/Hardware/Auto) in Rust napi fns, `element.invoke()` via InvokePattern | `interaction.rs`, `hardware_input.rs`, `patterns.rs` |
+| **P5 (Image Recognition)** | FFT cross-correlation (`image-fft`), multi-scale pyramid, ROI, OCR via `Windows.Media.Ocr` (`image-ocr`), debug overlay PNGs | `template_match.rs`, `ocr.rs`, `screenshot.rs` |
+| **P6 (Legacy App Toolkit)** | DirectUIHWND/CoreWindow detection, `getLegacyInfo()`, WM_COMMAND/WM_SETTEXT/WM_NOTIFY, expanded LaunchOptions, AUMID launch | `dialogs.rs`, `discovery.rs`, `legacy_messages.rs`, `process_control.rs` |
+| **P7 (Mock Backend)** | Tree-aware lookup, dynamic state simulation (`scheduleEvent`), event emission, `classNames` filtering, `waitForUiChange` | `mockBackend.ts` |
+| **P8 (Testing Infra)** | Negative/polling/state/compound matchers, window/dialog assertions, suite-level retry, tree snapshots, fixture helpers | `testing/matchers.ts`, `vitest.ts`, `treeSnapshot.ts`, `fixture.ts` |
+| **P10.3–P10.5** | Diagnostics class, config expansion (`win-auto.config.ts` schema), `win-auto diagnose` CLI command | `diagnostics.ts`, `config.ts`, `cli/diagnose.ts` |
+| **P10.1 (partial)** | DPI helpers in Rust (`get_dpi_for_window`, scale fns), `dpi` in `WindowInfo`, config fields `dpiScale`/`dpiMode` | `utils.rs`, `config.ts` — but NOT wired into mouseMove/clickAt/screenshot bounds |
+
+### Partially Complete
+
+| Item | Status | Missing |
+|---|---|---|
+| **P4.2 remaining UIA patterns** | ⏳ | `ExpandCollapsePattern`, `ScrollPattern`, `RangeValuePattern`, `SelectionPattern`, `GridPattern`/`TablePattern`, full `WindowPattern` |
+| **P10.1 DPI coordinate wiring** | ⏳ | DPI scale helpers exist but unused — mouseMove/clickAt/screenshot don't call `logical_to_physical` |
+| **P10.2 UIPI elevation** | ⏳ | Elevation detection (`is_process_elevated_rust`), `run_elevated_rust` with `runas`, CLI `elevate` command, `UIPI_HELP_MESSAGE` all done. Missing: UIPI barrier bypass for input synthesis, auto-retry with pattern mode on UIPI failure |
 
 ### Test Status
 
@@ -95,14 +106,28 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 
 ### Relevant Files
 
+- `native/win-auto-native/src/template_match.rs` — P5.1 FFT cross-correlation (`image-fft`)
+- `native/win-auto-native/src/ocr.rs` — P5.4 OCR (`findText`) behind `image-ocr`
+- `native/win-auto-native/src/screenshot.rs` — ROI, multi-scale, debug overlays
+- `native/win-auto-native/src/interaction.rs` — P4.1 InputMode dispatching, mouse/click/hover
+- `native/win-auto-native/src/hardware_input.rs` — enigo-based click/type/pressKey
+- `native/win-auto-native/src/patterns.rs` — InputMode enum, `invoke_pattern`
 - `native/win-auto-native/src/discovery.rs` — `get_window_info`
 - `native/win-auto-native/src/legacy_messages.rs` — WM_* message injection
-- `native/win-auto-native/src/dialogs.rs` — `detectDialogType`, dialog_type field
-- `native/win-auto-native/src/process_control.rs` — `launchAppByAumid`, expanded `LaunchOptions`
-- `packages/core/src/api/window.ts` — `getLegacyInfo()`, `sendWmCommand()`, `sendWmSetText()`, `sendWmNotify()`
-- `packages/core/src/api/dialog.ts` — `type: DialogType`
-- `packages/core/src/api/types.ts` — `WindowInfo`, expanded `DialogInfo`, expanded `LaunchOptions`, expanded `NativeBindings`
-- `packages/core/src/api/backend.ts` — P6 methods on `Backend` interface
-- `packages/core/src/api/native-backend.ts` — P6 implementations delegating to native
-- `packages/core/src/mock/mockBackend.ts` — P6 mock stubs
+- `native/win-auto-native/src/dialogs.rs` — `detectDialogType`
+- `native/win-auto-native/src/process_control.rs` — AUMID launch, elevation, expanded LaunchOptions
+- `native/win-auto-native/src/utils.rs` — DPI helper fns
+- `packages/core/src/api/types.ts` — InputMode, OcrResult, ImageMatch, FindTextOptions, WindowInfo, DialogInfo, launch options, NativeBindings
+- `packages/core/src/api/backend.ts` — Backend interface
+- `packages/core/src/api/native-backend.ts` — Native delegates
+- `packages/core/src/api/element.ts` — `invoke()`, `click()`/`typeText()` forward inputMode
+- `packages/core/src/api/window.ts` — `getLegacyInfo()`, `sendWmCommand()`, `findImage()`
+- `packages/core/src/mock/mockBackend.ts` — P4–P8 mock stubs
+- `packages/core/src/testing/matchers.ts` — P8 assertion helpers
+- `packages/core/src/testing/vitest.ts` — custom `it`/`describe` runners
+- `packages/core/src/testing/treeSnapshot.ts` — element tree snapshots
+- `packages/core/src/testing/fixture.ts` — `createMockFixture`
+- `packages/core/src/diagnostics.ts` — P10.3 diagnostics class
+- `packages/core/src/config.ts` — P10.4 config schema
+- `packages/cli/src/commands/diagnose.ts` — P10.5 CLI command
 ```

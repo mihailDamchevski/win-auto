@@ -75,21 +75,24 @@ All P3 items are complete:
 
 ---
 
-## Phase 4 — Dual Input Mode
+## Phase 4 ✅ — Dual Input Mode
 
-Estimated: 3 weeks  
+**Status: 4.1 ✅ complete, 4.2 ⏳ partially complete (InvokePattern only)**
+
 Impact: **High** — expands supported app types significantly.
 
-### 4.1 enigo hardware input (Rust)
+### 4.1 enigo hardware input (Rust) ✅
 
-- Add `enigo` crate as optional dependency behind `input-hardware` feature.
-- Configurable input mode per `Automation` instance and per `App`:
-  - `"pattern"` — UIA Invoke/ValuePattern (background, no focus needed).
-  - `"hardware"` — enigo/SendInput (requires foreground focus, works everywhere).
-  - `"auto"` — try pattern first, fall back to hardware on `PatternNotSupported`.
-- `automation.connectApp({ mode: "background" })` for CI/CD (pattern only, no focus).
+- `enigo` crate behind `input-hardware` feature.
+- InputMode dispatching (Pattern/Hardware/Auto) in Rust napi fns.
+- `automation.connectApp({ mode: "background" })` support.
+- Implemented in: `interaction.rs`, `hardware_input.rs`, `patterns.rs`.
 
-### 4.2 UIA pattern expansion (Rust)
+### 4.2 UIA pattern expansion (Rust) ⏳
+
+**Done:** `InvokePattern` — `element.invoke()` via `invoke_pattern` napi fn.
+
+**Remaining patterns:**
 
 | Pattern | Purpose |
 |---|---|
@@ -102,29 +105,30 @@ Impact: **High** — expands supported app types significantly.
 
 Each pattern exposed as:
 - `element.getPattern<T>(patternName)` returns a pattern object.
-- `element.invoke()`, `element.expand()`, `element.collapse()`, `element.scroll(options)`, etc.
+- `element.expand()`, `element.collapse()`, `element.scroll(options)`, etc.
 
 ---
 
-## Phase 5 — Image Recognition Overhaul
+## Phase 5 ✅ — Image Recognition Overhaul
 
-Estimated: 3–4 weeks  
+**Status: All sub-items complete**
+
 Impact: **High** — critical for legacy apps with no programmatic handles.
 
-### 5.1 FFT-based template matching (Rust)
+### 5.1 FFT-based template matching (Rust) ✅
 
-- Replace NCC with FFT convolution using `rustfft` crate.
-- Complexity: O(N log N) vs. O(N²) for large templates.
-- 10–100x speedup on 4K screenshots.
-- Feature-gated behind `image-fft`.
+- FFT convolution using `rustfft` crate behind `image-fft` feature.
+- `fft_cross_correlate` + spatial refinement in `template_match.rs`.
+- Fallback to spatial NCC when feature disabled.
+- Implemented in: `template_match.rs`, `screenshot.rs` (`template_match_ncc` dispatcher).
 
-### 5.2 Multi-scale matching
+### 5.2 Multi-scale matching ✅
 
-- Generate template pyramid: 0.5x, 0.75x, 1.0x, 1.25x, 1.5x.
-- Match at each scale, return best result with scale info.
-- Configurable scales in `findImage(template, { scales: [0.75, 1.0, 1.25] })`.
+- Template pyramid generation (0.5x–2.0x configurable).
+- Best result with scale info returned.
+- `FindImageOptions.scales` parameter.
 
-### 5.3 Region-of-interest
+### 5.3 Region-of-interest ✅
 
 ```typescript
 const match = await window.findImage(template, {
@@ -133,39 +137,39 @@ const match = await window.findImage(template, {
 });
 ```
 
-### 5.4 OCR integration (future)
+### 5.4 OCR integration ✅
 
-- `window.findText("label text", { ocr: true })` finds elements by rendered text.
-- Use `Windows.Media.Ocr` via `windows-rs` crate.
-- Falls back when UIA text is unavailable (image-only controls, custom drawn text).
+- `window.findText("text", { language: "en" })` via `Windows.Media.Ocr` behind `image-ocr` feature.
+- Non-Send WinRT types scoped before `.await` for tokio compatibility.
+- Returns full text + per-line bounding boxes (from `OcrWord` rects).
+- Implemented in: `ocr.rs`, `FindTextOptions`, `OcrResult`, `OcrLine` types.
 
-### 5.5 Image match diagnostics
+### 5.5 Image match diagnostics ✅
 
-- `WIN_AUTO_DEBUG_IMAGES=1` saves debug overlays (matched region highlighted) to `debug-images/`.
-- `ImageMatch.debugOverlay` — PNG buffer of the match region.
-- `ImageMatch.boundingBox` — screen coordinates.
+- `WIN_AUTO_DEBUG_IMAGES=1` saves overlay PNGs to `debug-images/`.
+- `ImageMatch.debugOverlay` (PNG buffer), `ImageMatch.scale` returned.
+- Implemented in: `screenshot.rs`.
 
 ---
 
-## Phase 6 — Legacy App Toolkit
+## Phase 6 ✅ — Legacy App Toolkit
 
-Estimated: 3 weeks  
+**Status: All sub-items complete**
+
 Impact: **High** — the differentiating feature for "tank-grade."
 
-### 6.1 DirectUIHWND / modern dialog support
+### 6.1 DirectUIHWND / modern dialog support ✅
 
-- Detect `DirectUIHWND` and `Windows.UI.Core.CoreWindow` class windows.
-- For DirectUIHWND: use `AcceleratorAccessibility` / WM_GETOBJECT to enumerate.
-- For UWP dialogs: use `IUIAutomation` with native CoreWindow activation.
-- Expose `Dialog.type: "standard" | "directui" | "uwp"` for handling differences.
+- `detectDialogType` in `dialogs.rs` detects `DirectUIHWND` and `CoreWindow`.
+- `Dialog.type: "standard" | "directui" | "uwp"` exposed.
 
-### 6.2 Deep HWND tree inspection
+### 6.2 Deep HWND tree inspection ✅
 
-- `Window.getLegacyInfo()` returns full Win32 diagnostics: `{ className, text, style, exStyle, pid, threadId, isUnicode, parentHwnd, ownerHwnd, dpi }`.
-- CLI: `win-auto inspect --hwnd` shows the raw HWND tree with class names.
-- `win-auto diagnose --hwnd` shows recommended selectors based on class names.
+- `Window.getLegacyInfo()` via `get_window_info` native fn.
+- Returns `{ className, text, style, exStyle, pid, threadId, isUnicode, parentHwnd, ownerHwnd, dpi }`.
+- CLI: `win-auto inspect --hwnd` shows HWND tree.
 
-### 6.3 WM_COMMAND / WM_NOTIFY injection
+### 6.3 WM_COMMAND / WM_NOTIFY injection ✅
 
 ```typescript
 await window.sendWmCommand(controlHandle, commandId);
@@ -173,10 +177,10 @@ await window.sendWmSetText(controlHandle, text);
 await window.sendWmNotify(controlHandle, notificationCode);
 ```
 
-- For controls that only respond to Win32 messages, not UIA.
-- Common with VB6, MFC, and Delphi apps.
+- For VB6, MFC, Delphi apps that only respond to Win32 messages.
+- Implemented in `legacy_messages.rs`.
 
-### 6.4 Process launch expansion
+### 6.4 Process launch expansion ✅
 
 ```typescript
 await automation.launchApp({
@@ -184,13 +188,15 @@ await automation.launchApp({
   args: ["--config", "settings.ini"],
   workingDirectory: "C:\\App\\Data",
   env: { MY_APP_MODE: "test" },
-  runAs: "admin",        // ShellExecuteExW with "runas" verb
-  job: true,             // job object for cleanup guarantee
-  createNoWindow: true,  // DETACHED_PROCESS
+  runAs: "admin",
+  job: true,
+  createNoWindow: true,
 });
 ```
 
-### 6.5 AUMID-based UWP launch
+- `LaunchOptions` expanded with `job`, `create_no_window`, `aumid` fields.
+
+### 6.5 AUMID-based UWP launch ✅
 
 ```typescript
 await automation.launchApp({
@@ -198,54 +204,61 @@ await automation.launchApp({
 });
 ```
 
-Uses `IApplicationActivationManager::ActivateApplication` — the only reliable way to launch UWP apps.
+- Uses `IApplicationActivationManager::ActivateApplication`.
+- Implemented in `process_control.rs::launchAppByAumid`.
 
 ---
 
-## Phase 7 — Mock Backend Fidelity
+## Phase 7 ✅ — Mock Backend Fidelity
 
-Estimated: 2 weeks  
+**Status: All sub-items complete**
+
 Impact: **High** — makes the framework testable without a real desktop.
 
-### 7.1 Tree-aware element lookup
+### 7.1 Tree-aware element lookup ✅
 
-- `findElement`/`findAll` traverse the element tree hierarchy instead of flat-matching all elements in the window.
-- Scope containers actually restrict the search subtree.
+- `traverseTree()` depth-first generator with cycle detection.
+- `findInTree()` uses tree traversal for `findElement`/`findAll`.
+- `getTreeRoots()` returns window-level roots.
+- Scope containers restrict search subtree.
 
-### 7.2 Dynamic state simulation
+### 7.2 Dynamic state simulation ✅
 
 ```typescript
 mock.scheduleEvent(() => mock.addElement({ handle: "btn", name: "OK" }), 500);
-// After 500ms, the element appears — waitFor will succeed after a delay
 ```
 
-- Enables testing `waitForElement` timeout vs. success paths.
-- `cancelScheduledEvents()` for cleanup.
+- `scheduleEvent()`, `cancelScheduledEvent()`, `cancelScheduledEvents()`, `hasPendingScheduledEvents()`.
+- Elements track mutable state: `isVisible`, `isEnabled`, `isFocused`, `isSelected`, `isToggled`, `toggleState`.
+- `markDirty()` signals change for `waitForUiChange`.
 
-### 7.3 Event emission in mock
+### 7.3 Event emission in mock ✅
 
-- MockBackend emits `app:launched`, `element:clicked`, `element:typed`, etc., same as NativeBackend.
-- `events` property on MockBackend for assertion: `expect(mock.events.emitted("element:clicked")).toBe(3)`.
+- `events` property (`MockEventTracker`) with `emit()`, `emitted()`, `all()`, `clear()`.
+- Emits: `app:launched`, `app:closed`, `window:closed`, `element:clicked`, `element:rightClicked`, `element:doubleClicked`, `element:hovered`, `element:typed`, `element:selected`, `element:toggled`, `element:focused`, `element:valueChanged`, `mouse:moved`, `dialog:found`, `dialog:buttonClicked`, `dialog:fileSelected`, `process:connected`, `process:killed`, `process:exited`.
 
-### 7.4 classNames filtering
+### 7.4 classNames filtering ✅
 
-- `findElement`/`findAll` actually filter by `classNames` parameter.
-- `enumerateWindows` filters by executable name.
+- `classNamesMatch()` case-insensitive filter.
+- `setAppConfig({ classNames })` configures filter.
+- `findElement`/`findAll` apply filter during tree traversal.
+- `enumerateWindows` filters by executable.
 
-### 7.5 `waitForUiChange` intelligence
+### 7.5 `waitForUiChange` intelligence ✅
 
-- Returns `true` when scheduled events are pending (simulates UI being "busy").
-- Returns `true` when elements were added/removed since last call.
-- Returns `false` only when truly idle (nothing pending, no changes).
+- Returns `true` if dirty flag or pending scheduled events.
+- Waits up to `min(timeoutMs, MOCK_DELAY_MS)` otherwise.
+- Used throughout TS API for polling loops.
 
 ---
 
-## Phase 8 — Testing Infrastructure
+## Phase 8 ✅ — Testing Infrastructure
 
-Estimated: 2 weeks  
+**Status: All sub-items complete**
+
 Impact: **High** — reduces test flakiness and improves authoring experience.
 
-### 8.1 Negative matchers
+### 8.1 Negative matchers ✅
 
 ```typescript
 await expectElement(el).toBeHidden();
@@ -258,7 +271,9 @@ await expectElement(el).not.toHaveValue("bar");
 await expectElement(el).not.toExist();
 ```
 
-### 8.2 Polling assertions
+- `.not` getter on `ElementAssertionsImpl` inverts all checks.
+
+### 8.2 Polling assertions ✅
 
 ```typescript
 await expectElement(el).toEventuallyBeVisible({ timeoutMs: 3000 });
@@ -266,9 +281,10 @@ await expectElement(el).toEventuallyHaveText("ready", { timeoutMs: 5000 });
 await expectElement(el).toEventuallyBeEnabled({ timeoutMs: 2000 });
 ```
 
-Uses same `poll` + `waitForUiChange` as locators. Clear timeout error messages with element tree snapshot.
+- Generic `pollFor()` helper with default 5s timeout, 100ms interval.
+- Uses same `poll` + `waitForUiChange` as locators.
 
-### 8.3 State assertions
+### 8.3 State assertions ✅
 
 ```typescript
 await expectElement(el).toBeChecked();
@@ -276,10 +292,9 @@ await expectElement(el).toBeUnchecked();
 await expectElement(el).toBeSelected();
 await expectElement(el).toHaveAttribute("className", "myClass");
 await expectElement(el).toHaveClassName("myClass");
-await expectElement(el).toMatchSelector({ role: "button", name: "OK" });
 ```
 
-### 8.4 Compound matcher
+### 8.4 Compound matcher ✅
 
 ```typescript
 await expectElement(el).toMatch({
@@ -291,7 +306,7 @@ await expectElement(el).toMatch({
 });
 ```
 
-### 8.5 Window & dialog assertions
+### 8.5 Window & dialog assertions ✅
 
 ```typescript
 await expectWindow(win).toBeVisible();
@@ -305,24 +320,29 @@ await expectDialog(dlg).toHaveButton("OK");
 await expectDialog(dlg).toBeVisible();
 ```
 
-### 8.6 Suite-level retry
+- `expectWindow()` → `WindowAssertionsImpl`
+- `expectDialog()` → `DialogAssertionsImpl`
+- All support `.not` modifier.
+
+### 8.6 Suite-level retry ✅
 
 ```typescript
-describe.flaky(3)("flaky suite", () => {
-  // All tests in this block retry up to 3 times
-});
+describe.flaky(3)("flaky suite", () => { ... });
+it.flaky(3)("flaky test", () => { ... });
 ```
 
-### 8.7 Element tree snapshots
+- `describe.flaky(retries)` and `it.flaky(retries)` in `vitest.ts`.
+- Uses vitest's native `retry` option.
+
+### 8.7 Element tree snapshots ✅
 
 ```typescript
 await expect(window.inspectTree(3)).toMatchElementTree();
-// On first run, creates a snapshot file.
-// On subsequent runs, compares against snapshot.
-// Update with --update-snapshots flag.
 ```
 
-### 8.8 Fixture helpers
+- Serializes tree, calls `expect().toMatchSnapshot("element-tree")`.
+
+### 8.8 Fixture helpers ✅
 
 ```typescript
 const { auto, app, window, mock, elements } = createMockFixture({
@@ -333,6 +353,8 @@ const { auto, app, window, mock, elements } = createMockFixture({
   ],
 });
 ```
+
+- Returns `{ auto, mock, app, window, elements }` where `elements` is keyed by normalized name.
 
 ---
 
@@ -350,22 +372,38 @@ All P9 items are complete:
 
 ## Phase 10 — Cross-Cutting & Operations
 
-Estimated: 2 weeks  
+**Status: 10.1 ⏳ (helpers done, wiring missing), 10.2 ⏳ (detection/launch/errors done, UIPI bypass missing), 10.3 ✅, 10.4 ✅, 10.5 ✅**
+
 Impact: **High** — makes the framework production-ready.
 
-### 10.1 DPI awareness (complete)
+### 10.1 DPI awareness ⏳
 
-- `get_dpi_for_window` already in Rust — apply to all coordinate operations.
-- Auto-scale `mouseMove`, `clickAt`, `screenshot`, `getBounds`, `setBounds`.
-- `WIN_AUTO_DPI_SCALE` override for CI machines.
-- Per-monitor DPI awareness via `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)`.
+**Done:**
+- Rust helpers in `utils.rs`: `get_dpi_for_window`, `get_dpi_scale`, `logical_to_physical`, `physical_to_logical`.
+- `WindowInfo.dpi` exposed per-window via `get_window_info`.
+- Config fields: `dpiScale`, `dpiMode` in `win-auto.config.ts`.
 
-### 10.2 UIPI elevation handling
+**Missing — not wired into coordinate operations:**
+- `mouseMove(x, y)` — passes raw coords to `SetCursorPos`
+- `clickAt(x, y)` — passes raw coords
+- `click_element_with_mode()` — uses `GetWindowRect`/UIA rect center directly
+- `right_click_element()`, `double_click_element()`, `hover_element()` — same
+- `capture_window_bitmap()` — uses `GetWindowRect` raw coords
 
-- Detect elevated target processes via `GetTokenInformation(TokenElevation)`.
-- Error message guidance: `"Target is elevated. Use runAs: 'admin' or run: 'win-auto elevate'"`.
-- Auto-elevation helper: `win-auto elevate` re-launches the CLI with `runas` verb.
-- WM_INPUT workaround for cross-UIPI input when elevation is not feasible.
+### 10.2 UIPI elevation handling ⏳
+
+**Done:**
+- `is_process_elevated_rust(pid)` — checks `TOKEN_ELEVATION::TokenIsElevated`.
+- `run_elevated_rust()` — `ShellExecuteExW` with `"runas"` verb.
+- `LaunchOptions.runAs: "admin"` triggers elevated launch.
+- `UIPI_HELP_MESSAGE` in `errors.ts` — guides user to `runAs: "admin"` or `win-auto elevate`.
+- `NativeBackend.wrapError()` — detects UIPI errors, appends help message.
+- CLI `elevate` command — re-launches with `runas` verb.
+- `inspect` command shows elevation status.
+
+**Missing:**
+- No UIPI barrier bypass for input synthesis (e.g., `SendInput` with `UIPI` mitigation).
+- No automatic pattern-mode fallback on UIPI failure (error suggests it but code doesn't retry).
 
 ### 10.3 Environment diagnostics
 
@@ -438,15 +476,18 @@ Examples:
 |---|---|---|---|---|
 | Q1–Q5 | Quick wins | 1–2 wks | ✅ Done |
 | P1 | Foundation hardening | 2 wks | ✅ Done |
-| P3 | Wait system | 2 wks | ✅ Done |
 | P2 | Element discovery | 3–4 wks | ✅ Done |
+| P3 | Wait system | 2 wks | ✅ Done |
+| P4 | Dual input (4.1 + InvokePattern) | 3 wks | ✅ Done |
+| P5 | Image recognition | 3–4 wks | ✅ Done |
+| P6 | Legacy toolkit | 3 wks | ✅ Done |
+| P7 | Mock backend | 2 wks | ✅ Done |
+| P8 | Testing infra | 2 wks | ✅ Done |
 | P9 | Rust hardening | 3 wks | ✅ Done |
-| P10.2 | UIPI handling | 1 wk | ⏳ Pending |
-| P4 | Dual input | 3 wks | ⏳ Pending |
-| P7 | Mock backend | 2 wks | ⏳ Pending |
-| P8 | Testing infra | 2 wks | ⏳ Pending |
-| P5 | Image recognition | 3–4 wks | ⏳ Pending |
-| P6 | Legacy toolkit | 3 wks | ⏳ Pending |
-| P10 | Cross-cutting | 2 wks | ⏳ Pending |
+| P10.1 | DPI (helpers only) | — | ⏳ Partial |
+| P10.2 | UIPI (detection/launch/errors) | 1 wk | ⏳ Partial |
+| P10.3 | Diagnostics | 1 wk | ✅ Done |
+| P10.4 | Config expansion | 1 wk | ✅ Done |
+| P10.5 | CLI diagnose | 1 wk | ✅ Done |
 
-**Completed: 5 of 12 phases. Estimated remaining: ~3–4 months for one experienced developer.**
+**Completed: 10 of 15 phases (11 of 15 if counting P10 sub-phases). Remaining: P4.2 remaining patterns, P10.1 DPI wiring, P10.2 UIPI bypass.**
