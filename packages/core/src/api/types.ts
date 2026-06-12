@@ -155,7 +155,7 @@ export type NativeBindings = {
   dragDrop: (fromElementHandle: string, toElementHandle: string) => Promise<void>;
   captureScreenshot: (elementHandle: string) => Promise<number[]>;
   captureScreenshotToFile: (elementHandle: string, path: string) => Promise<void>;
-  findImage?: (elementHandle: string, template: number[]) => Promise<ImageMatch | null>;
+  findImage?: (elementHandle: string, template: number[], options?: Record<string, unknown>) => Promise<ImageMatch | null>;
   clickAt?: (x: number, y: number) => Promise<void>;
   findDialogs: (processId: number) => DialogInfo[];
   getDialogControls: (windowHandle: string) => DialogControl[];
@@ -259,6 +259,21 @@ export type ImageMatch = {
   width: number;
   height: number;
   confidence: number;
+  /** Scale factor at which the match was found (1.0 = original). */
+  scale: number;
+  /** Optional PNG debug overlay with bounding box drawn. */
+  debug_overlay?: number[];
+};
+
+export type FindImageOptions = {
+  /** Region of interest on the source image. */
+  roi?: { left: number; top: number; width: number; height: number };
+  /** Minimum confidence threshold (0.0–1.0). Default 0.3. */
+  minConfidence?: number;
+  /** Scales to search (multi-scale pyramid). Default [1.0]. */
+  scales?: number[];
+  /** If true, draw bounding box on the screenshot and return as debug_overlay. */
+  debug?: boolean;
 };
 
 export type LocatorFilter = {

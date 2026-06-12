@@ -271,5 +271,25 @@ export interface ImageMatch {
   width: number
   height: number
   confidence: number
+  /** Scale factor at which the match was found (1.0 = original). */
+  scale: number
+  /** Optional PNG debug overlay with bounding box drawn. */
+  debugOverlay?: Array<number>
 }
-export declare function findImage(elementHandle: string, template: Array<number>): Promise<ImageMatch | null>
+export interface FindImageOptions {
+  /** Region of interest on the source image: { left, top, width, height }. */
+  roi?: RoiRect
+  /** Minimum confidence threshold (0.0–1.0). Default 0.3. */
+  minConfidence?: number
+  /** Scales to search (multi-scale pyramid). Default [1.0]. */
+  scales?: Array<number>
+  /** If true, draw bounding box on the screenshot and return as debug_overlay. */
+  debug?: boolean
+}
+export interface RoiRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+export declare function findImage(elementHandle: string, template: Array<number>, options?: FindImageOptions | undefined | null): Promise<ImageMatch | null>

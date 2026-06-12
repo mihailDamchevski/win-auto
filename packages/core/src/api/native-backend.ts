@@ -4,6 +4,7 @@ import type {
   DialogInfo,
   ElementNode,
   ElementPathStep,
+  FindImageOptions,
   HwndNode,
   ImageMatch,
   NativeBindings,
@@ -289,11 +290,16 @@ export class NativeBackend implements Backend {
     return this.native.captureScreenshotToFile(elementHandle, path);
   }
 
-  async findImage(windowHandle: string, template: number[]): Promise<ImageMatch | null> {
+  async findImage(windowHandle: string, template: number[], options?: FindImageOptions): Promise<ImageMatch | null> {
     if (!this.native.findImage) {
       throw new BackendError("findImage is not available in the loaded native module.", "native");
     }
-    return this.native.findImage(windowHandle, template);
+    const nativeOpts: Record<string, unknown> = {};
+    if (options?.roi) nativeOpts.roi = options.roi;
+    if (options?.minConfidence !== undefined) nativeOpts.min_confidence = options.minConfidence;
+    if (options?.scales) nativeOpts.scales = options.scales;
+    if (options?.debug) nativeOpts.debug = true;
+    return this.native.findImage(windowHandle, template, nativeOpts);
   }
 
   async clickAt(x: number, y: number): Promise<void> {

@@ -163,6 +163,30 @@ pub struct ImageMatch {
   pub width: i32,
   pub height: i32,
   pub confidence: f64,
+  /// Scale factor at which the match was found (1.0 = original).
+  pub scale: f64,
+  /// Optional PNG debug overlay with bounding box drawn.
+  pub debug_overlay: Option<Vec<u8>>,
+}
+
+#[napi(object)]
+pub struct FindImageOptions {
+  /// Region of interest on the source image: { left, top, width, height }.
+  pub roi: Option<RoiRect>,
+  /// Minimum confidence threshold (0.0–1.0). Default 0.3.
+  pub min_confidence: Option<f64>,
+  /// Scales to search (multi-scale pyramid). Default [1.0].
+  pub scales: Option<Vec<f64>>,
+  /// If true, draw bounding box on the screenshot and return as debug_overlay.
+  pub debug: Option<bool>,
+}
+
+#[napi(object)]
+pub struct RoiRect {
+  pub left: i32,
+  pub top: i32,
+  pub width: i32,
+  pub height: i32,
 }
 
 fn bgra_to_grayscale(pixels: &[u8], width: usize, height: usize) -> Vec<f64> {
@@ -326,46 +350,168 @@ fn template_match_ncc(
 }
 
 #[napi(js_name = "findImage")]
-pub async fn find_image(element_handle: String, template: Vec<u8>) -> Result<Option<ImageMatch>> {
+pub async fn find_image(
+  element_handle: String,
+  template: Vec<u8>,
+  options: Option<FindImageOptions>,
+) -> Result<Option<ImageMatch>> {
   let hwnd = parse_hwnd(&element_handle)?;
   let bmp = capture_window_bitmap(hwnd)?;
+
+  let opts = options.unwrap_or(FindImageOptions {
+    roi: None,
+    min_confidence: None,
+    scales: None,
+    debug: None,
+  });
+
+  let min_conf = opts.min_confidence.unwrap_or(0.3);
+  let scales = opts.scales.unwrap_or(vec![1.0]);
+  let do_debug = opts.debug.unwrap_or(false);
 
   let sw = bmp.width as usize;
   let sh = bmp.height as usize;
 
+  // --- Apply ROI ---
+  let (roi_left, roi_top, roi_w, roi_h) = match opts.roi {
+    Some(r) => {
+      let left = r.left.max(0).min(sw as i32 - 1) as usize;
+      let top = r.top.max(0).min(sh as i32 - 1) as usize;
+      let w = (r.width as usize).min(sw - left);
+      let h = (r.height as usize).min(sh - top);
+      (left, top, w, h)
+    }
+    None => (0usize, 0usize, sw, sh),
+  };
+
+  if roi_w == 0 || roi_h == 0 {
+    return Ok(None);
+  }
+
+  // Extract ROI pixels
+  let roi_pixels: Vec<u8> = if roi_left == 0 && roi_top == 0 && roi_w == sw && roi_h == sh {
+    bmp.pixels.clone()
+  } else {
+    let mut sub = Vec::with_capacity(roi_w * roi_h * 4);
+    for y in roi_top..roi_top + roi_h {
+      let start = (y * sw + roi_left) * 4;
+      let end = start + roi_w * 4;
+      sub.extend_from_slice(&bmp.pixels[start..end]);
+    }
+    sub
+  };
+
   // Decode template PNG
   let template_img = image::load_from_memory(&template)
     .map_err(|e| Error::from(AutomationError::Generic { message: format!("Failed to decode template image: {e}") }))?;
-  let tw = template_img.width() as usize;
-  let th = template_img.height() as usize;
+  let tw_orig = template_img.width() as usize;
+  let th_orig = template_img.height() as usize;
 
-  if tw > sw || th > sh {
+  if tw_orig > roi_w || th_orig > roi_h {
     return Ok(None);
   }
 
   let template_rgba = template_img.to_rgba8();
-  let template_gray = bgra_to_grayscale(&template_rgba, tw, th);
 
-  // Convert screenshot BGRA to grayscale on a blocking thread
-  let screen_pixels = bmp.pixels.clone();
-  let screen_gray = tokio::task::spawn_blocking(move || {
-    bgra_to_grayscale(&screen_pixels, sw, sh)
-  }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
+  // --- Multi-scale matching ---
+  let mut best_match: Option<(usize, usize, f64, f64, Vec<u8>)> = None;
 
-  // Run template matching on blocking thread
-  let (best_x, best_y, best_ncc) = tokio::task::spawn_blocking(move || {
-    template_match_ncc(&screen_gray, sw, sh, &template_gray, tw, th)
-  }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
+  // Convert ROI to grayscale once
+  let roi_gray = bgra_to_grayscale(&roi_pixels, roi_w, roi_h);
 
-  if best_ncc < 0.3 {
-    return Ok(None);
+  for &scale in &scales {
+    if scale <= 0.0 { continue; }
+
+    let tw = (tw_orig as f64 * scale) as usize;
+    let th = (th_orig as f64 * scale) as usize;
+
+    if tw < 4 || th < 4 || tw > roi_w || th > roi_h { continue; }
+
+    // Resize template to this scale
+    let scaled_template = if (scale - 1.0).abs() < f64::EPSILON {
+      template_rgba.clone()
+    } else {
+      let resized = image::imageops::resize(
+        &template_rgba,
+        tw as u32, th as u32,
+        image::imageops::FilterType::Lanczos3,
+      );
+      resized
+    };
+    let template_gray = bgra_to_grayscale(&scaled_template, tw, th);
+
+    // Run template matching on blocking thread
+    let roi_clone = roi_gray.clone();
+    let (bx, by, bncc) = tokio::task::spawn_blocking(move || {
+      template_match_ncc(&roi_clone, roi_w, roi_h, &template_gray, tw, th)
+    }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
+
+    if bncc >= min_conf {
+      let is_better = match &best_match {
+        Some((_, _, best_ncc, _, _)) => bncc > *best_ncc,
+        None => true,
+      };
+      if is_better {
+        best_match = Some((bx, by, bncc, scale, scaled_template.into_raw()));
+      }
+    }
   }
 
+  let (best_x, best_y, best_ncc, best_scale, _best_template_raw) = match best_match {
+    Some(m) => m,
+    None => return Ok(None),
+  };
+
+  // Absolute coordinates: add ROI offset and scale back to original coords
+  let abs_x = (roi_left as f64 + best_x as f64 / best_scale) as i32;
+  let abs_y = (roi_top as f64 + best_y as f64 / best_scale) as i32;
+  let match_w = (tw_orig as f64 * best_scale) as i32;
+  let match_h = (th_orig as f64 * best_scale) as i32;
+
+  // --- Debug overlay ---
+  let debug_overlay: Option<Vec<u8>> = if do_debug {
+    let mut img = image::load_from_memory(&bgra_to_png(bmp))
+      .ok()
+      .map(|i| i.to_rgba8());
+    if let Some(ref mut draw_img) = img {
+      let rect_color = image::Rgba([255u8, 0u8, 0u8, 200u8]);
+      // Draw bounding box (simple: top/bottom/left/right lines)
+      let x1 = abs_x.max(0) as u32;
+      let y1 = abs_y.max(0) as u32;
+      let x2 = (abs_x + match_w).min(sw as i32 - 1).max(0) as u32;
+      let y2 = (abs_y + match_h).min(sh as i32 - 1).max(0) as u32;
+      for x in x1..=x2 {
+        if y1 < draw_img.height() { draw_img.put_pixel(x, y1, rect_color); }
+        if y2 < draw_img.height() { draw_img.put_pixel(x, y2, rect_color); }
+      }
+      for y in y1..=y2 {
+        if x1 < draw_img.width() { draw_img.put_pixel(x1, y, rect_color); }
+        if x2 < draw_img.width() { draw_img.put_pixel(x2, y, rect_color); }
+      }
+      // Encode as PNG
+      let mut png_bytes = Vec::new();
+      let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+      encoder.write_image(
+        draw_img.as_raw(),
+        draw_img.width(),
+        draw_img.height(),
+        image::ExtendedColorType::Rgba8,
+      ).ok();
+      Some(png_bytes)
+    } else {
+      None
+    }
+  } else {
+    None
+  };
+
   Ok(Some(ImageMatch {
-    x: best_x as i32,
-    y: best_y as i32,
-    width: tw as i32,
-    height: th as i32,
+    x: abs_x,
+    y: abs_y,
+    width: match_w,
+    height: match_h,
     confidence: best_ncc,
+    scale: best_scale,
+    debug_overlay,
   }))
 }

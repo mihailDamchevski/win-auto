@@ -5,6 +5,7 @@ import type {
   ElementPath,
   ElementSelector,
   FindFirstOptions,
+  FindImageOptions,
   HwndNode,
   ImageMatch,
   InputMode,
@@ -72,8 +73,8 @@ export class Window {
   }
 
   /** Find an element by image template matching. */
-  public async findImage(template: number[]): Promise<ImageMatch | null> {
-    return this.backend.findImage(this.handle, template);
+  public async findImage(template: number[], options?: FindImageOptions): Promise<ImageMatch | null> {
+    return this.backend.findImage(this.handle, template, options);
   }
 
   public async findElement(selector: ElementSelector): Promise<Element | null> {

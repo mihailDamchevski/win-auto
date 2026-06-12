@@ -3,6 +3,7 @@ import type {
   DialogInfo,
   ElementNode,
   ElementPathStep,
+  FindImageOptions,
   HwndNode,
   ImageMatch,
   InputMode,
@@ -85,7 +86,7 @@ export interface Backend {
   dragDrop(fromElementHandle: string, toElementHandle: string): Promise<void>;
   captureScreenshot(elementHandle: string): Promise<number[]>;
   captureScreenshotToFile(elementHandle: string, path: string): Promise<void>;
-  findImage(windowHandle: string, template: number[]): Promise<ImageMatch | null>;
+  findImage(windowHandle: string, template: number[], options?: FindImageOptions): Promise<ImageMatch | null>;
   clickAt(x: number, y: number): Promise<void>;
   findDialogs(processId: number): DialogInfo[];
   getDialogControls(windowHandle: string): DialogControl[];
