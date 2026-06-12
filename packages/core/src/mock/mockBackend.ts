@@ -14,6 +14,7 @@ import type {
   ElementPathStep,
   HwndNode,
   ImageMatch,
+  InputMode,
   MatchMode,
   ProcessEntry,
   WindowBounds,
@@ -598,7 +599,7 @@ export class MockBackend implements Backend {
 
   // --- interactions (with state tracking) ---
 
-  async clickElement(elementHandle: string): Promise<void> {
+  async clickElement(elementHandle: string, _mode?: InputMode): Promise<void> {
     this.assertElement(elementHandle);
     this.setFocused(elementHandle);
     this.events.emit("element:clicked", { elementHandle });
@@ -643,7 +644,7 @@ export class MockBackend implements Backend {
     }
   }
 
-  async typeText(elementHandle: string, text: string): Promise<void> {
+  async typeText(elementHandle: string, text: string, _mode?: InputMode): Promise<void> {
     const el = this.assertElement(elementHandle);
     el.text = text;
     this.setFocused(elementHandle);
@@ -652,7 +653,7 @@ export class MockBackend implements Backend {
     await delay();
   }
 
-  async sendKeys(windowHandle: string, text: string): Promise<void> {
+  async sendKeys(windowHandle: string, text: string, _mode?: InputMode): Promise<void> {
     const win = this.assertWindow(windowHandle);
     const textbox = win.elements.find((e) => e.selector.role === "textbox");
     if (textbox) {

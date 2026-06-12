@@ -99,14 +99,14 @@ export type NativeBindings = {
     text?: string | null,
     matchMode?: string | null,
   ) => Promise<string | null>;
-  typeText: (elementHandle: string, text: string) => Promise<void>;
-  sendKeys: (elementHandle: string, text: string) => Promise<void>;
+  typeText: (elementHandle: string, text: string, inputMode?: number) => Promise<void>;
+  sendKeys: (elementHandle: string, text: string, inputMode?: number) => Promise<void>;
   closeApp: (processId: number) => Promise<void>;
   closeWindow: (elementHandle: string) => Promise<void>;
   isProcessRunning: (processId: number) => boolean;
   getText: (elementHandle: string) => Promise<string>;
   findElementName: (windowHandle: string, name: string) => Promise<string | null>;
-  clickElement: (elementHandle: string) => Promise<void>;
+  clickElement: (elementHandle: string, inputMode?: number) => Promise<void>;
   clickElementByName: (windowHandle: string, name: string) => Promise<void>;
   clickSequence: (windowHandle: string, names: string[]) => Promise<void>;
   pressKeyCodes: (windowHandle: string, keyCodes: number[]) => Promise<void>;

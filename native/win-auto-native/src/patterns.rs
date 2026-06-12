@@ -16,6 +16,7 @@ use crate::utils::{hwnd_to_string, parse_hwnd, ComScope};
 // ── Input mode ───────────────────────────────────────────────────────────
 
 #[napi]
+#[derive(Debug)]
 pub enum InputMode {
   /// Use UIA patterns only – fail if pattern is unavailable.
   Pattern = 0,

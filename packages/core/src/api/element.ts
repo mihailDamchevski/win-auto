@@ -157,7 +157,7 @@ export class Element {
   }
 
   public async click(): Promise<void> {
-    await this.retryOnStale((h) => this.backend.clickElement(h));
+    await this.retryOnStale((h) => this.backend.clickElement(h, this.inputMode));
     this.events.emitElementClicked(this.handle);
   }
 
@@ -190,7 +190,7 @@ export class Element {
   }
 
   public async typeText(text: string): Promise<void> {
-    await this.retryOnStale((h) => this.backend.typeText(h, text));
+    await this.retryOnStale((h) => this.backend.typeText(h, text, this.inputMode));
     this.events.emitElementTyped(this.handle, text);
   }
 

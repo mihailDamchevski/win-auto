@@ -91,6 +91,11 @@ export declare function startWinEventWatcher(callback: (...args: any[]) => any):
  * running (for `waitForUiChange`), but no further JS callbacks are made.
  */
 export declare function stopWinEventWatcher(): void
+/** Hardware-level click at center of element. */
+export declare function hardwareClick(elementHandle: string): void
+/** Type text via hardware simulation. */
+export declare function hardwareTypeText(elementHandle: string, text: string): void
+export declare function hardwarePressKey(windowHandle: string, keyCombination: string): void
 /**
  * Send a WM_COMMAND message to a window (for legacy controls that only
  * respond to Win32 messages, not UIA).
@@ -138,12 +143,12 @@ export declare function selectionItemRemoveFromSelection(elementHandle: string):
 export declare function selectionItemIsSelected(elementHandle: string): boolean
 export declare function highlightElement(elementHandle: string, color?: string | undefined | null, durationMs?: number | undefined | null): Promise<void>
 export declare function findElement(windowHandle: string, classNames?: Array<string> | undefined | null, automationId?: string | undefined | null, name?: string | undefined | null, role?: string | undefined | null, className?: string | undefined | null, text?: string | undefined | null, matchMode?: string | undefined | null): Promise<string | null>
-export declare function typeText(elementHandle: string, text: string): Promise<void>
-export declare function sendKeys(elementHandle: string, text: string): Promise<void>
+export declare function typeText(elementHandle: string, text: string, inputMode?: InputMode | undefined | null): Promise<void>
+export declare function sendKeys(elementHandle: string, text: string, inputMode?: InputMode | undefined | null): Promise<void>
 export declare function pressKeyCodes(windowHandle: string, keyCodes: Array<number>): Promise<void>
 export declare function getText(elementHandle: string): Promise<string>
 export declare function findElementName(windowHandle: string, name: string): Promise<string | null>
-export declare function clickElement(elementHandle: string): Promise<void>
+export declare function clickElement(elementHandle: string, inputMode?: InputMode | undefined | null): Promise<void>
 export declare function clickElementByName(windowHandle: string, name: string): Promise<void>
 /**
  * Clicks a sequence of elements by name in a single UIA tree traversal.

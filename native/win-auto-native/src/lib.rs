@@ -8,6 +8,7 @@ mod dialogs;
 mod discovery;
 mod error;
 mod event_watcher;
+mod hardware_input;
 mod legacy_messages;
 mod patterns;
 mod highlight;

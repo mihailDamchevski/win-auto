@@ -9,6 +9,7 @@ import type {
   NativeBindings,
   ProcessEntry,
   WindowInfo,
+  InputMode,
 } from "./types";
 import { loadNativeBindings } from "../native/loadNative";
 import { BackendError, UIPI_HELP_MESSAGE } from "./errors";
@@ -113,8 +114,17 @@ export class NativeBackend implements Backend {
     return this.native.findElementName(windowHandle, name);
   }
 
-  async clickElement(elementHandle: string): Promise<void> {
-    return this.native.clickElement(elementHandle);
+  private inputModeToNative(mode?: InputMode): number | undefined {
+    if (mode === undefined) return undefined;
+    switch (mode) {
+      case "pattern": return 0; // InputMode.Pattern
+      case "hardware": return 1; // InputMode.Hardware
+      case "auto": return 2; // InputMode.Auto
+    }
+  }
+
+  async clickElement(elementHandle: string, mode?: InputMode): Promise<void> {
+    return this.native.clickElement(elementHandle, this.inputModeToNative(mode));
   }
 
   async clickElementByName(windowHandle: string, name: string): Promise<void> {
@@ -125,12 +135,12 @@ export class NativeBackend implements Backend {
     return this.native.clickSequence(windowHandle, names);
   }
 
-  async typeText(elementHandle: string, text: string): Promise<void> {
-    return this.native.typeText(elementHandle, text);
+  async typeText(elementHandle: string, text: string, mode?: InputMode): Promise<void> {
+    return this.native.typeText(elementHandle, text, this.inputModeToNative(mode));
   }
 
-  async sendKeys(elementHandle: string, text: string): Promise<void> {
-    return this.native.sendKeys(elementHandle, text);
+  async sendKeys(elementHandle: string, text: string, mode?: InputMode): Promise<void> {
+    return this.native.sendKeys(elementHandle, text, this.inputModeToNative(mode));
   }
 
   async getText(elementHandle: string): Promise<string> {

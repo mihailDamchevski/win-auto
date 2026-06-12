@@ -155,7 +155,7 @@ pub async fn click_dialog_button(window_handle: String, button_text: String) -> 
     if control.control_type == "button" {
       let name_lower = control.name.to_ascii_lowercase();
       if name_lower == query_lower || name_lower.contains(&query_lower) {
-        click_element(control.handle.clone()).await?;
+        click_element(control.handle.clone(), None).await?;
         return Ok(());
       }
     }

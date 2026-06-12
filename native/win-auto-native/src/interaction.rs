@@ -272,38 +272,88 @@ pub async fn find_element(
 }
 
 #[napi(js_name = "typeText")]
-pub async fn type_text(element_handle: String, text: String) -> Result<()> {
-  debug!("typeText hwnd={element_handle} text_len={}", text.len());
-  let hwnd = parse_hwnd(&element_handle)?;
-  // UIA ValuePattern.SetValue() — works on UWP/WPF/modern controls
-  unsafe {
-    // SAFETY: COM initialized via ComScope; hwnd is a valid window handle from parse_hwnd.
-    let _com_init = crate::utils::ComScope::init();
-    if let Ok(automation) = create_uia() {
-      if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
-          let bstr: BSTR = text.clone().into();
-          let _ = pattern.SetValue(&bstr);
-          return Ok(());
-        }
-      }
-    }
-  }
-  // Fallback: Win32 WM_SETTEXT
-  tracing::warn!("UIA ValuePattern.SetValue failed for hwnd={element_handle}, falling back to WM_SETTEXT");
-  let wide = to_wide_null_terminated(&text);
-  // SAFETY: SendMessageW with WM_SETTEXT is safe; hwnd is valid, wide buffer is null-terminated.
-  unsafe {
-    SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
-  }
-  Ok(())
+pub async fn type_text(
+  element_handle: String,
+  text: String,
+  input_mode: Option<crate::patterns::InputMode>,
+) -> Result<()> {
+  let mode = input_mode.unwrap_or(crate::patterns::InputMode::Auto);
+  type_text_with_mode(element_handle, text, mode).await
 }
 
-#[napi(js_name = "sendKeys")]
-pub async fn send_keys(element_handle: String, text: String) -> Result<()> {
+/// Type text with explicit input mode.
+pub(super) async fn type_text_with_mode(
+  element_handle: String,
+  text: String,
+  mode: crate::patterns::InputMode,
+) -> Result<()> {
+  debug!("typeText hwnd={element_handle} text_len={} mode={mode:?}", text.len());
   let hwnd = parse_hwnd(&element_handle)?;
-  // SAFETY: hwnd is a valid window handle; SetForegroundWindow may fail silently for windows
-  // from other security contexts (return value ignored).
+
+  match mode {
+    crate::patterns::InputMode::Pattern => {
+      // UIA ValuePattern only
+      unsafe {
+        let _com_init = crate::utils::ComScope::init();
+        if let Ok(automation) = create_uia() {
+          if let Ok(element) = automation.ElementFromHandle(hwnd) {
+            if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
+              let bstr: BSTR = text.into();
+              pattern.SetValue(&bstr).map_err(|err| {
+                Error::from(AutomationError::Generic {
+                  message: format!("ValuePattern.SetValue failed: {err}"),
+                })
+              })?;
+              return Ok(());
+            }
+          }
+        }
+      }
+      Err(Error::from(AutomationError::Generic {
+        message: "UIA ValuePattern not available for this element in pattern mode".into(),
+      }))
+    }
+
+    crate::patterns::InputMode::Hardware => {
+      // Hardware-only: use enigo or SendInput
+      #[cfg(feature = "input-hardware")]
+      {
+        return crate::hardware_input::hardware_type_text(element_handle, text);
+      }
+      #[cfg(not(feature = "input-hardware"))]
+      {
+        hardware_type_sendinput(element_handle, text).await
+      }
+    }
+
+    crate::patterns::InputMode::Auto => {
+      // Auto: try UIA first
+      unsafe {
+        let _com_init = crate::utils::ComScope::init();
+        if let Ok(automation) = create_uia() {
+          if let Ok(element) = automation.ElementFromHandle(hwnd) {
+            if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
+              let bstr: BSTR = text.clone().into();
+              let _ = pattern.SetValue(&bstr);
+              return Ok(());
+            }
+          }
+        }
+      }
+      // Fallback: Win32 WM_SETTEXT
+      tracing::warn!("UIA ValuePattern failed for hwnd={element_handle}, falling back to WM_SETTEXT");
+      let wide = to_wide_null_terminated(&text);
+      unsafe {
+        SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
+      }
+      Ok(())
+    }
+  }
+}
+
+/// Hardware-only type via SendInput Unicode keystrokes.
+async fn hardware_type_sendinput(element_handle: String, text: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
   unsafe {
     let _ = SetForegroundWindow(hwnd);
   }
@@ -338,15 +388,86 @@ pub async fn send_keys(element_handle: String, text: String) -> Result<()> {
     inputs.push(input_down);
     inputs.push(input_up);
   }
-
-  // SAFETY: SendInput with properly initialized INPUT_KEYBOARD structures is safe;
-  // each keystroke has a paired KEYEVENTF_UNICODE down and KEYEVENTF_KEYUP event,
-  // and the INPUT array length matches the actual struct size.
   unsafe {
     SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
   }
-
   Ok(())
+}
+
+#[napi(js_name = "sendKeys")]
+pub async fn send_keys(
+  element_handle: String,
+  text: String,
+  input_mode: Option<crate::patterns::InputMode>,
+) -> Result<()> {
+  let mode = input_mode.unwrap_or(crate::patterns::InputMode::Auto);
+  match mode {
+    crate::patterns::InputMode::Pattern => {
+      // Pattern-only: try UIA ValuePattern
+      let hwnd = parse_hwnd(&element_handle)?;
+      unsafe {
+        let _com_init = crate::utils::ComScope::init();
+        if let Ok(automation) = create_uia() {
+          if let Ok(element) = automation.ElementFromHandle(hwnd) {
+            if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
+              let bstr: BSTR = text.into();
+              pattern.SetValue(&bstr).map_err(|err| {
+                Error::from(AutomationError::Generic {
+                  message: format!("ValuePattern.SetValue failed: {err}"),
+                })
+              })?;
+              return Ok(());
+            }
+          }
+        }
+      }
+      Err(Error::from(AutomationError::Generic {
+        message: "UIA ValuePattern not available in pattern mode".into(),
+      }))
+    }
+    _ => {
+      // Hardware or Auto: use SendInput keystrokes
+      let hwnd = parse_hwnd(&element_handle)?;
+      unsafe {
+        let _ = SetForegroundWindow(hwnd);
+      }
+      tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+      let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
+      for code_point in text.encode_utf16() {
+        let input_down = INPUT {
+          r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+          Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+              wVk: VIRTUAL_KEY(0),
+              wScan: code_point,
+              dwFlags: KEYEVENTF_UNICODE,
+              time: 0,
+              dwExtraInfo: 0,
+            },
+          },
+        };
+        let input_up = INPUT {
+          r#type: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_KEYBOARD,
+          Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+              wVk: VIRTUAL_KEY(0),
+              wScan: code_point,
+              dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+              time: 0,
+              dwExtraInfo: 0,
+            },
+          },
+        };
+        inputs.push(input_down);
+        inputs.push(input_up);
+      }
+      unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+      }
+      Ok(())
+    }
+  }
 }
 
 #[napi(js_name = "pressKeyCodes")]
@@ -506,43 +627,131 @@ fn invoke_uia_element(element: &windows::Win32::UI::Accessibility::IUIAutomation
 }
 
 #[napi(js_name = "clickElement")]
-pub async fn click_element(element_handle: String) -> Result<()> {
-  info!("clickElement hwnd={element_handle}");
+pub async fn click_element(
+  element_handle: String,
+  input_mode: Option<crate::patterns::InputMode>,
+) -> Result<()> {
+  let mode = input_mode.unwrap_or(crate::patterns::InputMode::Auto);
+  click_element_with_mode(element_handle, mode).await
+}
+
+/// Internal click with explicit input mode.
+pub(super) async fn click_element_with_mode(
+  element_handle: String,
+  mode: crate::patterns::InputMode,
+) -> Result<()> {
+  info!("clickElement hwnd={element_handle} mode={mode:?}");
   let hwnd = parse_hwnd(&element_handle)?;
-  let mut cursor_set = false;
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    if let Ok(automation) = create_uia() {
-      if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        // Try InvokePattern first
-        if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
-          pattern.Invoke().map_err(|err| Error::from(AutomationError::Generic { message: format!("Invoke failed: {err}") }))?;
-          return Ok(());
+
+  match mode {
+    crate::patterns::InputMode::Pattern => {
+      // UIA patterns only — fail if not supported
+      unsafe {
+        let _com_init = crate::utils::ComScope::init();
+        if let Ok(automation) = create_uia() {
+          if let Ok(element) = automation.ElementFromHandle(hwnd) {
+            if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
+              pattern.Invoke().map_err(|err| {
+                Error::from(AutomationError::Generic {
+                  message: format!("Invoke failed: {err}"),
+                })
+              })?;
+              return Ok(());
+            }
+          }
         }
-        // Fallback: click center of UIA bounding rectangle
-        if let Ok(rect) = element.CurrentBoundingRectangle() {
-          let cx = (rect.left + rect.right) / 2;
-          let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
-          cursor_set = true;
-        }
+      }
+      Err(Error::from(AutomationError::Generic {
+        message: "UIA InvokePattern not available for this element in pattern mode".into(),
+      }))
+    }
+
+    crate::patterns::InputMode::Hardware => {
+      // Hardware-only: use enigo-based click (or fallback to SendInput)
+      #[cfg(feature = "input-hardware")]
+      {
+        return crate::hardware_input::hardware_click(element_handle);
+      }
+      #[cfg(not(feature = "input-hardware"))]
+      {
+        hardware_click_sendinput(element_handle).await
       }
     }
-  }
-  if !cursor_set {
-    tracing::warn!("UIA InvokePattern and bounding rect both failed for hwnd={element_handle}, falling back to Win32 center-of-window click");
-    // Last resort: Win32 center-of-window click
-    let mut rect = RECT::default();
-    unsafe {
-      if GetWindowRect(hwnd, &mut rect).is_err() {
-        return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rect".into() }));
+
+    crate::patterns::InputMode::Auto => {
+      // Auto: try UIA first, fallback to hardware
+      let mut cursor_set = false;
+      unsafe {
+        let _com_init = crate::utils::ComScope::init();
+        if let Ok(automation) = create_uia() {
+          if let Ok(element) = automation.ElementFromHandle(hwnd) {
+            if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
+              pattern.Invoke().map_err(|err| {
+                Error::from(AutomationError::Generic {
+                  message: format!("Invoke failed: {err}"),
+                })
+              })?;
+              return Ok(());
+            }
+            if let Ok(rect) = element.CurrentBoundingRectangle() {
+              let cx = (rect.left + rect.right) / 2;
+              let cy = (rect.top + rect.bottom) / 2;
+              SetCursorPos(cx, cy).map_err(|_| {
+                Error::from(AutomationError::Generic {
+                  message: "Failed to set cursor position".into(),
+                })
+              })?;
+              cursor_set = true;
+            }
+          }
+        }
       }
+      if !cursor_set {
+        tracing::warn!("UIA failed for hwnd={element_handle}, falling back to Win32 click");
+        let mut rect = RECT::default();
+        unsafe {
+          if GetWindowRect(hwnd, &mut rect).is_err() {
+            return Err(Error::from(AutomationError::ScreenshotFailed {
+              handle: element_handle.clone(),
+              reason: "Failed to get window rect".into(),
+            }));
+          }
+        }
+        let cx = (rect.left + rect.right) / 2;
+        let cy = (rect.top + rect.bottom) / 2;
+        unsafe {
+          SetCursorPos(cx, cy).map_err(|_| {
+            Error::from(AutomationError::Generic {
+              message: "Failed to set cursor position".into(),
+            })
+          })?;
+        }
+      }
+      tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+      send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+      Ok(())
+    }
+  }
+}
+
+/// Hardware-only click via SendInput (used when input-hardware feature is off).
+async fn hardware_click_sendinput(element_handle: String) -> Result<()> {
+  let hwnd = parse_hwnd(&element_handle)?;
+  let mut rect = RECT::default();
+  unsafe {
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+      return Err(Error::from(AutomationError::ScreenshotFailed {
+        handle: element_handle,
+        reason: "Failed to get window rect".into(),
+      }));
     }
     let cx = (rect.left + rect.right) / 2;
     let cy = (rect.top + rect.bottom) / 2;
-    unsafe {
-      SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
-    }
+    SetCursorPos(cx, cy).map_err(|_| {
+      Error::from(AutomationError::Generic {
+        message: "Failed to set cursor position".into(),
+      })
+    })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;

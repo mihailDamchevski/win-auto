@@ -5,6 +5,7 @@ import type {
   ElementPathStep,
   HwndNode,
   ImageMatch,
+  InputMode,
   ProcessEntry,
   WindowBounds,
   WindowDebugInfo,
@@ -34,11 +35,11 @@ export interface Backend {
     matchMode?: string | null,
   ): Promise<string | null>;
   findElementName(windowHandle: string, name: string): Promise<string | null>;
-  clickElement(elementHandle: string): Promise<void>;
+  clickElement(elementHandle: string, mode?: InputMode): Promise<void>;
   clickElementByName(windowHandle: string, name: string): Promise<void>;
   clickSequence(windowHandle: string, names: string[]): Promise<void>;
-  typeText(elementHandle: string, text: string): Promise<void>;
-  sendKeys(elementHandle: string, text: string): Promise<void>;
+  typeText(elementHandle: string, text: string, mode?: InputMode): Promise<void>;
+  sendKeys(elementHandle: string, text: string, mode?: InputMode): Promise<void>;
   getText(elementHandle: string): Promise<string>;
   pressKeyCodes(windowHandle: string, keyCodes: number[]): Promise<void>;
   getValue(elementHandle: string): Promise<string>;
