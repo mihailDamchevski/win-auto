@@ -6,7 +6,7 @@ use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{BitBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, HGDIOBJ, ReleaseDC, RGBQUAD, SelectObject, SRCCOPY, DIB_RGB_COLORS};
 
 use crate::error::AutomationError;
-use crate::utils::parse_hwnd;
+use crate::utils::{parse_hwnd, physical_to_logical};
 
 pub struct CapturedBitmap {
   pub pixels: Vec<u8>,
@@ -427,6 +427,8 @@ pub async fn find_image(
 ) -> Result<Option<ImageMatch>> {
   let hwnd = parse_hwnd(&element_handle)?;
   let bmp = capture_window_bitmap(hwnd)?;
+  // HWND is !Send so drop it before any .await
+  let _ = hwnd;
 
   let opts = options.unwrap_or(FindImageOptions {
     roi: None,
@@ -533,10 +535,17 @@ pub async fn find_image(
   };
 
   // Absolute coordinates: add ROI offset and scale back to original coords
-  let abs_x = (roi_left as f64 + best_x as f64 / best_scale) as i32;
-  let abs_y = (roi_top as f64 + best_y as f64 / best_scale) as i32;
-  let match_w = (tw_orig as f64 * best_scale) as i32;
-  let match_h = (th_orig as f64 * best_scale) as i32;
+  let abs_x_phys = (roi_left as f64 + best_x as f64 / best_scale) as i32;
+  let abs_y_phys = (roi_top as f64 + best_y as f64 / best_scale) as i32;
+  let match_w_phys = (tw_orig as f64 * best_scale) as i32;
+  let match_h_phys = (th_orig as f64 * best_scale) as i32;
+
+  // Convert from physical (screen/GDI) pixels to logical (DIP) pixels
+  let hwnd = parse_hwnd(&element_handle)?;
+  let abs_x = physical_to_logical(hwnd, abs_x_phys);
+  let abs_y = physical_to_logical(hwnd, abs_y_phys);
+  let match_w = physical_to_logical(hwnd, match_w_phys);
+  let match_h = physical_to_logical(hwnd, match_h_phys);
 
   // --- Debug overlay ---
   let debug_overlay: Option<Vec<u8>> = if do_debug {
@@ -545,11 +554,11 @@ pub async fn find_image(
       .map(|i| i.to_rgba8());
     if let Some(ref mut draw_img) = img {
       let rect_color = image::Rgba([255u8, 0u8, 0u8, 200u8]);
-      // Draw bounding box (simple: top/bottom/left/right lines)
-      let x1 = abs_x.max(0) as u32;
-      let y1 = abs_y.max(0) as u32;
-      let x2 = (abs_x + match_w).min(sw as i32 - 1).max(0) as u32;
-      let y2 = (abs_y + match_h).min(sh as i32 - 1).max(0) as u32;
+      // Draw bounding box (simple: top/bottom/left/right lines) using physical coords
+      let x1 = abs_x_phys.max(0) as u32;
+      let y1 = abs_y_phys.max(0) as u32;
+      let x2 = (abs_x_phys + match_w_phys).min(sw as i32 - 1).max(0) as u32;
+      let y2 = (abs_y_phys + match_h_phys).min(sh as i32 - 1).max(0) as u32;
       for x in x1..=x2 {
         if y1 < draw_img.height() { draw_img.put_pixel(x, y1, rect_color); }
         if y2 < draw_img.height() { draw_img.put_pixel(x, y2, rect_color); }

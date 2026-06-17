@@ -4,7 +4,7 @@ use napi::{Error, Result};
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER};
 use windows::core::PWSTR;
 
@@ -33,6 +33,21 @@ pub fn physical_to_logical(hwnd: HWND, value: i32) -> i32 {
   } else {
     value
   }
+}
+
+pub fn get_system_dpi() -> u32 {
+  unsafe {
+    let dpi = GetDpiForSystem();
+    if dpi > 0 { dpi as u32 } else { BASE_DPI }
+  }
+}
+
+pub fn get_system_dpi_scale() -> f64 {
+  f64::from(get_system_dpi()) / f64::from(BASE_DPI)
+}
+
+pub fn logical_to_physical_system(value: i32) -> i32 {
+  (f64::from(value) * get_system_dpi_scale()).round() as i32
 }
 
 use crate::error::AutomationError;

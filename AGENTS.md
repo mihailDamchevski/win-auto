@@ -88,15 +88,16 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 | **P7 (Mock Backend)** | Tree-aware lookup, dynamic state simulation (`scheduleEvent`), event emission, `classNames` filtering, `waitForUiChange` | `mockBackend.ts` |
 | **P8 (Testing Infra)** | Negative/polling/state/compound matchers, window/dialog assertions, suite-level retry, tree snapshots, fixture helpers | `testing/matchers.ts`, `vitest.ts`, `treeSnapshot.ts`, `fixture.ts` |
 | **P10.3–P10.5** | Diagnostics class, config expansion (`win-auto.config.ts` schema), `win-auto diagnose` CLI command | `diagnostics.ts`, `config.ts`, `cli/diagnose.ts` |
-| **P10.1 (partial)** | DPI helpers in Rust (`get_dpi_for_window`, scale fns), `dpi` in `WindowInfo`, config fields `dpiScale`/`dpiMode` | `utils.rs`, `config.ts` — but NOT wired into mouseMove/clickAt/screenshot bounds |
+| **P10.1 (DPI wired)** | DPI helpers, `logical_to_physical_system` in mouseMove/clickAt, `physical_to_logical` in findImage results, real DPI in diagnostics | `utils.rs`, `interaction.rs`, `screenshot.rs`, `diagnostics.ts` |
+| **P10.2 (UIPI bypass)** | `is_uip_barrier` wired in PermissionDenied errors, auto-retry pattern mode on hardware UIPI failure, `getSystemDpi` napi export | `interaction.rs`, `error.rs`, `types.ts` |
 
 ### Partially Complete
 
 | Item | Status | Missing |
 |---|---|---|
-| **P4.2 remaining UIA patterns** | ⏳ | `ExpandCollapsePattern`, `ScrollPattern`, `RangeValuePattern`, `SelectionPattern`, `GridPattern`/`TablePattern`, full `WindowPattern` |
-| **P10.1 DPI coordinate wiring** | ⏳ | DPI scale helpers exist but unused — mouseMove/clickAt/screenshot don't call `logical_to_physical` |
-| **P10.2 UIPI elevation** | ⏳ | Elevation detection (`is_process_elevated_rust`), `run_elevated_rust` with `runas`, CLI `elevate` command, `UIPI_HELP_MESSAGE` all done. Missing: UIPI barrier bypass for input synthesis, auto-retry with pattern mode on UIPI failure |
+| **P4.2 remaining UIA patterns** | ✅ Done (AGENTS.md was outdated) | `ExpandCollapsePattern`, `ScrollPattern`, `RangeValuePattern`, `SelectionPattern`, `GridPattern`/`TablePattern`, `WindowPattern` — all implemented |
+| **P10.1 DPI coordinate wiring** | ✅ Done | mouseMove/clickAt now use system DPI conversion; findImage returns logical coords; diagnostics reports real DPI via native `getSystemDpi` |
+| **P10.2 UIPI elevation** | ✅ Done | `is_uip_barrier` set in PermissionDenied errors; hardware → pattern auto-fallback on UIPI; all SetCursorPos call sites detect UIPI |
 
 ### Test Status
 

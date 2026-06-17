@@ -63,7 +63,15 @@ function getOsInfo(): OsInfo {
   };
 }
 
-function getDisplayInfo(): DisplayInfo[] {
+function getDisplayInfo(nativeBindings?: NativeBindings): DisplayInfo[] {
+  let systemDpi = 96;
+  if (nativeBindings?.getSystemDpi) {
+    try {
+      systemDpi = nativeBindings.getSystemDpi();
+    } catch {
+      // fall through to WMI path
+    }
+  }
   try {
     const output = execSync(
       'powershell -NoProfile -Command "Get-WmiObject Win32_DesktopMonitor | Select-Object ScreenWidth,ScreenHeight | ConvertTo-Json"',
@@ -76,11 +84,11 @@ function getDisplayInfo(): DisplayInfo[] {
       .map((m: { ScreenWidth?: number; ScreenHeight?: number }) => ({
         width: m.ScreenWidth!,
         height: m.ScreenHeight!,
-        dpi: 96,
-        scale: 1.0,
+        dpi: systemDpi,
+        scale: Math.round((systemDpi / 96) * 100) / 100,
       }));
   } catch {
-    return [{ width: 0, height: 0, dpi: 96, scale: 1.0 }];
+    return [{ width: 0, height: 0, dpi: systemDpi, scale: Math.round((systemDpi / 96) * 100) / 100 }];
   }
 }
 
@@ -151,7 +159,7 @@ export class Diagnostics {
   async collect(): Promise<DiagnosticsReport> {
     const [osInfo, displays, uia, native, processes] = await Promise.all([
       Promise.resolve(getOsInfo()),
-      Promise.resolve(getDisplayInfo()),
+      Promise.resolve(getDisplayInfo(this.nativeBindings)),
       Promise.resolve(getUiaInfo()),
       Promise.resolve(getNativeInfo(this.nativeBindings)),
       Promise.resolve(getProcessSummary(this.backend)),

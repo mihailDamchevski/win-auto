@@ -19,10 +19,25 @@ use windows::Win32::UI::Accessibility::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSE_EVENT_FLAGS};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, SW_SHOW, WM_GETTEXT, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
 
+fn is_access_denied(err: &windows::core::Error) -> bool {
+  err.code() == windows::core::HRESULT(-2147024891) // HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)
+}
+
+fn uipi_permission_denied(handle: &str) -> Error {
+  Error::from(AutomationError::PermissionDenied {
+    handle: handle.to_string(),
+    is_uip_barrier: true,
+  })
+}
+
+fn is_uipi_permission(err: &Error) -> bool {
+  err.to_string().starts_with("Access denied:")
+}
+
 use crate::discovery::{create_uia, find_child_window_by_text, find_element_hwnd, find_element_uia};
 use crate::error::AutomationError;
 
-use crate::utils::{hwnd_to_string, logical_to_physical, parse_hwnd, physical_to_logical, to_wide_null_terminated};
+use crate::utils::{hwnd_to_string, logical_to_physical, logical_to_physical_system, parse_hwnd, physical_to_logical, to_wide_null_terminated};
 
 fn match_mode_matches(actual: &str, query: &str, mode: &str) -> bool {
   match mode {
@@ -626,6 +641,30 @@ fn invoke_uia_element(element: &windows::Win32::UI::Accessibility::IUIAutomation
   Ok(())
 }
 
+/// Try to click an element using UIA InvokePattern. Returns Ok(()) on success,
+/// or the original UIPI/pattern error if pattern mode fails.
+fn try_pattern_click(hwnd: HWND, element_handle: &str) -> Result<()> {
+  unsafe {
+    let _com_init = crate::utils::ComScope::init();
+    if let Ok(automation) = create_uia() {
+      if let Ok(element) = automation.ElementFromHandle(hwnd) {
+        if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
+          pattern.Invoke().map_err(|err| {
+            Error::from(AutomationError::Generic {
+              message: format!("Invoke failed in pattern fallback: {err}"),
+            })
+          })?;
+          return Ok(());
+        }
+      }
+    }
+  }
+  Err(Error::from(AutomationError::PatternNotSupported {
+    handle: element_handle.to_string(),
+    pattern: "InvokePattern",
+  }))
+}
+
 #[napi(js_name = "clickElement")]
 pub async fn click_element(
   element_handle: String,
@@ -641,10 +680,10 @@ pub(super) async fn click_element_with_mode(
   mode: crate::patterns::InputMode,
 ) -> Result<()> {
   info!("clickElement hwnd={element_handle} mode={mode:?}");
-  let hwnd = parse_hwnd(&element_handle)?;
 
   match mode {
     crate::patterns::InputMode::Pattern => {
+      let hwnd = parse_hwnd(&element_handle)?;
       // UIA patterns only — fail if not supported
       unsafe {
         let _com_init = crate::utils::ComScope::init();
@@ -670,15 +709,36 @@ pub(super) async fn click_element_with_mode(
       // Hardware-only: use enigo-based click (or fallback to SendInput)
       #[cfg(feature = "input-hardware")]
       {
-        return crate::hardware_input::hardware_click(element_handle);
+        match crate::hardware_input::hardware_click(element_handle.clone()).await {
+          Ok(()) => return Ok(()),
+          Err(err) => {
+            if is_uipi_permission(&err) {
+              tracing::warn!("UIPI barrier in hardware mode, falling back to pattern mode");
+              let hwnd = parse_hwnd(&element_handle)?;
+              return try_pattern_click(hwnd, &element_handle);
+            }
+            return Err(err);
+          }
+        }
       }
       #[cfg(not(feature = "input-hardware"))]
       {
-        hardware_click_sendinput(element_handle).await
+        match hardware_click_sendinput(element_handle.clone()).await {
+          Ok(()) => return Ok(()),
+          Err(err) => {
+            if is_uipi_permission(&err) {
+              tracing::warn!("UIPI barrier in hardware mode, falling back to pattern mode");
+              let hwnd = parse_hwnd(&element_handle)?;
+              return try_pattern_click(hwnd, &element_handle);
+            }
+            return Err(err);
+          }
+        }
       }
     }
 
     crate::patterns::InputMode::Auto => {
+      let hwnd = parse_hwnd(&element_handle)?;
       // Auto: try UIA first, fallback to hardware
       let mut cursor_set = false;
       unsafe {
@@ -696,10 +756,14 @@ pub(super) async fn click_element_with_mode(
             if let Ok(rect) = element.CurrentBoundingRectangle() {
               let cx = (rect.left + rect.right) / 2;
               let cy = (rect.top + rect.bottom) / 2;
-              SetCursorPos(cx, cy).map_err(|_| {
-                Error::from(AutomationError::Generic {
-                  message: "Failed to set cursor position".into(),
-                })
+              SetCursorPos(cx, cy).map_err(|err| {
+                if is_access_denied(&err) {
+                  uipi_permission_denied(&element_handle)
+                } else {
+                  Error::from(AutomationError::Generic {
+                    message: "Failed to set cursor position".into(),
+                  })
+                }
               })?;
               cursor_set = true;
             }
@@ -720,10 +784,14 @@ pub(super) async fn click_element_with_mode(
         let cx = (rect.left + rect.right) / 2;
         let cy = (rect.top + rect.bottom) / 2;
         unsafe {
-          SetCursorPos(cx, cy).map_err(|_| {
-            Error::from(AutomationError::Generic {
-              message: "Failed to set cursor position".into(),
-            })
+          SetCursorPos(cx, cy).map_err(|err| {
+            if is_access_denied(&err) {
+              uipi_permission_denied(&element_handle)
+            } else {
+              Error::from(AutomationError::Generic {
+                message: "Failed to set cursor position".into(),
+              })
+            }
           })?;
         }
       }
@@ -747,10 +815,14 @@ async fn hardware_click_sendinput(element_handle: String) -> Result<()> {
     }
     let cx = (rect.left + rect.right) / 2;
     let cy = (rect.top + rect.bottom) / 2;
-    SetCursorPos(cx, cy).map_err(|_| {
-      Error::from(AutomationError::Generic {
-        message: "Failed to set cursor position".into(),
-      })
+    SetCursorPos(cx, cy).map_err(|err| {
+      if is_access_denied(&err) {
+        uipi_permission_denied(&element_handle)
+      } else {
+        Error::from(AutomationError::Generic {
+          message: "Failed to set cursor position".into(),
+        })
+      }
     })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
@@ -1089,7 +1161,13 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
         if let Ok(rect) = element.CurrentBoundingRectangle() {
           let cx = (rect.left + rect.right) / 2;
           let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+          SetCursorPos(cx, cy).map_err(|err| {
+            if is_access_denied(&err) {
+              uipi_permission_denied(&element_handle)
+            } else {
+              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+            }
+          })?;
           return Ok(());
         }
       }
@@ -1104,7 +1182,13 @@ pub async fn hover_element(element_handle: String) -> Result<()> {
     }
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
-    SetCursorPos(center_x, center_y).map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+    SetCursorPos(center_x, center_y).map_err(|err| {
+      if is_access_denied(&err) {
+        uipi_permission_denied(&element_handle)
+      } else {
+        Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+      }
+    })?;
   }
   Ok(())
 }
@@ -1837,7 +1921,13 @@ pub async fn right_click_element(element_handle: String) -> Result<()> {
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
-      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+      .map_err(|err| {
+        if is_access_denied(&err) {
+          uipi_permission_denied(&element_handle)
+        } else {
+          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+        }
+      })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await;
@@ -1855,7 +1945,13 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
     let center_x = (rect.left + rect.right) / 2;
     let center_y = (rect.top + rect.bottom) / 2;
     SetCursorPos(center_x, center_y)
-      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+      .map_err(|err| {
+        if is_access_denied(&err) {
+          uipi_permission_denied(&element_handle)
+        } else {
+          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+        }
+      })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   // Two quick left clicks
@@ -1867,24 +1963,47 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
 
 #[napi(js_name = "mouseMove")]
 pub async fn mouse_move(x: i32, y: i32) -> Result<()> {
+  // Convert logical coordinates to physical pixels for SetCursorPos.
+  let px = logical_to_physical_system(x);
+  let py = logical_to_physical_system(y);
   // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
-    SetCursorPos(x, y)
-      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+    SetCursorPos(px, py)
+      .map_err(|err| {
+        if is_access_denied(&err) {
+          uipi_permission_denied("screen")
+        } else {
+          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+        }
+      })?;
   }
   Ok(())
 }
 
 #[napi(js_name = "clickAt")]
 pub async fn click_at(x: i32, y: i32) -> Result<()> {
+  // Convert logical coordinates to physical pixels for SetCursorPos.
+  let px = logical_to_physical_system(x);
+  let py = logical_to_physical_system(y);
   // SAFETY: SetCursorPos takes absolute screen coordinates; no preconditions required.
   unsafe {
-    SetCursorPos(x, y)
-      .map_err(|_| Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() }))?;
+    SetCursorPos(px, py)
+      .map_err(|err| {
+        if is_access_denied(&err) {
+          uipi_permission_denied("screen")
+        } else {
+          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+        }
+      })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
   Ok(())
+}
+
+#[napi(js_name = "getSystemDpi")]
+pub fn get_system_dpi_napi() -> u32 {
+  crate::utils::get_system_dpi()
 }
 
 #[napi(js_name = "keyDown")]

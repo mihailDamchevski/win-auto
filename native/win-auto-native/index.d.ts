@@ -198,6 +198,7 @@ export declare function rightClickElement(elementHandle: string): Promise<void>
 export declare function doubleClickElement(elementHandle: string): Promise<void>
 export declare function mouseMove(x: number, y: number): Promise<void>
 export declare function clickAt(x: number, y: number): Promise<void>
+export declare function getSystemDpi(): number
 export declare function keyDown(windowHandle: string, key: string): Promise<void>
 export declare function keyUp(windowHandle: string, key: string): Promise<void>
 export declare function selectText(elementHandle: string): Promise<void>

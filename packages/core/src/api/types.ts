@@ -81,6 +81,7 @@ export type ElementAttributeName =
 
 export type NativeBindings = {
   ping: () => string;
+  getSystemDpi?: () => number;
   setAppConfig?: (executable: string, classNames: string[]) => void;
   launch: (executablePath?: string | null, classNames?: string[] | null) => Promise<number>;
   launchProcess: (
