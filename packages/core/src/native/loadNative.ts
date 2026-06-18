@@ -8,8 +8,8 @@ import { BackendError } from "../api/errors";
 // CJS-compatible import.meta shim — in ESM builds import.meta is available,
 // in CJS builds the try block throws and we fall back to __dirname / require.
 function getModuleUrl(): string {
-  // @ts-ignore — import.meta is only valid with --module es2022+
   try {
+    // @ts-ignore — import.meta is only valid with --module es2022+
     return (import.meta as { url: string }).url;
   } catch {
     return "";
@@ -17,8 +17,8 @@ function getModuleUrl(): string {
 }
 
 function getNodeRequire(): NodeRequire {
-  // @ts-ignore — import.meta is only valid with --module es2022+
   try {
+    // @ts-ignore — import.meta is only valid with --module es2022+
     return createRequire((import.meta as { url: string }).url);
   } catch {
     return require;

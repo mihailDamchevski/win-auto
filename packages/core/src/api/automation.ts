@@ -51,7 +51,7 @@ export class Automation {
   static async create(backend?: Backend, inputMode?: InputMode): Promise<Automation> {
     if (!backend && process.env.WIN_AUTO_BACKEND === "mock") {
       try {
-        const { MockBackend } = await import("../mock/mockBackend");
+        const { MockBackend } = await import("../mock/mockBackend.js");
         backend = new MockBackend();
       } catch {
         // NativeBackend fallback
