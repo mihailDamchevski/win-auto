@@ -17,7 +17,22 @@ use windows::Win32::UI::Accessibility::{
   UIA_TextPatternId, UIA_TogglePatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSE_EVENT_FLAGS};
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, SW_SHOW, WM_GETTEXT, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetAncestor, GetForegroundWindow, GetParent, GetWindowRect, GetWindow, IsWindowVisible, MoveWindow, SendMessageW, SetForegroundWindow, SetCursorPos, ShowWindow, SwitchToThisWindow, GA_PARENT, GW_CHILD, GW_HWNDNEXT, SW_MAXIMIZE, SW_MINIMIZE, SW_NORMAL, SW_RESTORE, SW_SHOW, WM_GETTEXT, WM_HSCROLL, WM_SETTEXT, WM_VSCROLL};
+
+/// Polls for hwnd to become the foreground window (adaptive wait).
+/// Returns as soon as hwnd is foreground, or after timeout_ms if not.
+/// Polls for window handle (as raw isize) to become the foreground window.
+/// Uses raw isize to avoid HWND's !Send across await points in napi async fns.
+async fn wait_for_raw_foreground(raw: isize, timeout_ms: u64) {
+  let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+  while std::time::Instant::now() < deadline {
+    // SAFETY: GetForegroundWindow only reads OS window state; no side effects.
+    if unsafe { GetForegroundWindow().0 as isize } == raw {
+      return;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+  }
+}
 
 fn is_access_denied(err: &windows::core::Error) -> bool {
   err.code() == windows::core::HRESULT(-2147024891) // HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)
@@ -62,22 +77,24 @@ unsafe fn try_build_uia_condition(
 ) -> Option<IUIAutomationCondition> {
   let variant: VARIANT = BSTR::from(value).into();
   match match_mode {
-    "exact" => automation
-      .CreatePropertyConditionEx(
-        property_id,
-        &variant,
-        PropertyConditionFlags(PropertyConditionFlags_IgnoreCase.0),
-      )
-      .ok(),
-    "substring" => automation
-      .CreatePropertyConditionEx(
-        property_id,
-        &variant,
-        PropertyConditionFlags(
-          PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
-        ),
-      )
-      .ok(),
+    "exact" => unsafe {
+      automation
+        .CreatePropertyConditionEx(
+          property_id,
+          &variant,
+          PropertyConditionFlags(PropertyConditionFlags_IgnoreCase.0),
+        )
+    }.ok(),
+    "substring" => unsafe {
+      automation
+        .CreatePropertyConditionEx(
+          property_id,
+          &variant,
+          PropertyConditionFlags(
+            PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
+          ),
+        )
+    }.ok(),
     _ => None,
   }
 }
@@ -91,7 +108,7 @@ unsafe fn combine_and_conditions(
   }
   let mut combined = conditions.remove(0);
   for cond in conditions {
-    if let Ok(and_cond) = automation.CreateAndCondition(&combined, &cond) {
+    if let Ok(and_cond) = unsafe { automation.CreateAndCondition(&combined, &cond) } {
       combined = and_cond;
     }
   }
@@ -105,99 +122,120 @@ fn find_element_uia_by_conditions(
   role: Option<&str>,
   match_mode: Option<&str>,
 ) -> Option<HWND> {
-  unsafe {
-    // SAFETY: COM initialized via ComScope; hwnd is a valid window handle from the caller.
-    // UIA COM calls follow the COM ABI and operate on the initialized automation object.
-    let _com_init = crate::utils::ComScope::init();
+  let _com_init = crate::utils::ComScope::init();
+  let (automation, root) = unsafe {
     let automation = create_uia().ok()?;
     let root = automation.ElementFromHandle(hwnd).ok()?;
-    let mm = match_mode.unwrap_or("substring");
+    (automation, root)
+  };
+  let mm = match_mode.unwrap_or("substring");
 
-    // Fast path: use native UIA PropertyCondition + FindFirst (O(log n))
-    // Only for non-regex modes where UIA can filter natively.
-    if mm != "regex" {
-      let conditions: Vec<IUIAutomationCondition> = [
-        name.map(|v| (UIA_NamePropertyId, v)),
-        role.map(|v| (UIA_AriaRolePropertyId, v)),
-        automation_id.map(|v| (UIA_AutomationIdPropertyId, v)),
-      ]
-      .into_iter()
-      .flatten()
-      .filter_map(|(pid, val)| try_build_uia_condition(&automation, pid, val, mm))
-      .collect();
-
-      if !conditions.is_empty() {
-        let composite = combine_and_conditions(&automation, conditions);
-        if let Some(ref condition) = composite {
-          if let Ok(element) = root.FindFirst(TreeScope_Descendants, condition) {
-            if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
-              if !hwnd_raw.is_invalid() {
-                // Verify the match (UIA substring conditions can return near-matches).
-                let current_name = element.CurrentName().ok()
-                  .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
-                  .or_else(|| get_legacy_accessible_name(&element));
-                if let Some(ref cn) = current_name {
-                  if name.map_or(true, |q| match_mode_matches(cn, q, mm)) {
-                    return Some(hwnd_raw);
-                  }
-                } else if name.is_none() {
-                  return Some(hwnd_raw);
-                }
-              }
-            }
-          }
-        }
-      }
+  // Fast path: use native UIA PropertyCondition + FindFirst (O(log n))
+  if mm != "regex" {
+    if let Some(result) = find_element_uia_fast_path(&automation, &root, name, role, automation_id, mm) {
+      return Some(result);
     }
-
-    // Slow path: full enumeration for regex or if FindFirst missed.
-    let true_condition = automation.CreateTrueCondition().ok()?;
-    let all = root.FindAll(TreeScope_Descendants, &true_condition).ok()?;
-    let length = all.Length().ok()?;
-
-    for i in 0..length {
-      let element = all.GetElement(i).ok()?;
-
-      if let Some(query_name) = name {
-        let current_name = element.CurrentName().ok()
-          .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
-          .or_else(|| get_legacy_accessible_name(&element))
-          .unwrap_or_default();
-        if !match_mode_matches(&current_name, query_name, mm) {
-          continue;
-        }
-      }
-
-      if let Some(query_role) = role {
-        if let Ok(current_role) = element.CurrentAriaRole() {
-          let current_role = current_role.to_string();
-          if !match_mode_matches(&current_role, query_role, mm) {
-            continue;
-          }
-        } else {
-          continue;
-        }
-      }
-
-      if let Some(query_auto_id) = automation_id {
-        if let Ok(current_auto_id) = element.CurrentAutomationId() {
-          let current_auto_id = current_auto_id.to_string();
-          if !match_mode_matches(&current_auto_id, query_auto_id, mm) {
-            continue;
-          }
-        } else {
-          continue;
-        }
-      }
-
-      if let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() {
-        if !hwnd_raw.is_invalid() {
-          return Some(hwnd_raw);
-        }
-      }
-    }
-    None
   }
+
+  // Slow path: full enumeration for regex or if FindFirst missed.
+  find_element_uia_slow_path(&automation, &root, name, role, automation_id, mm)
+}
+
+fn find_element_uia_fast_path(
+  automation: &IUIAutomation,
+  root: &IUIAutomationElement,
+  name: Option<&str>,
+  role: Option<&str>,
+  automation_id: Option<&str>,
+  mm: &str,
+) -> Option<HWND> {
+  let conditions: Vec<IUIAutomationCondition> = [
+    name.map(|v| (UIA_NamePropertyId, v)),
+    role.map(|v| (UIA_AriaRolePropertyId, v)),
+    automation_id.map(|v| (UIA_AutomationIdPropertyId, v)),
+  ]
+  .into_iter()
+  .flatten()
+  .filter_map(|(pid, val)| unsafe { try_build_uia_condition(automation, pid, val, mm) })
+  .collect();
+
+  if conditions.is_empty() {
+    return None;
+  }
+  let composite = unsafe { combine_and_conditions(automation, conditions) };
+  let condition = composite.as_ref()?;
+  let element = unsafe { root.FindFirst(TreeScope_Descendants, condition).ok()? };
+  let hwnd_raw = unsafe { element.CurrentNativeWindowHandle().ok()? };
+  if hwnd_raw.is_invalid() {
+    return None;
+  }
+  let current_name = unsafe { element.CurrentName().ok() }
+    .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
+    .or_else(|| get_legacy_accessible_name(&element));
+  if let Some(ref cn) = current_name {
+    if name.map_or(true, |q| match_mode_matches(cn, q, mm)) {
+      return Some(hwnd_raw);
+    }
+  } else if name.is_none() {
+    return Some(hwnd_raw);
+  }
+  None
+}
+
+fn find_element_uia_slow_path(
+  automation: &IUIAutomation,
+  root: &IUIAutomationElement,
+  name: Option<&str>,
+  role: Option<&str>,
+  automation_id: Option<&str>,
+  mm: &str,
+) -> Option<HWND> {
+  let true_condition = unsafe { automation.CreateTrueCondition().ok()? };
+  let all = unsafe { root.FindAll(TreeScope_Descendants, &true_condition).ok()? };
+  let length = unsafe { all.Length().ok()? };
+
+  for i in 0..length {
+    let element = unsafe { all.GetElement(i).ok()? };
+
+    if let Some(query_name) = name {
+      let current_name = unsafe { element.CurrentName().ok() }
+        .and_then(|n| { let s = n.to_string(); if s.is_empty() { None } else { Some(s) } })
+        .or_else(|| get_legacy_accessible_name(&element))
+        .unwrap_or_default();
+      if !match_mode_matches(&current_name, query_name, mm) {
+        continue;
+      }
+    }
+
+    if let Some(query_role) = role {
+      if let Ok(current_role) = unsafe { element.CurrentAriaRole() } {
+        let current_role = current_role.to_string();
+        if !match_mode_matches(&current_role, query_role, mm) {
+          continue;
+        }
+      } else {
+        continue;
+      }
+    }
+
+    if let Some(query_auto_id) = automation_id {
+      if let Ok(current_auto_id) = unsafe { element.CurrentAutomationId() } {
+        let current_auto_id = current_auto_id.to_string();
+        if !match_mode_matches(&current_auto_id, query_auto_id, mm) {
+          continue;
+        }
+      } else {
+        continue;
+      }
+    }
+
+    if let Ok(hwnd_raw) = unsafe { element.CurrentNativeWindowHandle() } {
+      if !hwnd_raw.is_invalid() {
+        return Some(hwnd_raw);
+      }
+    }
+  }
+  None
 }
 
 #[napi(js_name = "findElement")]
@@ -380,9 +418,7 @@ async fn hardware_type_sendinput(element_handle: String, text: String) -> Result
   unsafe {
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
   let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
   for code_point in text.encode_utf16() {
     let input_down = INPUT {
@@ -455,8 +491,7 @@ pub async fn send_keys(
       unsafe {
         let _ = SetForegroundWindow(hwnd);
       }
-      let _ = hwnd;
-      tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+      wait_for_raw_foreground(hwnd.0 as isize, 300).await;
 
       let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
       for code_point in text.encode_utf16() {
@@ -503,8 +538,7 @@ pub async fn press_key_codes(window_handle: String, key_codes: Vec<i32>) -> Resu
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
 
   for &vk in &key_codes {
     let input_down = INPUT {
@@ -750,8 +784,7 @@ pub(super) async fn click_element_with_mode(
 
     crate::patterns::InputMode::Auto => {
       let hwnd = parse_hwnd(&element_handle)?;
-      // Auto: try UIA first, fallback to hardware
-      let mut cursor_set = false;
+      // Try UIA InvokePattern first
       unsafe {
         let _com_init = crate::utils::ComScope::init();
         if let Ok(automation) = create_uia() {
@@ -764,51 +797,14 @@ pub(super) async fn click_element_with_mode(
               })?;
               return Ok(());
             }
-            if let Ok(rect) = element.CurrentBoundingRectangle() {
-              let cx = (rect.left + rect.right) / 2;
-              let cy = (rect.top + rect.bottom) / 2;
-              SetCursorPos(cx, cy).map_err(|err| {
-                if is_access_denied(&err) {
-                  uipi_permission_denied(&element_handle)
-                } else {
-                  Error::from(AutomationError::Generic {
-                    message: "Failed to set cursor position".into(),
-                  })
-                }
-              })?;
-              cursor_set = true;
-            }
           }
         }
       }
-      if !cursor_set {
-        tracing::warn!("UIA failed for hwnd={element_handle}, falling back to Win32 click");
-        let mut rect = RECT::default();
-        unsafe {
-          if GetWindowRect(hwnd, &mut rect).is_err() {
-            return Err(Error::from(AutomationError::ScreenshotFailed {
-              handle: element_handle.clone(),
-              reason: "Failed to get window rect".into(),
-            }));
-          }
-        }
-        let cx = (rect.left + rect.right) / 2;
-        let cy = (rect.top + rect.bottom) / 2;
-        unsafe {
-          SetCursorPos(cx, cy).map_err(|err| {
-            if is_access_denied(&err) {
-              uipi_permission_denied(&element_handle)
-            } else {
-              Error::from(AutomationError::Generic {
-                message: "Failed to set cursor position".into(),
-              })
-            }
-          })?;
-        }
-      }
-  tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
-  Ok(())
+      // Fallback: hardware click via SendInput
+      element_center_and_set_cursor(hwnd, &element_handle)?;
+      tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+      send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
+      Ok(())
     }
   }
 }
@@ -816,46 +812,30 @@ pub(super) async fn click_element_with_mode(
 /// Hardware-only click via SendInput (used when input-hardware feature is off).
 async fn hardware_click_sendinput(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
-  let mut rect = RECT::default();
-  unsafe {
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed {
-        handle: element_handle,
-        reason: "Failed to get window rect".into(),
-      }));
-    }
-    let cx = (rect.left + rect.right) / 2;
-    let cy = (rect.top + rect.bottom) / 2;
-    SetCursorPos(cx, cy).map_err(|err| {
-      if is_access_denied(&err) {
-        uipi_permission_denied(&element_handle)
-      } else {
-        Error::from(AutomationError::Generic {
-          message: "Failed to set cursor position".into(),
-        })
-      }
-    })?;
-  }
+  element_center_and_set_cursor(hwnd, &element_handle)?;
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   Ok(())
 }
 
 fn find_and_invoke_by_name(
-  automation: &windows::Win32::UI::Accessibility::IUIAutomation,
-  root: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+  automation: &IUIAutomation,
+  root: &IUIAutomationElement,
   query_lower: &str,
 ) -> Result<bool> {
-  unsafe {
-    // Fast path: try FindFirst with an exact-match property condition.
+  // Fast path: try FindFirst with an exact-match property condition.
+  {
     let exact_value: VARIANT = BSTR::from(query_lower).into();
-    if let Ok(condition) = automation.CreatePropertyConditionEx(
-      UIA_NamePropertyId,
-      &exact_value,
-      PropertyConditionFlags(PropertyConditionFlags_IgnoreCase.0),
-    ) {
-      if let Ok(element) = root.FindFirst(TreeScope_Descendants, &condition) {
-        if let Ok(current_name) = element.CurrentName() {
+    let condition = unsafe {
+      automation.CreatePropertyConditionEx(
+        UIA_NamePropertyId,
+        &exact_value,
+        PropertyConditionFlags(PropertyConditionFlags_IgnoreCase.0),
+      )
+    };
+    if let Ok(condition) = condition {
+      if let Ok(element) = unsafe { root.FindFirst(TreeScope_Descendants, &condition) } {
+        if let Ok(current_name) = unsafe { element.CurrentName() } {
           let current_name = current_name.to_string();
           if !current_name.is_empty()
             && current_name.to_ascii_lowercase() == query_lower
@@ -866,19 +846,24 @@ fn find_and_invoke_by_name(
         }
       }
     }
+  }
 
-    // Fast path #2: try FindFirst with substring match.
+  // Fast path #2: try FindFirst with substring match.
+  {
     let substring_value: VARIANT = BSTR::from(query_lower).into();
     let substring_flags = PropertyConditionFlags(
       PropertyConditionFlags_MatchSubstring.0 | PropertyConditionFlags_IgnoreCase.0,
     );
-    if let Ok(condition) = automation.CreatePropertyConditionEx(
-      UIA_NamePropertyId,
-      &substring_value,
-      substring_flags,
-    ) {
-      if let Ok(element) = root.FindFirst(TreeScope_Descendants, &condition) {
-        if let Ok(current_name) = element.CurrentName() {
+    let condition = unsafe {
+      automation.CreatePropertyConditionEx(
+        UIA_NamePropertyId,
+        &substring_value,
+        substring_flags,
+      )
+    };
+    if let Ok(condition) = condition {
+      if let Ok(element) = unsafe { root.FindFirst(TreeScope_Descendants, &condition) } {
+        if let Ok(current_name) = unsafe { element.CurrentName() } {
           let current_name = current_name.to_string();
           if !current_name.is_empty()
             && current_name.to_ascii_lowercase().contains(query_lower)
@@ -889,15 +874,17 @@ fn find_and_invoke_by_name(
         }
       }
     }
+  }
 
-    // Slow path: enumerate all descendants and search manually.
-    if let Ok(true_condition) = automation.CreateTrueCondition() {
-      if let Ok(all) = root.FindAll(TreeScope_Descendants, &true_condition) {
-        if let Ok(length) = all.Length() {
+  // Slow path: enumerate all descendants and search manually.
+  {
+    let true_condition = unsafe { automation.CreateTrueCondition() };
+    if let Ok(true_condition) = true_condition {
+      if let Ok(all) = unsafe { root.FindAll(TreeScope_Descendants, &true_condition) } {
+        if let Ok(length) = unsafe { all.Length() } {
           for i in 0..length {
-            if let Ok(element) = all.GetElement(i) {
-              let current_name = element
-                .CurrentName()
+            if let Ok(element) = unsafe { all.GetElement(i) } {
+              let current_name = unsafe { element.CurrentName() }
                 .ok()
                 .map(|n| n.to_string())
                 .unwrap_or_default();
@@ -912,26 +899,26 @@ fn find_and_invoke_by_name(
         }
       }
     }
-
-    Ok(false)
   }
+
+  Ok(false)
 }
 
 #[napi(js_name = "clickElementByName")]
 pub async fn click_element_by_name(window_handle: String, name: String) -> Result<()> {
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
-
-    let hwnd = parse_hwnd(&window_handle)?;
-    let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
-
-    let query_lower = name.to_ascii_lowercase();
-    if find_and_invoke_by_name(&automation, &root, &query_lower)? {
-      return Ok(());
-    }
-    Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: name.clone() }))
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe {
+    create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let hwnd = parse_hwnd(&window_handle)?;
+  let root = unsafe {
+    automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?
+  };
+  let query_lower = name.to_ascii_lowercase();
+  if find_and_invoke_by_name(&automation, &root, &query_lower)? {
+    return Ok(());
   }
+  Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: name.clone() }))
 }
 
 /// Clicks a sequence of elements by name in a single UIA tree traversal.
@@ -943,59 +930,54 @@ pub async fn click_sequence(window_handle: String, names: Vec<String>) -> Result
     return Ok(());
   }
 
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe {
+    create_uia().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let hwnd = parse_hwnd(&window_handle)?;
+  let root = unsafe {
+    automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?
+  };
+  let lower_names: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
+  let mut remaining: Vec<bool> = vec![true; names.len()];
+  let total = names.len();
 
-    let hwnd = parse_hwnd(&window_handle)?;
-    let root = automation.ElementFromHandle(hwnd).map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
-
-    let lower_names: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
-    let mut remaining: Vec<bool> = vec![true; names.len()];
-    let total = names.len();
-
-    // Single FindAll, then search for each name independently.
-    // Iterating name-by-name avoids mismatches from one element matching
-    // multiple name substrings (e.g. non-button elements whose names
-    // happen to contain "plus" or "equals").
-    if let Ok(true_condition) = automation.CreateTrueCondition() {
-      if let Ok(all) = root.FindAll(TreeScope_Descendants, &true_condition) {
-        if let Ok(length) = all.Length() {
-          for j in 0..total {
-            if !remaining[j] { continue; }
-            for i in 0..length {
-              if let Ok(element) = all.GetElement(i) {
-                let current_name = element
-                  .CurrentName()
-                  .ok()
-                  .map(|n| n.to_string())
-                  .unwrap_or_default();
-                if current_name.is_empty() { continue; }
-                let lower = current_name.to_ascii_lowercase();
-                if lower.contains(&lower_names[j]) {
-                  if let Err(err) = invoke_uia_element(&element) {
-                    return Err(Error::from(AutomationError::Generic { message: format!(
-                      "Failed to invoke '{}': {}", names[j], err
-                    ) }));
-                  }
-                  remaining[j] = false;
-                  break;
+  // Single FindAll, then search for each name independently.
+  if let Ok(true_condition) = unsafe { automation.CreateTrueCondition() } {
+    if let Ok(all) = unsafe { root.FindAll(TreeScope_Descendants, &true_condition) } {
+      if let Ok(length) = unsafe { all.Length() } {
+        for j in 0..total {
+          if !remaining[j] { continue; }
+          for i in 0..length {
+            if let Ok(element) = unsafe { all.GetElement(i) } {
+              let current_name = unsafe { element.CurrentName() }
+                .ok()
+                .map(|n| n.to_string())
+                .unwrap_or_default();
+              if current_name.is_empty() { continue; }
+              let lower = current_name.to_ascii_lowercase();
+              if lower.contains(&lower_names[j]) {
+                if let Err(err) = invoke_uia_element(&element) {
+                  return Err(Error::from(AutomationError::Generic { message: format!(
+                    "Failed to invoke '{}': {}", names[j], err
+                  ) }));
                 }
+                remaining[j] = false;
+                break;
               }
             }
-            if remaining[j] {
-              return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
-            }
+          }
+          if remaining[j] {
+            return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
           }
         }
       }
     }
+  }
 
-    // Check for any remaining unfound names.
-    for j in 0..total {
-      if remaining[j] {
-        return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
-      }
+  for j in 0..total {
+    if remaining[j] {
+      return Err(Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: names[j].clone() }));
     }
   }
 
@@ -1014,85 +996,70 @@ pub struct ElementPathStep {
 #[napi(js_name = "buildElementPath")]
 pub fn build_element_path(element_handle: String) -> Result<Vec<ElementPathStep>> {
   let hwnd = parse_hwnd(&element_handle)?;
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia()?;
-    let true_condition = automation.CreateTrueCondition()
-      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
-    let walker = automation.CreateTreeWalker(&true_condition)
-      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe { create_uia()? };
+  let true_condition = unsafe {
+    automation.CreateTrueCondition()
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let walker = unsafe {
+    automation.CreateTreeWalker(&true_condition)
+      .map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let mut current = unsafe {
+    automation.ElementFromHandle(hwnd)
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?
+  };
 
-    let mut path: Vec<ElementPathStep> = Vec::new();
-    let mut current = automation.ElementFromHandle(hwnd)
-      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: element_handle.clone(), selector: "".into() }))?;
+  let mut path: Vec<ElementPathStep> = Vec::new();
 
-    loop {
-      // Read properties of current element
-      let role = current.CurrentAriaRole()
-        .ok().map(|s| s.to_string()).unwrap_or_default();
-      let name = current.CurrentName()
-        .ok().map(|s| s.to_string()).unwrap_or_default();
-      let automation_id = current.CurrentAutomationId()
-        .ok().map(|s| s.to_string()).unwrap_or_default();
-      let class_name = current.CurrentClassName()
-        .ok().map(|s| s.to_string()).unwrap_or_default();
+  loop {
+    let role = unsafe { current.CurrentAriaRole() }
+      .ok().map(|s| s.to_string()).unwrap_or_default();
+    let name = unsafe { current.CurrentName() }
+      .ok().map(|s| s.to_string()).unwrap_or_default();
+    let automation_id = unsafe { current.CurrentAutomationId() }
+      .ok().map(|s| s.to_string()).unwrap_or_default();
+    let class_name = unsafe { current.CurrentClassName() }
+      .ok().map(|s| s.to_string()).unwrap_or_default();
 
-      // Get parent
-      let parent = walker.GetParentElement(&current);
-      match parent {
-        Ok(parent_element) => {
-          // Find sibling index by enumerating all parent's children
-          let mut sibling_index = 0i32;
-          if let Ok(children) = parent_element.FindAll(TreeScope_Children, &true_condition) {
-            if let Ok(length) = children.Length() {
-              for i in 0..length {
-                if let Ok(child) = children.GetElement(i) {
-                  // Compare handles
-                  if let Ok(child_hwnd) = child.CurrentNativeWindowHandle() {
-                    if let Ok(current_hwnd) = current.CurrentNativeWindowHandle() {
-                      if child_hwnd == current_hwnd {
-                        sibling_index = i as i32;
-                        break;
-                      }
+    let parent = unsafe { walker.GetParentElement(&current) };
+    match parent {
+      Ok(parent_element) => {
+        let mut sibling_index = 0i32;
+        if let Ok(children) = unsafe { parent_element.FindAll(TreeScope_Children, &true_condition) } {
+          if let Ok(length) = unsafe { children.Length() } {
+            for i in 0..length {
+              if let Ok(child) = unsafe { children.GetElement(i) } {
+                if let Ok(child_hwnd) = unsafe { child.CurrentNativeWindowHandle() } {
+                  if let Ok(current_hwnd) = unsafe { current.CurrentNativeWindowHandle() } {
+                    if child_hwnd == current_hwnd {
+                      sibling_index = i as i32;
+                      break;
                     }
                   }
                 }
               }
             }
           }
-
-          path.push(ElementPathStep {
-            role,
-            name,
-            automation_id,
-            class_name,
-            sibling_index,
-          });
-
-          current = parent_element;
         }
-        Err(_) => {
-          // No parent — add final step and stop
-          path.push(ElementPathStep {
-            role,
-            name,
-            automation_id,
-            class_name,
-            sibling_index: 0,
-          });
-          break;
-        }
+
+        path.push(ElementPathStep { role, name, automation_id, class_name, sibling_index });
+        current = parent_element;
       }
-
-      if path.len() > 100 {
-        break; // Safety limit
+      Err(_) => {
+        path.push(ElementPathStep { role, name, automation_id, class_name, sibling_index: 0 });
+        break;
       }
     }
 
-    // Path is built from target up to root — reverse for root→target order
-    path.reverse();
-    Ok(path)
+    if path.len() > 100 {
+      break;
+    }
   }
+
+  path.reverse();
+  Ok(path)
 }
 
 #[napi(js_name = "resolveElementPath")]
@@ -1164,43 +1131,7 @@ pub async fn resolve_element_path(window_handle: String, path: Vec<ElementPathSt
 pub async fn hover_element(element_handle: String) -> Result<()> {
   debug!("hoverElement hwnd={element_handle}");
   let hwnd = parse_hwnd(&element_handle)?;
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    // Try UIA bounding rectangle first (better for UWP/modern apps)
-    if let Ok(automation) = create_uia() {
-      if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        if let Ok(rect) = element.CurrentBoundingRectangle() {
-          let cx = (rect.left + rect.right) / 2;
-          let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|err| {
-            if is_access_denied(&err) {
-              uipi_permission_denied(&element_handle)
-            } else {
-              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-            }
-          })?;
-          return Ok(());
-        }
-      }
-    }
-  }
-  // Fallback: Win32 GetWindowRect
-  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
-  unsafe {
-    let mut rect = RECT::default();
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
-    }
-    let center_x = (rect.left + rect.right) / 2;
-    let center_y = (rect.top + rect.bottom) / 2;
-    SetCursorPos(center_x, center_y).map_err(|err| {
-      if is_access_denied(&err) {
-        uipi_permission_denied(&element_handle)
-      } else {
-        Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-      }
-    })?;
-  }
+  element_center_and_set_cursor(hwnd, &element_handle)?;
   Ok(())
 }
 
@@ -1447,7 +1378,7 @@ unsafe fn check_element_matches(
   mm: &str,
 ) -> bool {
   if let Some(query_name) = name {
-    if let Ok(current_name) = element.CurrentName() {
+    if let Ok(current_name) = unsafe { element.CurrentName() } {
       let current_name = current_name.to_string();
       if current_name.is_empty() || !match_mode_matches(&current_name, query_name, mm) {
         return false;
@@ -1458,7 +1389,7 @@ unsafe fn check_element_matches(
   }
 
   if let Some(query_role) = role {
-    if let Ok(current_role) = element.CurrentAriaRole() {
+    if let Ok(current_role) = unsafe { element.CurrentAriaRole() } {
       let current_role = current_role.to_string();
       if current_role.is_empty() || !match_mode_matches(&current_role, query_role, mm) {
         return false;
@@ -1469,7 +1400,7 @@ unsafe fn check_element_matches(
   }
 
   if let Some(query_aid) = automation_id {
-    if let Ok(current_aid) = element.CurrentAutomationId() {
+    if let Ok(current_aid) = unsafe { element.CurrentAutomationId() } {
       let current_aid = current_aid.to_string();
       if current_aid.is_empty() || !match_mode_matches(&current_aid, query_aid, mm) {
         return false;
@@ -1480,7 +1411,7 @@ unsafe fn check_element_matches(
   }
 
   if let Some(query_text) = text {
-    if let Ok(current_name) = element.CurrentName() {
+    if let Ok(current_name) = unsafe { element.CurrentName() } {
       let current_name = current_name.to_string();
       if current_name.is_empty() || !match_mode_matches(&current_name, query_text, mm) {
         return false;
@@ -1838,8 +1769,7 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
 
   let parts: Vec<&str> = key_combination.split('+').map(|s| s.trim()).collect();
   if parts.is_empty() {
@@ -1936,48 +1866,7 @@ async fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_F
 #[napi(js_name = "rightClickElement")]
 pub async fn right_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
-  // Try UIA bounding rect first (better for UWP/modern apps)
-  let uia_ok = unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    if let Ok(automation) = create_uia() {
-      if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        if let Ok(rect) = element.CurrentBoundingRectangle() {
-          let cx = (rect.left + rect.right) / 2;
-          let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|err| {
-            if is_access_denied(&err) {
-              uipi_permission_denied(&element_handle)
-            } else {
-              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-            }
-          }).is_ok()
-        } else { false }
-      } else { false }
-    } else { false }
-  };
-  if uia_ok {
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await?;
-    return Ok(());
-  }
-  // Fallback: Win32 GetWindowRect
-  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
-  let mut rect = RECT::default();
-  unsafe {
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
-    }
-    let center_x = (rect.left + rect.right) / 2;
-    let center_y = (rect.top + rect.bottom) / 2;
-    SetCursorPos(center_x, center_y)
-      .map_err(|err| {
-        if is_access_denied(&err) {
-          uipi_permission_denied(&element_handle)
-        } else {
-          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-        }
-      })?;
-  }
+  element_center_and_set_cursor(hwnd, &element_handle)?;
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await?;
   Ok(())
@@ -1986,52 +1875,8 @@ pub async fn right_click_element(element_handle: String) -> Result<()> {
 #[napi(js_name = "doubleClickElement")]
 pub async fn double_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
-  // Try UIA bounding rect first (better for UWP/modern apps)
-  let uia_ok = unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    if let Ok(automation) = create_uia() {
-      if let Ok(element) = automation.ElementFromHandle(hwnd) {
-        if let Ok(rect) = element.CurrentBoundingRectangle() {
-          let cx = (rect.left + rect.right) / 2;
-          let cy = (rect.top + rect.bottom) / 2;
-          SetCursorPos(cx, cy).map_err(|err| {
-            if is_access_denied(&err) {
-              uipi_permission_denied(&element_handle)
-            } else {
-              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-            }
-          }).is_ok()
-        } else { false }
-      } else { false }
-    } else { false }
-  };
-  if uia_ok {
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
-    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
-    return Ok(());
-  }
-  // Fallback: Win32 GetWindowRect
-  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
-  let mut rect = RECT::default();
-  unsafe {
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-      return Err(Error::from(AutomationError::ScreenshotFailed { handle: element_handle.clone(), reason: "Failed to get window rectangle".into() }));
-    }
-    let center_x = (rect.left + rect.right) / 2;
-    let center_y = (rect.top + rect.bottom) / 2;
-    SetCursorPos(center_x, center_y)
-      .map_err(|err| {
-        if is_access_denied(&err) {
-          uipi_permission_denied(&element_handle)
-        } else {
-          Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
-        }
-      })?;
-  }
+  element_center_and_set_cursor(hwnd, &element_handle)?;
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-  // Two quick left clicks
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
   send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
@@ -2078,6 +1923,54 @@ pub async fn click_at(x: i32, y: i32) -> Result<()> {
   Ok(())
 }
 
+/// Get element center via UIA bounding rectangle, with Win32 GetWindowRect fallback.
+/// Sets cursor position at the center point.
+fn element_center_and_set_cursor(hwnd: HWND, handle: &str) -> Result<()> {
+  unsafe {
+    let _com_init = crate::utils::ComScope::init();
+    if let Ok(automation) = create_uia() {
+      if let Ok(element) = automation.ElementFromHandle(hwnd) {
+        if let Ok(rect) = element.CurrentBoundingRectangle() {
+          let cx = (rect.left + rect.right) / 2;
+          let cy = (rect.top + rect.bottom) / 2;
+          SetCursorPos(cx, cy).map_err(|err| {
+            if is_access_denied(&err) {
+              uipi_permission_denied(handle)
+            } else {
+              Error::from(AutomationError::Generic {
+                message: "Failed to set cursor position".into(),
+              })
+            }
+          })?;
+          return Ok(());
+        }
+      }
+    }
+  }
+  tracing::warn!("UIA bounding rect failed for hwnd={handle}, falling back to Win32 GetWindowRect");
+  unsafe {
+    let mut rect = RECT::default();
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+      return Err(Error::from(AutomationError::ScreenshotFailed {
+        handle: handle.to_string(),
+        reason: "Failed to get window rectangle".into(),
+      }));
+    }
+    let cx = (rect.left + rect.right) / 2;
+    let cy = (rect.top + rect.bottom) / 2;
+    SetCursorPos(cx, cy).map_err(|err| {
+      if is_access_denied(&err) {
+        uipi_permission_denied(handle)
+      } else {
+        Error::from(AutomationError::Generic {
+          message: "Failed to set cursor position".into(),
+        })
+      }
+    })?;
+    Ok(())
+  }
+}
+
 #[napi(js_name = "getSystemDpi")]
 pub fn get_system_dpi_napi() -> u32 {
   crate::utils::get_system_dpi()
@@ -2091,8 +1984,7 @@ pub async fn key_down(window_handle: String, key: String) -> Result<()> {
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
   send_key_down(vk);
@@ -2107,8 +1999,7 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
   send_key_up(vk);
@@ -2138,7 +2029,7 @@ pub async fn select_text(element_handle: String) -> Result<()> {
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
   send_key_down(0x11); // VK_CONTROL
   send_char_key(0x41).await; // 'A'
   send_key_up(0x11); // VK_CONTROL
@@ -2176,18 +2067,18 @@ pub async fn get_selection(element_handle: String) -> Result<String> {
 
 #[napi(js_name = "replaceSelectedText")]
 pub async fn replace_selected_text(element_handle: String, text: String) -> Result<()> {
-  // Select all text first (UIA or Ctrl+A fallback) — hwnd must not cross await boundary
+  // Select all text first (UIA or Ctrl+A fallback)
   let _ = select_text(element_handle.clone()).await;
 
   let hwnd = parse_hwnd(&element_handle)?;
+  let raw_hwnd = hwnd.0 as isize;
   unsafe {
     let _ = ShowWindow(hwnd, SW_NORMAL);
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
-  let _ = hwnd;
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-  let hwnd = parse_hwnd(&element_handle)?;
+  wait_for_raw_foreground(hwnd.0 as isize, 300).await;
+  let hwnd = HWND(raw_hwnd as *mut core::ffi::c_void);
   let wide = to_wide_null_terminated(&text);
   unsafe {
     SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
@@ -2211,65 +2102,60 @@ fn build_element_tree(
   automation: &IUIAutomation,
   max_depth: i32,
 ) -> ElementNode {
-  // SAFETY: element and automation are valid UIA COM objects obtained from create_uia();
-  // Current* property reads and FindAll follow the UIA COM ABI. all.GetElement returns
-  // IUIAutomationElement with correct ref counting.
-  unsafe {
-    let handle = element.CurrentNativeWindowHandle()
-      .ok().map(|h| hwnd_to_string(h)).unwrap_or_default();
-    let name = element.CurrentName()
-      .ok().map(|s| s.to_string()).unwrap_or_default();
-    let role = element.CurrentAriaRole()
-      .ok().map(|s| s.to_string()).unwrap_or_default();
-    let auto_id = element.CurrentAutomationId()
-      .ok().map(|s| s.to_string()).unwrap_or_default();
-    let is_visible = element.CurrentIsOffscreen()
-      .ok().map(|v| !v.as_bool()).unwrap_or(false);
-    let is_enabled = element.CurrentIsEnabled()
-      .ok().map(|v| v.as_bool()).unwrap_or(true);
+  let handle = unsafe { element.CurrentNativeWindowHandle() }
+    .ok().map(|h| hwnd_to_string(h)).unwrap_or_default();
+  let name = unsafe { element.CurrentName() }
+    .ok().map(|s| s.to_string()).unwrap_or_default();
+  let role = unsafe { element.CurrentAriaRole() }
+    .ok().map(|s| s.to_string()).unwrap_or_default();
+  let auto_id = unsafe { element.CurrentAutomationId() }
+    .ok().map(|s| s.to_string()).unwrap_or_default();
+  let is_visible = unsafe { element.CurrentIsOffscreen() }
+    .ok().map(|v| !v.as_bool()).unwrap_or(false);
+  let is_enabled = unsafe { element.CurrentIsEnabled() }
+    .ok().map(|v| v.as_bool()).unwrap_or(true);
 
-    let mut children = Vec::new();
-    if max_depth > 0 {
-      if let Ok(true_cond) = automation.CreateTrueCondition() {
-        if let Ok(all) = element.FindAll(TreeScope_Children, &true_cond) {
-          if let Ok(length) = all.Length() {
-            for i in 0..length {
-              if let Ok(child) = all.GetElement(i) {
-                children.push(build_element_tree(child, automation, max_depth - 1));
-              }
+  let mut children = Vec::new();
+  if max_depth > 0 {
+    if let Ok(true_cond) = unsafe { automation.CreateTrueCondition() } {
+      if let Ok(all) = unsafe { element.FindAll(TreeScope_Children, &true_cond) } {
+        if let Ok(length) = unsafe { all.Length() } {
+          for i in 0..length {
+            if let Ok(child) = unsafe { all.GetElement(i) } {
+              children.push(build_element_tree(child, automation, max_depth - 1));
             }
           }
         }
       }
     }
-
-    ElementNode { handle, name, role, automation_id: auto_id, is_visible, is_enabled, children }
   }
+
+  ElementNode { handle, name, role, automation_id: auto_id, is_visible, is_enabled, children }
 }
 
 #[napi(js_name = "inspectWindowTree")]
 pub fn inspect_window_tree(window_handle: String, max_depth: Option<i32>) -> Result<Vec<ElementNode>> {
   let hwnd = parse_hwnd(&window_handle)?;
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia()?;
-    let root = automation.ElementFromHandle(hwnd)
-      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?;
-    let depth = max_depth.unwrap_or(10);
-    let mut result = Vec::new();
-    if let Ok(true_cond) = automation.CreateTrueCondition() {
-      if let Ok(all) = root.FindAll(TreeScope_Children, &true_cond) {
-        if let Ok(length) = all.Length() {
-          for i in 0..length {
-            if let Ok(child) = all.GetElement(i) {
-              result.push(build_element_tree(child, &automation, depth));
-            }
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe { create_uia()? };
+  let root = unsafe {
+    automation.ElementFromHandle(hwnd)
+      .map_err(|_err| Error::from(AutomationError::ElementNotFound { handle: window_handle.clone(), selector: "".into() }))?
+  };
+  let depth = max_depth.unwrap_or(10);
+  let mut result = Vec::new();
+  if let Ok(true_cond) = unsafe { automation.CreateTrueCondition() } {
+    if let Ok(all) = unsafe { root.FindAll(TreeScope_Children, &true_cond) } {
+      if let Ok(length) = unsafe { all.Length() } {
+        for i in 0..length {
+          if let Ok(child) = unsafe { all.GetElement(i) } {
+            result.push(build_element_tree(child, &automation, depth));
           }
         }
       }
     }
-    Ok(result)
   }
+  Ok(result)
 }
 
 fn get_legacy_accessible_name(element: &IUIAutomationElement) -> Option<String> {

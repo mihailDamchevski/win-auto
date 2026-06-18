@@ -83,9 +83,10 @@ const STRATEGY_DEFS = [
 ];
 
 const strategyCache = new Map<string, { strategyName: string; handle: string }>();
+const CACHE_MAX_SIZE = 500;
 
 function cacheKey(s: ElementSelector): string {
-  return `aid:${s.automationId ?? ""}|name:${s.name ?? ""}|role:${s.role ?? ""}|cn:${s.className ?? ""}`;
+  return JSON.stringify(s, Object.keys(s).sort());
 }
 
 function debugLog(...args: unknown[]): void {
@@ -266,6 +267,11 @@ export class Locator {
             const fbEl = await this.findBySelector(fb.selector);
             if (fbEl) {
               debugLog(`fallback ${fb.strategyName} succeeded`);
+              // LRU eviction: remove oldest entry if cache exceeds limit
+              if (strategyCache.size >= CACHE_MAX_SIZE) {
+                const firstKey = strategyCache.keys().next().value;
+                if (firstKey !== undefined) strategyCache.delete(firstKey);
+              }
               strategyCache.set(ck, { strategyName: fb.strategyName, handle: fbEl.handle });
               return fbEl;
             }

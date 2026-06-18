@@ -200,13 +200,12 @@ export async function buildWindowNotFoundError(
 
 /** Check if an error is likely a stale-element or element-not-found condition
  *  that can be recovered by re-resolving the element's selector.
- *  Non-retriable errors (PermissionDeniedError, TimeoutError, PatternNotSupportedError)
- *  propagate immediately instead of triggering a useless retry cycle. */
+ *  Non-retriable errors (PermissionDeniedError, TimeoutError, PatternNotSupportedError,
+ *  BackendError) propagate immediately instead of triggering a useless retry cycle. */
 export function isStaleError(err: unknown): boolean {
   return (
     err instanceof ElementNotFoundError ||
-    err instanceof StaleElementError ||
-    err instanceof BackendError
+    err instanceof StaleElementError
   );
 }
 

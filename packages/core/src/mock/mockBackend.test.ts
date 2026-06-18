@@ -122,10 +122,6 @@ describe("MockBackend", () => {
     expect(info[0].pid).toBe(pid);
   });
 
-  it("setAppConfig is a no-op", () => {
-    expect(() => backend.setAppConfig("test.exe", ["Edit"])).not.toThrow();
-  });
-
   describe("ValuePattern", () => {
     it("getValue returns element text", async () => {
       const pid = await backend.launch("C:\\mock.exe");

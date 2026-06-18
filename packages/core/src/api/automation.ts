@@ -34,8 +34,9 @@ export class Automation {
 
   private static detectBackend(): Backend | null {
     if (process.env.WIN_AUTO_BACKEND === "mock") {
+      // Guard against ESM context where require() is not defined
+      if (typeof require === "undefined") return null;
       try {
-        // Lazy require to avoid circular dependency
         const { MockBackend } = require("../mock/mockBackend");
         return new MockBackend();
       } catch {
@@ -43,6 +44,20 @@ export class Automation {
       }
     }
     return null;
+  }
+
+  /** Async factory for ESM environments where mock backend cannot be loaded
+   *  via synchronous require(). Falls through to NativeBackend on failure. */
+  static async create(backend?: Backend, inputMode?: InputMode): Promise<Automation> {
+    if (!backend && process.env.WIN_AUTO_BACKEND === "mock") {
+      try {
+        const { MockBackend } = await import("../mock/mockBackend");
+        backend = new MockBackend();
+      } catch {
+        // NativeBackend fallback
+      }
+    }
+    return new Automation(backend, inputMode);
   }
 
   public async launch(executablePath: string): Promise<App> {

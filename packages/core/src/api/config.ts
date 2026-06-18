@@ -77,18 +77,50 @@ export async function loadWinAutoConfig(cwd?: string): Promise<WinAutoConfig | n
   ];
   for (const candidate of candidates) {
     const configPath = path.resolve(projectDir, candidate);
-    if (fs.existsSync(configPath)) {
+    if (!fs.existsSync(configPath)) continue;
+
+    if (candidate.endsWith(".ts")) {
+      const result = await loadTsConfig(configPath);
+      if (result) return result;
+    } else {
       try {
         const fileUrl = pathToFileURL(configPath).href;
         const mod = await import(fileUrl);
-        if (mod?.default) {
-          return mod.default as WinAutoConfig;
-        }
+        if (mod?.default) return mod.default as WinAutoConfig;
       } catch {
         continue;
       }
     }
   }
+  return null;
+}
+
+async function loadTsConfig(configPath: string): Promise<WinAutoConfig | null> {
+  const fileUrl = pathToFileURL(configPath).href;
+
+  try {
+    const mod = await import(fileUrl);
+    if (mod?.default) return mod.default as WinAutoConfig;
+  } catch {
+    /* fall through to loader registration */
+  }
+
+  for (const loader of ["tsx", "ts-node/esm"]) {
+    try {
+      await import(loader);
+      const mod = await import(fileUrl);
+      if (mod?.default) return mod.default as WinAutoConfig;
+    } catch {
+      /* try next loader */
+    }
+  }
+
+  console.warn(
+    `[win-auto] Found "${path.basename(configPath)}" but could not load it.\n` +
+      "TypeScript config files require 'tsx' or 'ts-node':\n" +
+      "  npm install tsx --save-dev\n" +
+      "Alternatively, rename to win-auto.config.mjs / .cjs / .js",
+  );
   return null;
 }
 

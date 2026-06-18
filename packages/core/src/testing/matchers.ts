@@ -269,10 +269,8 @@ export function expectScreenshot(buffer: Uint8Array | number[]): { toBeBMP: () =
 // ─── Window Assertions (8.5) ──────────────────────────────────────────
 
 function getMockBackend(backend: unknown) {
-  const mock = backend as {
-    windowHandleToWin?: Map<string, { title: string; isMaximized: boolean; isMinimized: boolean; isFocused: boolean }>;
-  };
-  return mock.windowHandleToWin;
+  const mock = backend as { getWindowRecord?: (handle: string) => { title: string; isMaximized: boolean; isMinimized: boolean; isFocused: boolean } | undefined };
+  return mock.getWindowRecord;
 }
 
 export class WindowAssertionsImpl {
@@ -296,8 +294,8 @@ export class WindowAssertionsImpl {
   }
 
   async toHaveTitle(expected: string | RegExp): Promise<void> {
-    const winMap = getMockBackend(this.win.backend);
-    const record = winMap?.get(this.win.handle);
+    const getRecord = getMockBackend(this.win.backend);
+    const record = getRecord?.(this.win.handle);
     const title = record?.title ?? "";
     if (expected instanceof RegExp) {
       if (this.negate) {
@@ -327,8 +325,8 @@ export class WindowAssertionsImpl {
   }
 
   async toBeMaximized(): Promise<void> {
-    const winMap = getMockBackend(this.win.backend);
-    const record = winMap?.get(this.win.handle);
+    const getRecord = getMockBackend(this.win.backend);
+    const record = getRecord?.(this.win.handle);
     const maximized = record?.isMaximized ?? false;
     if (this.negate) {
       expect(maximized, `Expected window ${this.win.handle} to NOT be maximized`).toBe(false);
@@ -338,8 +336,8 @@ export class WindowAssertionsImpl {
   }
 
   async toBeMinimized(): Promise<void> {
-    const winMap = getMockBackend(this.win.backend);
-    const record = winMap?.get(this.win.handle);
+    const getRecord = getMockBackend(this.win.backend);
+    const record = getRecord?.(this.win.handle);
     const minimized = record?.isMinimized ?? false;
     if (this.negate) {
       expect(minimized, `Expected window ${this.win.handle} to NOT be minimized`).toBe(false);
@@ -349,8 +347,8 @@ export class WindowAssertionsImpl {
   }
 
   async toHaveFocus(): Promise<void> {
-    const winMap = getMockBackend(this.win.backend);
-    const record = winMap?.get(this.win.handle);
+    const getRecord = getMockBackend(this.win.backend);
+    const record = getRecord?.(this.win.handle);
     const focused = record?.isFocused ?? false;
     if (this.negate) {
       expect(focused, `Expected window ${this.win.handle} to NOT have focus`).toBe(false);

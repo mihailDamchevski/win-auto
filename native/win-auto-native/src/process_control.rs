@@ -11,7 +11,7 @@ use windows::Win32::System::JobObjects::*;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationWindowPattern, UIA_WindowPatternId};
 use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
-use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+use windows::Win32::UI::WindowsAndMessaging::{IsWindow, PostMessageW, WM_CLOSE};
 use windows::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::Threading::{OpenProcessToken, GetProcessId};
 
@@ -47,11 +47,14 @@ fn create_job_object() -> std::result::Result<HANDLE, AutomationError> {
       &info as *const _ as *const std::ffi::c_void,
       std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
     )
-    .map_err(|_| AutomationError::Generic {
-      message: "failed to set job object info".into(),
+    .map_err(|_| {
+      let _ = CloseHandle(job);
+      AutomationError::Generic {
+        message: "failed to set job object info".into(),
+      }
     })?;
 
-    let mut list = JOB_HANDLES.lock().unwrap();
+    let mut list = JOB_HANDLES.lock().unwrap_or_else(|e| e.into_inner());
     list.push(job.0 as isize);
 
     Ok(job)
@@ -343,7 +346,7 @@ async fn close_app_internal(process_id: u32) -> Result<()> {
       tokio::time::sleep(Duration::from_millis(50)).await;
     }
     if is_process_running(process_id) {
-      return Err(Error::from(AutomationError::ProcessLaunchFailed { path: format!("Process {process_id}"), os_error: 0 }));
+      return Err(Error::from(AutomationError::ProcessTerminateFailed { pid: process_id, os_error: 0 }));
     }
   }
 
@@ -414,13 +417,20 @@ pub async fn launch(
     }).collect();
 
     if !candidates.is_empty() {
-      let chosen_idx = candidates.iter().position(|hwnd| {
-        get_class_name(*hwnd) == "ApplicationFrameWindow"
-      }).unwrap_or(0);
-      let chosen = candidates[chosen_idx];
-      let owner_pid = window_pid(chosen);
-      if owner_pid != 0 {
-        return Ok(owner_pid);
+      let chosen = candidates.iter().copied().max_by_key(|hwnd| {
+        let class = get_class_name(*hwnd);
+        let pid = window_pid(*hwnd);
+        let title = get_window_title(*hwnd).to_ascii_lowercase();
+        let stem_match = stem.as_ref()
+          .map(|s| title.matches(s).count())
+          .unwrap_or(0);
+        (class == "ApplicationFrameWindow", pid == child_pid, stem_match)
+      });
+      if let Some(chosen) = chosen {
+        let owner_pid = window_pid(chosen);
+        if owner_pid != 0 {
+          return Ok(owner_pid);
+        }
       }
     }
   }
@@ -502,13 +512,20 @@ pub async fn launch_process(
     }).collect();
 
     if !candidates.is_empty() {
-      let chosen_idx = candidates.iter().position(|hwnd| {
-        get_class_name(*hwnd) == "ApplicationFrameWindow"
-      }).unwrap_or(0);
-      let chosen = candidates[chosen_idx];
-      let owner_pid = window_pid(chosen);
-      if owner_pid != 0 {
-        return Ok(owner_pid);
+      let chosen = candidates.iter().copied().max_by_key(|hwnd| {
+        let class = get_class_name(*hwnd);
+        let pid = window_pid(*hwnd);
+        let title = get_window_title(*hwnd).to_ascii_lowercase();
+        let stem_match = stem.as_ref()
+          .map(|s| title.matches(s).count())
+          .unwrap_or(0);
+        (class == "ApplicationFrameWindow", pid == child_pid, stem_match)
+      });
+      if let Some(chosen) = chosen {
+        let owner_pid = window_pid(chosen);
+        if owner_pid != 0 {
+          return Ok(owner_pid);
+        }
       }
     }
   }
@@ -542,26 +559,55 @@ pub async fn close_app(process_id: u32) -> Result<()> {
 #[napi(js_name = "closeWindow")]
 pub async fn close_window(window_handle: String) -> Result<()> {
   let hwnd = crate::utils::parse_hwnd(&window_handle)?;
-  // SAFETY: COM is initialized via ComScope; CoCreateInstance and UIA calls follow COM ABI rules.
-  unsafe {
+  // Store raw isize (Send) so we can use it after await without crossing !Send boundary
+  let raw_hwnd = hwnd.0 as isize;
+
+  // Try UIA WindowPattern.Close() synchronously — UIA COM objects (!Send) must not cross await
+  let uia_closed = unsafe {
     let _com_init = crate::utils::ComScope::init();
-    // Try UIA WindowPattern.Close() first — works on UWP/modern windows
     let uia_result: windows::core::Result<IUIAutomation> = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER);
     if let Ok(automation) = uia_result {
       if let Ok(element) = automation.ElementFromHandle(hwnd) {
         if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationWindowPattern>(UIA_WindowPatternId) {
-          let _ = pattern.Close();
-          return Ok(());
+          pattern.Close().is_ok()
+        } else {
+          false
         }
+      } else {
+        false
       }
+    } else {
+      false
     }
+  };
+
+  if uia_closed {
+    return poll_window_closed(raw_hwnd, "closeWindow (UIA)", 2000).await;
   }
+
+  // UIA Close failed — fall back to PostMessageW WM_CLOSE
   tracing::warn!("UIA WindowPattern.Close failed for hwnd={window_handle}, falling back to PostMessageW WM_CLOSE");
-  // SAFETY: hwnd is a valid window handle; PostMessageW is inherently unsafe.
   unsafe {
+    let hwnd = HWND(raw_hwnd as *mut core::ffi::c_void);
     let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
   }
-  Ok(())
+  poll_window_closed(raw_hwnd, "closeWindow (WM_CLOSE)", 2000).await
+}
+
+/// Poll IsWindow up to `timeout_ms` until the window is gone.
+async fn poll_window_closed(raw_hwnd: isize, operation: &'static str, timeout_ms: u64) -> Result<()> {
+  let start = std::time::Instant::now();
+  loop {
+    let hwnd = HWND(raw_hwnd as *mut core::ffi::c_void);
+    let gone = unsafe { !IsWindow(Some(hwnd)).as_bool() };
+    if gone {
+      return Ok(());
+    }
+    if start.elapsed().as_millis() >= timeout_ms.into() {
+      return Err(Error::from(AutomationError::Timeout { operation: operation.into(), duration_ms: timeout_ms }));
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+  }
 }
 
 #[napi(js_name = "isProcessRunning")]

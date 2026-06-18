@@ -17,6 +17,26 @@ use crate::error::AutomationError;
 // Enhanced mouse-simulation drag-drop
 // ---------------------------------------------------------------------------
 
+/// Scope guard that calls `OleUninitialize` on drop if OLE was initialized.
+struct OleGuard(bool);
+
+impl OleGuard {
+    fn new(init: bool) -> Self {
+        if init {
+            unsafe { let _ = OleInitialize(None); }
+        }
+        Self(init)
+    }
+}
+
+impl Drop for OleGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            unsafe { OleUninitialize(); }
+        }
+    }
+}
+
 /// Execute a drag-drop via mouse-input simulation.
 ///
 /// If `try_ole` is `true`, OLE is first initialised on the worker thread so
@@ -30,12 +50,9 @@ pub fn mouse_simulation_drag_drop(
     let from_hwnd = parse_hwnd_internal(from_element_handle)?;
     let to_hwnd = parse_hwnd_internal(to_element_handle)?;
 
-    unsafe {
-        // ── OLE probe ──────────────────────────────────────────────
-        if try_ole {
-            let _ = OleInitialize(None);
-        }
+    let _ole = OleGuard::new(try_ole);
 
+    unsafe {
         // ── geometry ───────────────────────────────────────────────
         let mut from_rect = RECT::default();
         if GetWindowRect(from_hwnd, &mut from_rect).is_err() {
@@ -107,10 +124,6 @@ pub fn mouse_simulation_drag_drop(
 
         // 4. release
         SendInput(&[mouse_up], std::mem::size_of::<INPUT>() as i32);
-
-        if try_ole {
-            OleUninitialize();
-        }
     }
 
     Ok(())

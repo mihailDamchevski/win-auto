@@ -214,8 +214,8 @@ export class Element {
         await this.backend.replaceSelectedText(this.handle, "");
       } catch {
         // Last resort: Ctrl+A + Delete
-        await this.backend.pressKeyCodes(this.windowHandle, [65]); // Ctrl+A
-        await this.backend.pressKeyCodes(this.windowHandle, [46]); // Delete
+        await this.backend.pressKey(this.windowHandle, "ctrl+a");
+        await this.backend.pressKey(this.windowHandle, "delete");
       }
     }
     this.events.emitDebug("Element cleared", { handle: this.handle });
@@ -244,11 +244,11 @@ export class Element {
   }
 
   public async getValue(): Promise<string> {
-    return this.backend.getValue(this.handle);
+    return this.retryOnStale((h) => this.backend.getValue(h));
   }
 
   public async setValue(value: string): Promise<void> {
-    await this.backend.setValue(this.handle, value);
+    await this.retryOnStale((h) => this.backend.setValue(h, value));
     this.events.emitElementValueChanged(this.handle, value);
   }
 
@@ -263,7 +263,7 @@ export class Element {
   }
 
   public async getToggleState(): Promise<string> {
-    return this.backend.getToggleState(this.handle);
+    return this.retryOnStale((h) => this.backend.getToggleState(h));
   }
 
   public async getParent(): Promise<string | null> {
@@ -279,19 +279,19 @@ export class Element {
   }
 
   public async isVisible(): Promise<boolean> {
-    return this.backend.isVisible(this.handle);
+    return this.retryOnStale((h) => this.backend.isVisible(h));
   }
 
   public async isEnabled(): Promise<boolean> {
-    return this.backend.isEnabled(this.handle);
+    return this.retryOnStale((h) => this.backend.isEnabled(h));
   }
 
   public async isFocused(): Promise<boolean> {
-    return this.backend.isFocused(this.handle);
+    return this.retryOnStale((h) => this.backend.isFocused(h));
   }
 
   public async screenshot(): Promise<number[]> {
-    const result = await this.backend.captureScreenshot(this.handle);
+    const result = await this.retryOnStale((h) => this.backend.captureScreenshot(h));
     this.events.emitElementScreenshot(this.handle);
     return result;
   }
@@ -322,7 +322,7 @@ export class Element {
   }
 
   public async getAttribute(name: string): Promise<string> {
-    return this.backend.getElementAttribute(this.handle, name);
+    return this.retryOnStale((h) => this.backend.getElementAttribute(h, name));
   }
 
   public async getProperty(name: string): Promise<string> {

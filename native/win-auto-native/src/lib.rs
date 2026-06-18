@@ -1,9 +1,10 @@
-﻿//! # win-auto-native
+﻿#![deny(unsafe_op_in_unsafe_fn)]
+
+//! # win-auto-native
 //!
 //! A Windows automation library for Node.js that provides programmatic control of Windows applications
 //! through N-API bindings.
 
-mod config;
 mod dialogs;
 mod discovery;
 mod error;

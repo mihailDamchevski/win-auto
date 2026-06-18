@@ -427,8 +427,9 @@ pub async fn find_image(
   options: Option<FindImageOptions>,
 ) -> Result<Option<ImageMatch>> {
   let hwnd = parse_hwnd(&element_handle)?;
+  let raw_hwnd = hwnd.0 as isize;
   let bmp = capture_window_bitmap(hwnd)?;
-  // HWND is !Send so drop it before any .await
+  // Store raw isize (Send) instead of HWND (!Send) for use after await
   let _ = hwnd;
 
   let opts = options.unwrap_or(FindImageOptions {
@@ -548,7 +549,7 @@ pub async fn find_image(
   let match_h_phys = (th_orig as f64 * best_scale) as i32;
 
   // Convert from physical (screen/GDI) pixels to logical (DIP) pixels
-  let hwnd = parse_hwnd(&element_handle)?;
+  let hwnd = HWND(raw_hwnd as *mut core::ffi::c_void);
   let abs_x = physical_to_logical(hwnd, abs_x_phys);
   let abs_y = physical_to_logical(hwnd, abs_y_phys);
   let match_w = physical_to_logical(hwnd, match_w_phys);

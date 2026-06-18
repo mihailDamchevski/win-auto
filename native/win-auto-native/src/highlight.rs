@@ -22,6 +22,7 @@ use crate::utils::parse_hwnd;
 const HIGHLIGHT_CLASS_NAME: &str = "WinAutoHighlightOverlay\0";
 
 static HIGHLIGHT_ATOM: OnceLock<u16> = OnceLock::new();
+static HIGHLIGHT_BRUSH: OnceLock<isize> = OnceLock::new();
 
 fn ensure_window_class() -> u16 {
   *HIGHLIGHT_ATOM.get_or_init(|| {
@@ -48,7 +49,7 @@ unsafe extern "system" fn highlight_wndproc(
   wparam: WPARAM,
   lparam: LPARAM,
 ) -> LRESULT {
-  match msg {
+  unsafe { match msg {
     0x000F => { // WM_PAINT
       let mut ps = PAINTSTRUCT::default();
       let hdc = BeginPaint(hwnd, &mut ps);
@@ -57,8 +58,10 @@ unsafe extern "system" fn highlight_wndproc(
       let width = rect.right - rect.left;
       let height = rect.bottom - rect.top;
 
-      let _brush = CreateSolidBrush(COLORREF(0x0000FF));
-      let border_brush = CreateSolidBrush(COLORREF(0x0000FF));
+      let border_brush_raw = *HIGHLIGHT_BRUSH.get_or_init(|| {
+        CreateSolidBrush(COLORREF(0x0000FF)).0 as isize
+      });
+      let border_brush = HBRUSH(border_brush_raw as *mut core::ffi::c_void);
 
       // Fill border: top, bottom, left, right stripes
       let border_thickness = 3;
@@ -79,7 +82,7 @@ unsafe extern "system" fn highlight_wndproc(
       DefWindowProcW(hwnd, msg, wparam, lparam)
     }
     _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-  }
+  } }
 }
 
 fn run_message_loop_for(hwnd: HWND, duration_ms: u32) {

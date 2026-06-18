@@ -86,7 +86,7 @@ unsafe extern "system" fn win_event_proc(
   id_event_thread: u32,
   dwms_time: u32,
 ) {
-  let _ = SetEvent(get_change_event());
+  let _ = unsafe { SetEvent(get_change_event()) };
 
   if let Ok(guard) = get_callback_mutex().lock() {
     if let Some(ref tsfn) = *guard {
@@ -98,7 +98,10 @@ unsafe extern "system" fn win_event_proc(
         id_event_thread,
         timestamp: dwms_time,
       };
-      let _ = tsfn.call(Ok(info), ThreadsafeFunctionCallMode::NonBlocking);
+      let status = tsfn.call(Ok(info), ThreadsafeFunctionCallMode::NonBlocking);
+      if status != napi::Status::Ok {
+        tracing::warn!("WinEvent watcher: thread-safe function call failed (queue full?): {status:?}");
+      }
     }
   }
 }
@@ -158,7 +161,10 @@ fn start_watcher() {
         }
       }
 
-      unsafe { let _ = UnhookWinEvent(hook); }
+      unsafe {
+        let _ = UnhookWinEvent(hook);
+        let _ = windows::Win32::System::Com::CoUninitialize();
+      }
       WATCHER_STARTED.store(false, Ordering::SeqCst);
     });
 }
@@ -224,5 +230,20 @@ pub fn stop_win_event_watcher() -> Result<()> {
   })? = None;
 
   tracing::info!("WinEvent JS callback unregistered");
+  Ok(())
+}
+
+/// Stop the WinEvent watcher thread entirely. After calling this,
+/// `waitForUiChange` and `startWinEventWatcher` will start a new thread
+/// on the next invocation. The underlying thread will clean up the
+/// WinEvent hook and exit.
+#[napi(js_name = "stopWatcherThread")]
+pub fn stop_watcher_thread() -> Result<()> {
+  if WATCHER_STARTED.load(Ordering::SeqCst) {
+    unsafe {
+      let _ = SetEvent(get_shutdown_event());
+    }
+    tracing::info!("WinEvent watcher shutdown signaled");
+  }
   Ok(())
 }

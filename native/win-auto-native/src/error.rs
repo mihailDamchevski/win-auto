@@ -27,6 +27,9 @@ pub enum AutomationError {
   #[error("Process launch failed: path={path}, os_error={os_error}")]
   ProcessLaunchFailed { path: String, os_error: i32 },
 
+  #[error("Process terminate failed: pid={pid}, os_error={os_error}")]
+  ProcessTerminateFailed { pid: u32, os_error: i32 },
+
   #[error("Screenshot failed: handle={handle}, reason={reason}")]
   ScreenshotFailed { handle: String, reason: String },
 

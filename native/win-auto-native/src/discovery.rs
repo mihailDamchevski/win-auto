@@ -20,7 +20,7 @@ unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> w
   if context_ptr.is_null() {
     return windows::core::BOOL(0);
   }
-  let context = &mut *context_ptr;
+  let context = unsafe { &mut *context_ptr };
   context.windows.push(hwnd);
   windows::core::BOOL(1)
 }
@@ -51,9 +51,9 @@ pub fn collect_windows_for_pid(process_id: u32) -> Vec<HWND> {
     if context_ptr.is_null() {
       return windows::core::BOOL(0);
     }
-    let context = &mut *context_ptr;
+    let context = unsafe { &mut *context_ptr };
     let mut pid = 0u32;
-    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)); }
     if pid == context.process_id {
       context.windows.push(hwnd);
     }
@@ -160,27 +160,24 @@ pub fn find_child_window_by_text(window_hwnd: HWND, query: &str) -> Option<HWND>
 }
 
 pub fn find_element_uia(window_hwnd: HWND, query: &str) -> Option<HWND> {
-  // SAFETY: COM initialized via ComScope; UIA COM calls follow the ABI with valid HWND.
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia().ok()?;
-    let root = automation.ElementFromHandle(window_hwnd).ok()?;
-    let true_condition = automation.CreateTrueCondition().ok()?;
-    let all = root.FindAll(TreeScope_Descendants, &true_condition).ok()?;
-    let length = all.Length().ok()?;
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe { create_uia().ok()? };
+  let root = unsafe { automation.ElementFromHandle(window_hwnd).ok()? };
+  let true_condition = unsafe { automation.CreateTrueCondition().ok()? };
+  let all = unsafe { root.FindAll(TreeScope_Descendants, &true_condition).ok()? };
+  let length = unsafe { all.Length().ok()? };
 
-    for i in 0..length {
-      let element = all.GetElement(i).ok()?;
-      let current_name = element.CurrentName().ok()?.to_string();
-      if !current_name.is_empty() && current_name.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
-        let hwnd_raw = element.CurrentNativeWindowHandle().ok()?;
-        if !hwnd_raw.is_invalid() {
-          return Some(hwnd_raw);
-        }
+  for i in 0..length {
+    let element = unsafe { all.GetElement(i).ok()? };
+    let current_name = unsafe { element.CurrentName().ok()? }.to_string();
+    if !current_name.is_empty() && current_name.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
+      let hwnd_raw = unsafe { element.CurrentNativeWindowHandle().ok()? };
+      if !hwnd_raw.is_invalid() {
+        return Some(hwnd_raw);
       }
     }
-    None
   }
+  None
 }
 
 pub fn enumerate_windows_strict_pid(process_id: u32) -> Vec<HWND> {
@@ -316,7 +313,7 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
     if let Some(ref uia) = *guard {
       result = Some(IUIAutomation::clone(uia));
     } else {
-      match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
+      match unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) } {
         Ok(uia) => {
           let cloned = IUIAutomation::clone(&uia);
           *guard = Some(uia);
@@ -331,46 +328,37 @@ pub unsafe fn create_uia() -> Result<IUIAutomation> {
 }
 
 pub fn uia_windows_for_pid(process_id: u32, strict_top_level: bool) -> Result<Vec<HWND>> {
-  // SAFETY: COM initialized via ComScope; UIA COM calls follow the ABI.
-  unsafe {
-    let _com_init = crate::utils::ComScope::init();
-    let automation = create_uia()?;
-    let root = automation.GetRootElement().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
-    let true_condition = automation.CreateTrueCondition().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
-    let all = root.FindAll(TreeScope_Children, &true_condition).map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
-    let length = all.Length().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?;
+  let _com_init = crate::utils::ComScope::init();
+  let automation = unsafe { create_uia()? };
+  let root = unsafe {
+    automation.GetRootElement().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let true_condition = unsafe {
+    automation.CreateTrueCondition().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let all = unsafe {
+    root.FindAll(TreeScope_Children, &true_condition).map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
+  let length = unsafe {
+    all.Length().map_err(|err| Error::from(AutomationError::ComInitFailed { reason: err.to_string() }))?
+  };
 
-    let mut windows = Vec::<HWND>::new();
-    for i in 0..length {
-      let Ok(element) = all.GetElement(i) else {
-        continue;
-      };
-      let Ok(pid_i32) = element.CurrentProcessId() else {
-        continue;
-      };
-      let pid = pid_i32 as u32;
-      if pid != process_id {
-        continue;
-      }
-      let Ok(hwnd_raw) = element.CurrentNativeWindowHandle() else {
-        continue;
-      };
-      if hwnd_raw.is_invalid() {
-        continue;
-      }
-      let hwnd = hwnd_raw;
-      if strict_top_level && !is_top_level_visible(hwnd) {
-        continue;
-      }
-      if !strict_top_level && !is_visible(hwnd) {
-        continue;
-      }
-      if !windows.iter().any(|existing| existing.0 == hwnd.0) {
-        windows.push(hwnd);
-      }
+  let mut windows = Vec::<HWND>::new();
+  for i in 0..length {
+    let Ok(element) = (unsafe { all.GetElement(i) }) else { continue };
+    let Ok(pid_i32) = (unsafe { element.CurrentProcessId() }) else { continue };
+    let pid = pid_i32 as u32;
+    if pid != process_id { continue; }
+    let Ok(hwnd_raw) = (unsafe { element.CurrentNativeWindowHandle() }) else { continue };
+    if hwnd_raw.is_invalid() { continue; }
+    let hwnd = hwnd_raw;
+    if strict_top_level && !is_top_level_visible(hwnd) { continue; }
+    if !strict_top_level && !is_visible(hwnd) { continue; }
+    if !windows.iter().any(|existing| existing.0 == hwnd.0) {
+      windows.push(hwnd);
     }
-    Ok(windows)
   }
+  Ok(windows)
 }
 
 /// HWND tree node for the legacy/raw Win32 hierarchy inspector
@@ -469,7 +457,7 @@ pub fn get_window_info(window_handle: String) -> Result<WindowInfo> {
 
     let is_unicode = IsWindowUnicode(hwnd).as_bool();
 
-    let parent_hwnd = unsafe { GetAncestor(hwnd, GA_PARENT) };
+    let parent_hwnd = GetAncestor(hwnd, GA_PARENT);
     let parent_hwnd_str = if parent_hwnd.is_invalid() {
       "0".to_string()
     } else {

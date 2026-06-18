@@ -184,16 +184,16 @@ export class MockBackend implements Backend {
   /** Event tracker for test assertions. */
   readonly events = new MockEventTracker();
 
-  private dirty = false;
+  private changeGeneration = 0;
   private scheduledEvents: ScheduledEvent[] = [];
 
   // --- helpers ---
 
   ping(): string {
+    // Auto-reset event tracker between test sessions
+    this.events.clear();
     return "mock";
   }
-
-  setAppConfig(_executable: string, _classNames: string[]): void {}
 
   private assertWindow(handle: string): MockWindowRecord {
     const win = this.windowHandleToWin.get(handle);
@@ -205,6 +205,18 @@ export class MockBackend implements Backend {
     const el = this.elementHandleToEl.get(handle);
     if (!el) throw new AutomationError(`Element not found: ${handle}`);
     return el;
+  }
+
+  /** Public accessor for test assertions — returns the window record or undefined. */
+  getWindowRecord(handle: string): { title: string; isMaximized: boolean; isMinimized: boolean; isFocused: boolean } | undefined {
+    const record = this.windowHandleToWin.get(handle);
+    if (!record) return undefined;
+    return {
+      title: record.title,
+      isMaximized: record.isMaximized,
+      isMinimized: record.isMinimized,
+      isFocused: record.isFocused,
+    };
   }
 
   private findPidByElementId(elId: string): number {
@@ -390,14 +402,18 @@ export class MockBackend implements Backend {
 
   /** Mark the UI state as having changed (for waitForUiChange). */
   private markDirty(): void {
-    this.dirty = true;
+    this.changeGeneration += 1;
   }
 
   /** Schedule a callback to run after `delayMs` milliseconds. Returns a handle for cancellation. */
   public scheduleEvent(callback: () => void, delayMs: number): string {
     const id = `sched-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timer = setTimeout(() => {
-      callback();
+      try {
+        callback();
+      } catch (err) {
+        console.error("MockBackend: scheduled event callback failed:", err);
+      }
       this.markDirty();
       this.scheduledEvents = this.scheduledEvents.filter((s) => s.id !== id);
     }, delayMs);
@@ -1161,18 +1177,13 @@ export class MockBackend implements Backend {
   }
 
   async waitForUiChange(timeoutMs: number): Promise<boolean> {
-    // If the UI is already dirty or has pending scheduled events, return immediately
-    if (this.dirty || this.hasPendingScheduledEvents()) {
-      // Consume the dirty flag (snapshot state)
+    const gen = this.changeGeneration;
+    if (this.changeGeneration > 0 || this.hasPendingScheduledEvents()) {
       await delay();
-      const changed = this.dirty || this.hasPendingScheduledEvents();
-      this.dirty = false;
-      return changed;
+      return this.changeGeneration !== gen || this.hasPendingScheduledEvents();
     }
-    // Otherwise wait for the full timeout (simulating a real wait) and return false
     await new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, MOCK_DELAY_MS)));
-    this.dirty = false;
-    return false;
+    return this.changeGeneration !== gen;
   }
 
   startWinEventWatcher(_callback: (event: WinEventInfo) => void): void {

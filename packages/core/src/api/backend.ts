@@ -17,7 +17,6 @@ import type {
 
 export interface Backend {
   ping(): string;
-  setAppConfig(executable: string, classNames: string[]): void;
   launch(executablePath: string | null, classNames?: string[] | null): Promise<number>;
   launchProcess(
     executablePath: string,

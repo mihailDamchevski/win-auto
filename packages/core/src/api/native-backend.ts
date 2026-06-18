@@ -58,12 +58,6 @@ export class NativeBackend implements Backend {
     return this.native.ping();
   }
 
-  setAppConfig(executable: string, classNames: string[]): void {
-    if (this.native.setAppConfig) {
-      this.native.setAppConfig(executable, classNames);
-    }
-  }
-
   async launch(executablePath: string | null, classNames?: string[] | null): Promise<number> {
     return this.native.launch(executablePath, classNames ?? null);
   }
