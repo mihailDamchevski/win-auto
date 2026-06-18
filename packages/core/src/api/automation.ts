@@ -37,6 +37,7 @@ export class Automation {
       // Guard against ESM context where require() is not defined
       if (typeof require === "undefined") return null;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { MockBackend } = require("../mock/mockBackend");
         return new MockBackend();
       } catch {

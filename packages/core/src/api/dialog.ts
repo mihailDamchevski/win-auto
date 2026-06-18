@@ -2,7 +2,7 @@ import type { Backend } from "./backend";
 import type { AutomationEvents } from "./events";
 import type { DialogControl, DialogInfo, ElementSelector } from "./types";
 import { Element } from "./element";
-import { TimeoutError, AutomationError } from "./errors";
+import { TimeoutError } from "./errors";
 
 export type DialogType = "standard" | "directui" | "uwp";
 

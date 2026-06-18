@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { MockBackend } from "./mockBackend";
 import { Window } from "../api/window";
 import { AutomationEvents } from "../api/events";

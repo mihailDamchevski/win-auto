@@ -4,8 +4,6 @@ import { inspectCommand } from "./commands/inspect";
 import { queryCommand } from "./commands/query";
 import { elevateCommand } from "./commands/elevate";
 import { diagnoseCommand } from "./commands/diagnose";
-import { Automation, App, Window, Element } from "@win-auto/core";
-
 export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
 
 async function runCli(): Promise<void> {

@@ -1,4 +1,4 @@
-import { Automation, NativeBackend } from "@win-auto/core";
+import { NativeBackend } from "@win-auto/core";
 import type { ElementNode, HwndNode } from "@win-auto/core";
 
 function printTree(node: ElementNode, indent = 0): void {

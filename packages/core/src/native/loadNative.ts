@@ -9,7 +9,7 @@ import { BackendError } from "../api/errors";
 // in CJS builds the try block throws and we fall back to __dirname / require.
 function getModuleUrl(): string {
   try {
-    // @ts-ignore — import.meta is only valid with --module es2022+
+    // @ts-expect-error — import.meta is only valid with --module es2022+
     return (import.meta as { url: string }).url;
   } catch {
     return "";
@@ -18,7 +18,7 @@ function getModuleUrl(): string {
 
 function getNodeRequire(): NodeRequire {
   try {
-    // @ts-ignore — import.meta is only valid with --module es2022+
+    // @ts-expect-error — import.meta is only valid with --module es2022+
     return createRequire((import.meta as { url: string }).url);
   } catch {
     return require;

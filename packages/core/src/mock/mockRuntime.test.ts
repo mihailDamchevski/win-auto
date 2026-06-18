@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MockRuntime, runtime } from "./mockRuntime";
+import { runtime } from "./mockRuntime";
 
 describe("MockRuntime", () => {
   beforeEach(async () => {

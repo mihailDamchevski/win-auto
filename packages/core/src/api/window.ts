@@ -9,7 +9,6 @@ import type {
   HwndNode,
   ImageMatch,
   InputMode,
-  LocatorFilter,
   WindowBounds,
   WindowInfo,
 } from "./types";
