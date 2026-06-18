@@ -12,6 +12,9 @@ import { TraceRecorder, setCurrentTraceRecorder } from "./trace";
 import { MockClock, DeterministicBackendPoller } from "./deterministicWait";
 import { SessionRecorder } from "./sessionRecorder";
 import { SessionReplayer } from "./sessionReplayer";
+import { PluginManager } from "./plugin";
+import type { Plugin, PluginConfig } from "./plugin";
+import { PluginBackendProxy } from "./pluginBackend";
 
 export class Automation {
   public readonly events: AutomationEvents;
@@ -20,12 +23,13 @@ export class Automation {
   public readonly diagnostics: Diagnostics;
   public readonly trace: TraceRecorder;
   public readonly inputMode: InputMode;
-  public readonly backend: Backend;
+  public backend: Backend;
   public readonly deterministic: boolean;
   public readonly recorder?: SessionRecorder;
   public readonly replayer?: SessionReplayer;
   public readonly mockClock?: MockClock;
   public readonly deterministicPoller?: DeterministicBackendPoller;
+  public readonly plugins: PluginManager;
   private nativeBindings?: NativeBindings;
 
   constructor(backend?: Backend, inputMode?: InputMode, traceEnabled?: boolean, deterministic?: boolean) {
@@ -41,6 +45,7 @@ export class Automation {
       this.deterministicPoller = new DeterministicBackendPoller(this.mockClock, this.backend);
     }
 
+    this.plugins = new PluginManager(this);
     this.recorder = new SessionRecorder(this.backend);
     this.replayer = new SessionReplayer(this.backend);
 
@@ -175,6 +180,32 @@ export class Automation {
   public async mouseMove(x: number, y: number): Promise<void> {
     await this.backend.mouseMove(x, y);
     this.events.emitMouseMoved(x, y);
+  }
+
+  /** Register a plugin. Returns `this` for chaining. */
+  use(plugin: Plugin): this {
+    // Wrap backend with plugin proxy on first plugin install
+    if (this.plugins.list().length === 0 && !(this.backend instanceof PluginBackendProxy)) {
+      this.backend = new PluginBackendProxy(this.backend, this.plugins);
+    }
+    this.plugins.install(plugin);
+    return this;
+  }
+
+  /** Install plugins from config. Returns `this` for chaining. */
+  async usePlugins(configs?: PluginConfig[]): Promise<this> {
+    if (!configs) return this;
+    for (const config of configs) {
+      if (config.enabled === false) continue;
+      if (config.name === "diagnostics") {
+        const { DiagnosticsPlugin } = await import("../plugins/diagnosticsPlugin.js");
+        this.use(new DiagnosticsPlugin(config.options as Record<string, unknown> | undefined));
+      } else if (config.name === "logging") {
+        const { LoggingPlugin } = await import("../plugins/loggingPlugin.js");
+        this.use(new LoggingPlugin(config.options as Record<string, unknown> | undefined));
+      }
+    }
+    return this;
   }
 
   public pingNative(): string {

@@ -34,6 +34,8 @@ export interface WinAutoConfig {
   recordPath?: string;
   /** Session replay: path to session JSON */
   replayPath?: string;
+  /** Plugin configurations */
+  plugins?: import("./plugin").PluginConfig[];
 }
 
 export type ResolvedWinAutoConfig = {
@@ -48,6 +50,7 @@ export type ResolvedWinAutoConfig = {
   eventLog: string[];
   pollInterval: "adaptive" | number;
   appConfig: AppConfigEntry[];
+  plugins?: import("./plugin").PluginConfig[];
 };
 
 const DEFAULTS: ResolvedWinAutoConfig = {

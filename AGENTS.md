@@ -91,6 +91,7 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 | **P10.1 (DPI wired)** | DPI helpers, `logical_to_physical_system` in mouseMove/clickAt, `physical_to_logical` in findImage results, real DPI in diagnostics | `utils.rs`, `interaction.rs`, `screenshot.rs`, `diagnostics.ts` |
 | **P10.2 (UIPI bypass)** | `is_uip_barrier` wired in PermissionDenied errors, auto-retry pattern mode on hardware UIPI failure, `getSystemDpi` napi export | `interaction.rs`, `error.rs`, `types.ts` |
 | **P12 (Determinism Layer)** | MockClock virtual time, DeterministicPoll, SessionRecorder/SessionReplayer, waitForUiChange debounce/coalesce/stall detection, `win-auto record`/`replay` CLI, `deterministic` config option | `deterministicWait.ts`, `sessionRecorder.ts`, `sessionReplayer.ts`, `cli/commands/record.ts`, `cli/commands/replay.ts` |
+| **P13 (Architecture Freeze + Extensions)** | Plugin interface + PluginManager + PluginBackendProxy for backend-level hooks; DiagnosticsPlugin/LoggingPlugin examples; extension contract doc; `automation.use()` and `usePlugins()` API | `plugin.ts`, `pluginBackend.ts`, `plugins/diagnosticsPlugin.ts`, `plugins/loggingPlugin.ts`, `EXTENSION_CONTRACT.md` |
 
 ### Partially Complete
 
@@ -138,4 +139,9 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 - `packages/core/src/api/sessionReplayer.ts` — P12 SessionReplayer, ReplayResult
 - `packages/cli/src/commands/record.ts` — P12 `win-auto record` CLI command
 - `packages/cli/src/commands/replay.ts` — P12 `win-auto replay` CLI command
+- `packages/core/src/api/plugin.ts` — P13 Plugin interface + PluginManager
+- `packages/core/src/api/pluginBackend.ts` — P13 PluginBackendProxy (backend decorator)
+- `packages/core/src/plugins/diagnosticsPlugin.ts` — P13 DiagnosticsPlugin example
+- `packages/core/src/plugins/loggingPlugin.ts` — P13 LoggingPlugin example
+- `EXTENSION_CONTRACT.md` — P13 extension contract documentation
 ```
