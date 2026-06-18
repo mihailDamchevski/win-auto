@@ -2,6 +2,7 @@ import type { Backend } from "./backend";
 import type { SessionRecord, RecordedAction } from "./sessionRecorder";
 import type { MockBackend } from "../mock/mockBackend";
 import type { ElementNode } from "./types";
+import type { MockTreeElement } from "../mock/mockRuntime";
 import { AutomationError } from "./errors";
 import { MockClock, DeterministicPoll } from "./deterministicWait";
 
@@ -26,6 +27,8 @@ export class SessionReplayer {
   private clock: MockClock;
   private poll: DeterministicPoll;
   private backend: Backend;
+  private injectedProcessId: number | null = null;
+  private injectedFrames: Set<number> = new Set();
 
   constructor(backend: Backend) {
     this.backend = backend;
@@ -68,6 +71,9 @@ export class SessionReplayer {
       throw new AutomationError("Speed factor must be positive");
     }
 
+    this.injectedProcessId = null;
+    this.injectedFrames.clear();
+
     // Build timeline from recorded actions
     const steps = this.buildTimeline(session.actions);
 
@@ -76,6 +82,7 @@ export class SessionReplayer {
       // Pre-seed with the first frame
       const firstFrame = session.frames[0];
       if (firstFrame) {
+        await this.ensureMockProcess(mockBackend);
         this.injectTreeFrame(mockBackend, firstFrame.tree);
       }
     }
@@ -136,28 +143,36 @@ export class SessionReplayer {
     return timeline;
   }
 
-  /** Inject tree frame data into the mock backend. */
-  private injectTreeFrame(mockBackend: MockBackend, tree: ElementNode[]): void {
-    // Convert ElementNode[] to MockTreeElement and inject
-    // This is a best-effort injection: we set up element structures
-    // that match the recorded tree so findElement/findAll can work.
-    for (const node of tree) {
-      this.injectNode(mockBackend, node, null);
-    }
+  /** Ensure a mock process exists in the mock backend for tree injection. */
+  private async ensureMockProcess(mockBackend: MockBackend): Promise<number> {
+    if (this.injectedProcessId !== null) return this.injectedProcessId;
+    const pid = await mockBackend.launch("replay-app");
+    this.injectedProcessId = pid;
+    return pid;
   }
 
-  private injectNode(
-    mockBackend: MockBackend,
-    node: ElementNode,
-    _parentHandle: string | null,
-  ): void {
-    // The mock backend's setupElementTree is the canonical way to inject trees.
-    // Here we use it by first creating a process, then setting up the tree.
-    // For simplicity during replay, we inject at process level.
-    // This is a placeholder — in practice the replayer would parse the
-    // recorded tree and call mockBackend.setupElementTree().
-    void mockBackend;
-    void node;
+  /** Convert ElementNode → MockTreeElement recursively. */
+  private elementNodeToMockTree(node: ElementNode): MockTreeElement {
+    return {
+      id: node.handle,
+      automationId: node.automationId || undefined,
+      name: node.name || undefined,
+      role: node.role || undefined,
+      text: undefined,
+      visible: node.isVisible,
+      enabled: node.isEnabled,
+      children: node.children?.length > 0
+        ? node.children.map((child) => this.elementNodeToMockTree(child))
+        : undefined,
+    };
+  }
+
+  /** Inject tree frame data into the mock backend. */
+  private injectTreeFrame(mockBackend: MockBackend, tree: ElementNode[]): void {
+    for (const node of tree) {
+      const mockTree = this.elementNodeToMockTree(node);
+      mockBackend.setupElementTree(this.injectedProcessId!, mockTree, "Replay Window");
+    }
   }
 
   /** Inject any frames whose timestamp matches the current clock time. */
@@ -166,10 +181,12 @@ export class SessionReplayer {
     frames: SessionRecord["frames"],
     now: number,
   ): void {
-    for (const frame of frames) {
+    for (let i = 0; i < frames.length; i++) {
+      if (this.injectedFrames.has(i)) continue;
       // Tolerance: within 50ms of the current virtual time
-      if (Math.abs(frame.timestamp - now) <= 50) {
-        this.injectTreeFrame(mockBackend, frame.tree);
+      if (Math.abs(frames[i].timestamp - now) <= 50) {
+        this.injectedFrames.add(i);
+        this.injectTreeFrame(mockBackend, frames[i].tree);
       }
     }
   }

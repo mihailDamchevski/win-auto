@@ -34,6 +34,7 @@ export class SessionRecorder {
   private finishedAt = 0;
   private recording = false;
   private captureTreeOnNextAction = true;
+  private trackedProcessIds: Set<number> = new Set();
 
   constructor(backend: Backend) {
     this.backend = backend;
@@ -43,6 +44,7 @@ export class SessionRecorder {
   start(): void {
     this.frames = [];
     this.actions = [];
+    this.trackedProcessIds.clear();
     this.startedAt = Date.now();
     this.finishedAt = 0;
     this.recording = true;
@@ -65,6 +67,14 @@ export class SessionRecorder {
   async recordAction(action: string, params?: Record<string, unknown>): Promise<void> {
     if (!this.recording) return;
 
+    // Track PIDs from app launch/close actions
+    if (action === "app:launched" && params?.pid && typeof params.pid === "number") {
+      this.trackedProcessIds.add(params.pid);
+    }
+    if (action === "app:closed" && params?.pid && typeof params.pid === "number") {
+      this.trackedProcessIds.delete(params.pid);
+    }
+
     const timestamp = Date.now();
     this.actions.push({ action, timestamp, params });
 
@@ -73,18 +83,29 @@ export class SessionRecorder {
     }
   }
 
-  /** Force a tree snapshot now. */
+  /** Force a tree snapshot now. Captures element trees for all tracked processes. */
   async captureTree(label: string, timestamp?: number): Promise<void> {
     if (!this.recording) return;
     const ts = timestamp ?? Date.now();
 
-    // Capture all windows trees from the backend
     const allTrees: ElementNode[] = [];
 
-    // We can enumerate windows and inspect each one
-    // This requires knowing the PIDs - we iterate all known processes
-    // For simplicity, capture via inspectWindowTree on known handles
-    // This is best-effort; the recorder stores whatever trees are available
+    // Enumerate windows for each tracked PID and inspect their trees
+    for (const pid of this.trackedProcessIds) {
+      try {
+        const windows = await this.backend.enumerateWindows(pid);
+        for (const winHandle of windows) {
+          try {
+            const tree = this.backend.inspectWindowTree(winHandle, 10);
+            allTrees.push(...tree);
+          } catch {
+            // best-effort per-window
+          }
+        }
+      } catch {
+        // best-effort per-process
+      }
+    }
 
     this.frames.push({
       timestamp: ts,

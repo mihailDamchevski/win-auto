@@ -99,7 +99,7 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 | **P4.2 remaining UIA patterns** | ✅ Done (AGENTS.md was outdated) | `ExpandCollapsePattern`, `ScrollPattern`, `RangeValuePattern`, `SelectionPattern`, `GridPattern`/`TablePattern`, `WindowPattern` — all implemented |
 | **P10.1 DPI coordinate wiring** | ✅ Done | mouseMove/clickAt now use system DPI conversion; findImage returns logical coords; diagnostics reports real DPI via native `getSystemDpi` |
 | **P10.2 UIPI elevation** | ✅ Done | `is_uip_barrier` set in PermissionDenied errors; hardware → pattern auto-fallback on UIPI; all SetCursorPos call sites detect UIPI |
-| **P12 tree injection in replayer** | 🔄 Partial | `injectNode()` is a placeholder — full MockTreeElement injection not wired; session frame trees not populated on native backend |
+| **P12 tree injection in replayer** | ✅ Done | `elementNodeToMockTree()` converts ElementNode→MockTreeElement; `ensureMockProcess()` creates mock process; `injectTreeFrame()` calls `setupElementTree()`; session tree frames populated via tracked PIDs |
 
 ### Test Status
 
