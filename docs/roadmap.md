@@ -25,18 +25,18 @@
 
 **Why:** "Debugging is more important than execution" at scale. Every failure needs a self-contained artifact — no reproduction required.
 
-**What:**
-- Add a `trace` option to `Automation` / `TestAutomation` that records:
-  - Step-by-step execution log (actions taken, timestamps)
-  - Locator decision tree (why element X was chosen over Y)
-  - Timing breakdown per action
-  - Input mode decisions (pattern vs hardware vs auto, and why)
-  - UIA tree snapshots before/after each action
-  - Screenshot on failure (already have basic version)
-- Bundle into a single artifact (JSON + PNGs in a zip, or standalone HTML report)
-- `win-auto diagnose` loads and renders existing bundles
+**Status:** ✅ Done
 
-**Deliverable:** `--trace` flag on `Automation`; bundle viewer in `win-auto diagnose`.
+| Sub-item | Status | Evidence |
+|---|---|---|
+| `TraceRecorder` class hooking into `AutomationEvents` | ✅ | `packages/core/src/api/trace.ts` |
+| `trace` option in `WinAutoConfig` + `Automation` constructor | ✅ | `config.ts`, `automation.ts` |
+| Trace data included in diagnostic bundle on failure | ✅ | `testing/diagnostics.ts` includes `TraceSession` |
+| Auto-wiring via global `setCurrentTraceRecorder` | ✅ | `trace.ts` — `setup.ts` picks it up automatically |
+| `win-auto diagnose --bundle <path>` viewer | ✅ | `cli/commands/diagnose.ts` |
+| Exported types (`TraceEntry`, `TraceSession`, `TraceRecorder`) | ✅ | `@win-auto/core` re-exports |
+
+**Remaining (future):** Locator decision tree logging, timing breakdown per action, input mode decision logging, HTML bundle viewer. These require deeper instrumentation in `findElement` and backend input dispatch.
 
 **Extends:** Phase 6 (basic diagnostic bundles) → full execution trace.
 

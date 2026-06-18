@@ -8,6 +8,7 @@ import { closeTrackedApps } from "./context";
 import { captureDiagnosticBundle } from "./diagnostics";
 import { describe, it } from "./vitest";
 import { loadWinAutoConfig } from "../api/config";
+import { getCurrentTraceRecorder } from "../api/trace";
 
 type GlobalTesting = typeof globalThis & {
   describe: typeof describe;
@@ -39,7 +40,7 @@ beforeEach(() => {
       | { currentTestName?: string }
       | undefined;
     const testName = state?.currentTestName ?? "unknown-test";
-    const bundle = await captureDiagnosticBundle(testName, "diagnostics");
+    const bundle = await captureDiagnosticBundle(testName, "diagnostics", getCurrentTraceRecorder());
     console.log(`\n=== Diagnostic Bundle ===`);
     console.log(`Test: ${bundle.testFailed}`);
     console.log(`Apps: ${bundle.summary.totalApps}`);
@@ -54,6 +55,9 @@ beforeEach(() => {
           console.log(`      ${line}`);
         }
       }
+    }
+    if (bundle.trace) {
+      console.log(`Trace: ${bundle.trace.entryCount} entries over ${((bundle.trace.endTime ?? bundle.trace.startTime) - bundle.trace.startTime)}ms`);
     }
     console.log(`Bundle saved: diagnostics/\n`);
   });

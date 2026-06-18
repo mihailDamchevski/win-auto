@@ -8,17 +8,19 @@ import { WaitBuilder } from "./wait";
 import { Diagnostics } from "./diagnostics";
 import { loadNativeBindings } from "../native/loadNative";
 import type { NativeBindings, AppSelector, InputMode, LaunchOptions } from "./types";
+import { TraceRecorder, setCurrentTraceRecorder } from "./trace";
 
 export class Automation {
   public readonly events: AutomationEvents;
   public readonly processes: ProcessManager;
   public readonly wait: WaitBuilder;
   public readonly diagnostics: Diagnostics;
+  public readonly trace: TraceRecorder;
   public readonly inputMode: InputMode;
   public readonly backend: Backend;
   private nativeBindings?: NativeBindings;
 
-  constructor(backend?: Backend, inputMode?: InputMode) {
+  constructor(backend?: Backend, inputMode?: InputMode, traceEnabled?: boolean) {
     this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
     this.inputMode = inputMode ?? "auto";
     this.events = new AutomationEvents();
@@ -30,6 +32,11 @@ export class Automation {
       // Native module not available
     }
     this.diagnostics = new Diagnostics(this.backend, this.nativeBindings);
+    this.trace = new TraceRecorder();
+    setCurrentTraceRecorder(this.trace);
+    if (traceEnabled) {
+      this.trace.attach(this.events);
+    }
   }
 
   private static detectBackend(): Backend | null {

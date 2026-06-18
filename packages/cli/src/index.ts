@@ -78,6 +78,7 @@ async function runCli(): Promise<void> {
     const pidIdx = args.indexOf("--pid");
     const nameIdx = args.indexOf("--name");
     const outputIdx = args.indexOf("--output");
+    const bundleIdx = args.indexOf("--bundle");
     await diagnoseCommand({
       pid: pidIdx >= 0 && pidIdx + 1 < args.length ? Number(args[pidIdx + 1]) : undefined,
       name: nameIdx >= 0 && nameIdx + 1 < args.length ? args[nameIdx + 1] : undefined,
@@ -87,6 +88,7 @@ async function runCli(): Promise<void> {
       events: args.includes("--events"),
       recommend: args.includes("--recommend"),
       output: outputIdx >= 0 && outputIdx + 1 < args.length ? args[outputIdx + 1] : undefined,
+      bundle: bundleIdx >= 0 && bundleIdx + 1 < args.length ? args[bundleIdx + 1] : undefined,
     });
     return;
   }
@@ -102,6 +104,7 @@ async function runCli(): Promise<void> {
   );
   process.stdout.write("  win-auto diagnose [--pid <pid>] [--name <name>] [--tree] [--hwnd]\n");
   process.stdout.write("                 [--uia] [--events] [--recommend] [--output <file>]\n");
+  process.stdout.write("  win-auto diagnose --bundle <path>\n");
   process.stdout.write("  win-auto elevate\n");
 }
 

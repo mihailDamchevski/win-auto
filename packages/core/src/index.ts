@@ -68,3 +68,5 @@ export type {
   WinEventPayload,
   DebugPayload,
 } from "./api/events";
+export { TraceRecorder, setCurrentTraceRecorder, getCurrentTraceRecorder } from "./api/trace";
+export type { TraceEventType, TraceEntry, TraceSession } from "./api/trace";

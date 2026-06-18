@@ -1,5 +1,19 @@
+import fs from "fs";
 import { Automation, NativeBackend } from "@win-auto/core";
 import type { ElementNode, HwndNode } from "@win-auto/core";
+import type { TraceSession } from "@win-auto/core";
+
+type BundleData = {
+  testFailed?: string;
+  capturedAt?: string;
+  trace?: TraceSession;
+  entries?: Array<{
+    app: string;
+    pid: number;
+    elementTree?: string;
+    screenshot?: string;
+  }>;
+};
 
 export type DiagnoseOptions = {
   pid?: number;
@@ -10,6 +24,7 @@ export type DiagnoseOptions = {
   events?: boolean;
   recommend?: boolean;
   output?: string;
+  bundle?: string;
 };
 
 function printSection(title: string): void {
@@ -45,7 +60,49 @@ function printHwndTree(nodes: HwndNode[], indent = 0): void {
   }
 }
 
+function printBundle(bundle: BundleData): void {
+  printSection("Trace Bundle Viewer");
+  printKV("Test", bundle.testFailed ?? "N/A");
+  printKV("Captured At", bundle.capturedAt ?? "N/A");
+
+  if (bundle.trace) {
+    const t = bundle.trace;
+    const durationMs = (t.endTime ?? t.startTime) - t.startTime;
+    printKV("Start Time", new Date(t.startTime).toISOString());
+    printKV("Duration", `${durationMs}ms`);
+    printKV("Entries", String(t.entryCount));
+
+    printSection("Action Trace");
+    for (const entry of t.entries) {
+      const ts = new Date(entry.timestamp).toISOString().slice(11, 23);
+      const line = [`[${ts}] ${entry.type}`];
+      if (entry.text) line.push(`text="${entry.text.substring(0, 80)}"`);
+      if (entry.elementHandle) line.push(`handle=${entry.elementHandle}`);
+      if (entry.processId) line.push(`pid=${entry.processId}`);
+      if (entry.durationMs !== undefined) line.push(`+${entry.durationMs}ms`);
+      process.stdout.write(`  ${line.join("  ")}\n`);
+    }
+
+    if (t.entries.length === 0) {
+      process.stdout.write("  (empty trace)\n");
+    }
+  }
+
+  if (bundle.entries) {
+    printSection("Tracked Apps");
+    for (const e of bundle.entries) {
+      printKV(`[${e.pid}] ${e.app}`, `tree: ${e.elementTree ? "yes" : "no"}, screenshot: ${e.screenshot ? "yes" : "no"}`);
+    }
+  }
+}
+
 export async function diagnoseCommand(options: DiagnoseOptions): Promise<void> {
+  if (options.bundle) {
+    const raw = fs.readFileSync(options.bundle, "utf8");
+    const bundle: BundleData = JSON.parse(raw);
+    printBundle(bundle);
+    return;
+  }
   let backend: NativeBackend | null = null;
   try {
     backend = new NativeBackend();
@@ -194,6 +251,7 @@ export async function diagnoseCommand(options: DiagnoseOptions): Promise<void> {
 
   if (!targetPid && !options.name) {
     process.stdout.write("\n  Use --pid <pid> or --name <imageName> for process-specific diagnostics.\n");
-    process.stdout.write("  Options: --tree, --hwnd, --uia, --events, --recommend, --output <file>\n\n");
+    process.stdout.write("  Options: --tree, --hwnd, --uia, --events, --recommend, --output <file>\n");
+    process.stdout.write("  View trace bundles: --bundle <path>\n\n");
   }
 }

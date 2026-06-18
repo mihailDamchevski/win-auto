@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { getTrackedApps } from "../api/testAutomation";
+import type { TraceRecorder, TraceSession } from "../api/trace";
 
 type DiagnosticEntry = {
   timestamp: string;
@@ -26,6 +27,7 @@ type DiagnosticBundle = {
     totalScreenshots: number;
     heapUsedMB: number;
   };
+  trace?: TraceSession;
 };
 
 function formatTree(nodes: unknown[], depth = 0): string {
@@ -53,6 +55,7 @@ function formatTree(nodes: unknown[], depth = 0): string {
 export async function captureDiagnosticBundle(
   testName: string,
   dir?: string,
+  traceRecorder?: TraceRecorder,
 ): Promise<DiagnosticBundle> {
   const bundleDir = dir ?? "diagnostics";
   if (!fs.existsSync(bundleDir)) {
@@ -130,6 +133,13 @@ export async function captureDiagnosticBundle(
       heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2),
     },
   };
+
+  if (traceRecorder && traceRecorder.entries.length > 0) {
+    const session = traceRecorder.export();
+    bundle.trace = session;
+    const tracePath = path.join(testDir, "trace.json");
+    fs.writeFileSync(tracePath, JSON.stringify(session, null, 2), "utf-8");
+  }
 
   const bundlePath = path.join(testDir, "bundle.json");
   fs.writeFileSync(bundlePath, JSON.stringify(bundle, null, 2), "utf-8");

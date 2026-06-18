@@ -14,6 +14,7 @@ export interface WinAutoConfig {
   runtime?: "mock" | "native";
   timeoutMs?: number;
   screenshotOnFailure?: boolean;
+  trace?: boolean;
   inputMode?: "pattern" | "hardware" | "auto";
   retryOnStale?: number;
   debugImages?: boolean;
@@ -27,6 +28,7 @@ export type ResolvedWinAutoConfig = {
   runtime: "mock" | "native";
   timeoutMs: number;
   screenshotOnFailure: boolean;
+  trace: boolean;
   inputMode: "pattern" | "hardware" | "auto";
   retryOnStale: number;
   debugImages: boolean;
@@ -40,6 +42,7 @@ const DEFAULTS: ResolvedWinAutoConfig = {
   runtime: "native",
   timeoutMs: 10_000,
   screenshotOnFailure: false,
+  trace: false,
   inputMode: "auto",
   retryOnStale: 2,
   debugImages: false,
@@ -56,6 +59,7 @@ export function resolveConfig(userConfig?: WinAutoConfig | null): ResolvedWinAut
     runtime: userConfig.runtime ?? DEFAULTS.runtime,
     timeoutMs: userConfig.timeoutMs ?? DEFAULTS.timeoutMs,
     screenshotOnFailure: userConfig.screenshotOnFailure ?? DEFAULTS.screenshotOnFailure,
+    trace: userConfig.trace ?? DEFAULTS.trace,
     inputMode: userConfig.inputMode ?? DEFAULTS.inputMode,
     retryOnStale: userConfig.retryOnStale ?? DEFAULTS.retryOnStale,
     debugImages: userConfig.debugImages ?? DEFAULTS.debugImages,
