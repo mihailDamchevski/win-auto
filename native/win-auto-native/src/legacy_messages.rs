@@ -1,6 +1,6 @@
 use napi::{Error, Result};
 use napi_derive::napi;
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_COMMAND, WM_SETTEXT};
 
 use crate::error::AutomationError;

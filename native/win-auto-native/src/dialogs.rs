@@ -11,8 +11,6 @@ use crate::error::AutomationError;
 use crate::interaction::click_element;
 use crate::utils::{get_class_name, get_window_title, hwnd_to_string, is_visible, parse_hwnd};
 
-const DIALOG_CLASS: &str = "#32770";
-
 #[napi(object)]
 pub struct DialogInfo {
   pub handle: String,
@@ -48,11 +46,6 @@ pub struct DialogControl {
   pub handle: String,
   pub name: String,
   pub control_type: String,
-}
-
-fn is_dialog_window(hwnd: HWND) -> bool {
-  let class_name = get_class_name(hwnd);
-  class_name == DIALOG_CLASS
 }
 
 #[napi(js_name = "findDialogs")]

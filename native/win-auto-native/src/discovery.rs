@@ -452,8 +452,7 @@ pub fn get_window_info(window_handle: String) -> Result<WindowInfo> {
     let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
 
     let mut pid = 0u32;
-    let mut thread_id = 0u32;
-    thread_id = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    let thread_id = GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
     let is_unicode = IsWindowUnicode(hwnd).as_bool();
 
