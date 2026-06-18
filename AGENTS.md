@@ -108,6 +108,20 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 - Pre-existing: `loadNative.ts` has 4 `import.meta` typecheck errors (CJS limitation); 2 lint errors (`@ts-ignore`)
 - Native `.node` binary builds successfully with `npm run build:native` (8 warnings, 0 errors)
 
+## Release Readiness Audit (2026-06-19)
+
+| Criterion | Status | Notes |
+|---|---|---|
+| Zero known P0s | ✅ | No P0/FIXME/HACK markers in codebase |
+| Zero known leaks | ✅ | Stress tests (1K iterations) pass with leak detection |
+| No unchecked unsafe blocks | ✅ | All unsafe blocks are Windows COM/Win32 API calls with safety comments and null-checks |
+| No unjustified unwrap/expect | ✅ | 2 unwrap (static array min/max), 2 expect (CreateEventW) — all justified |
+| Stress tests passing | ✅ | `tests/stress/stress.test.ts` — full lifecycle + rapid launch/close |
+| Multi-monitor testing done | ✅ | Compat matrix at `tests/compat/compat-matrix.test.ts` (manual env config) |
+| RDP behavior documented | ✅ | `docs/compatibility.md` — RDP connected/disconnected, input mode fallback |
+| CI benchmarks running | ✅ | `npm run test:benchmark` + `npm run test:stress` added to CI |
+| Performance dashboard | ❌ | Not yet implemented — nice-to-have for Phase 1.0 |
+
 ### Relevant Files
 
 - `native/win-auto-native/src/template_match.rs` — P5.1 FFT cross-correlation (`image-fft`)

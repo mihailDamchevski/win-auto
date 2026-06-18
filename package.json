@@ -24,6 +24,8 @@
     "test": "npm run test -w @win-auto/core && npm run test:e2e",
     "test:e2e": "vitest run tests/e2e/native-ping.test.ts",
     "test:e2e:real": "vitest run tests/e2e/notepad-real.test.ts",
+    "test:benchmark": "vitest run tests/benchmark/benchmark.test.ts",
+    "test:stress": "vitest run tests/stress/stress.test.ts",
     "debug:notepad": "node scripts/debug-notepad-discovery.js",
     "example:notepad": "node -e \"require('./packages/core/dist').Automation && console.log('Build complete. Run examples/notepad.ts with your TS runner.')\"",
     "lint": "eslint packages/",
