@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use napi::{Error, Result};
 use napi_derive::napi;
 use image::{ImageBuffer, ImageEncoder, Rgba};
@@ -125,14 +127,14 @@ fn bgra_to_png(bmp: CapturedBitmap) -> Vec<u8> {
   let mut png_bytes = Vec::new();
   {
     let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-    encoder
-      .write_image(
-        img.as_raw(),
-        bmp.width as u32,
-        bmp.height as u32,
-        image::ExtendedColorType::Rgba8,
-      )
-      .ok();
+    if let Err(e) = encoder.write_image(
+      img.as_raw(),
+      bmp.width as u32,
+      bmp.height as u32,
+      image::ExtendedColorType::Rgba8,
+    ) {
+      tracing::warn!("PNG encode failed: {e}");
+    }
   }
   png_bytes
 }
@@ -315,17 +317,16 @@ fn template_match_fft_ncc(
   let result_w = sw - tw + 1;
   let result_h = sh - th + 1;
 
-  // Find top candidates from correlation map
-  let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
-  let mut best_corr = f64::NEG_INFINITY;
+  // First pass: find global best
+  let best_corr = corr.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let threshold = best_corr * 0.9;
 
+  // Second pass: collect candidates above threshold (positive correlation only)
+  let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
   for y in 0..result_h {
     for x in 0..result_w {
       let val = corr[y * result_w + x];
-      if val > best_corr {
-        best_corr = val;
-      }
-      if val > best_corr * 0.9 {
+      if val >= threshold && val > 0.0 {
         candidates.push((x, y, val));
       }
     }
@@ -451,6 +452,12 @@ pub async fn find_image(
       let top = r.top.max(0).min(sh as i32 - 1) as usize;
       let w = (r.width as usize).min(sw - left);
       let h = (r.height as usize).min(sh - top);
+      if left != r.left as usize || top != r.top as usize || w != r.width as usize || h != r.height as usize {
+        tracing::warn!(
+          "ROI clipped: requested ({},{},{},{}) → ({},{},{},{}) for {}x{} bitmap",
+          r.left, r.top, r.width, r.height, left, top, w, h, sw, sh
+        );
+      }
       (left, top, w, h)
     }
     None => (0usize, 0usize, sw, sh),
@@ -489,7 +496,7 @@ pub async fn find_image(
   let mut best_match: Option<(usize, usize, f64, f64, Vec<u8>)> = None;
 
   // Convert ROI to grayscale once
-  let roi_gray = bgra_to_grayscale(&roi_pixels, roi_w, roi_h);
+  let roi_gray = Arc::new(bgra_to_grayscale(&roi_pixels, roi_w, roi_h));
 
   for &scale in &scales {
     if scale <= 0.0 { continue; }
@@ -513,9 +520,9 @@ pub async fn find_image(
     let template_gray = bgra_to_grayscale(&scaled_template, tw, th);
 
     // Run template matching on blocking thread
-    let roi_clone = roi_gray.clone();
+    let roi_ref = Arc::clone(&roi_gray);
     let (bx, by, bncc) = tokio::task::spawn_blocking(move || {
-      template_match_ncc(&roi_clone, roi_w, roi_h, &template_gray, tw, th)
+      template_match_ncc(&roi_ref, roi_w, roi_h, &template_gray, tw, th)
     }).await.map_err(|e| Error::from(AutomationError::Generic { message: format!("Thread pool error: {e}") }))?;
 
     if bncc >= min_conf {
@@ -549,9 +556,11 @@ pub async fn find_image(
 
   // --- Debug overlay ---
   let debug_overlay: Option<Vec<u8>> = if do_debug {
-    let mut img = image::load_from_memory(&bgra_to_png(bmp))
-      .ok()
-      .map(|i| i.to_rgba8());
+    let mut img = ImageBuffer::<Rgba<u8>, _>::from_raw(
+      bmp.width as u32,
+      bmp.height as u32,
+      bmp.pixels.clone(),
+    );
     if let Some(ref mut draw_img) = img {
       let rect_color = image::Rgba([255u8, 0u8, 0u8, 200u8]);
       // Draw bounding box (simple: top/bottom/left/right lines) using physical coords
@@ -570,12 +579,14 @@ pub async fn find_image(
       // Encode as PNG
       let mut png_bytes = Vec::new();
       let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-      encoder.write_image(
+      if let Err(e) = encoder.write_image(
         draw_img.as_raw(),
         draw_img.width(),
         draw_img.height(),
         image::ExtendedColorType::Rgba8,
-      ).ok();
+      ) {
+        tracing::warn!("PNG encode failed for debug overlay: {e}");
+      }
       Some(png_bytes)
     } else {
       None

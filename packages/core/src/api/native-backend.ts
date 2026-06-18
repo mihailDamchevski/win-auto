@@ -28,7 +28,7 @@ export class NativeBackend implements Backend {
     if (err instanceof BackendError) throw err;
     if (err instanceof Error) {
       const msg = err.message;
-      const isUipi = /elevat|uip|permission denied|access denied/i.test(msg);
+      const isUipi = /access denied|elevation required|permission denied.*handle/i.test(msg);
       throw new BackendError(
         isUipi ? `${msg}\n\n${UIPI_HELP_MESSAGE}` : msg,
         "native",

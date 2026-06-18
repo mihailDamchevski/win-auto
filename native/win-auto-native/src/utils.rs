@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use napi::{Error, Result};
+use tracing::warn;
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
@@ -28,13 +29,16 @@ pub fn logical_to_physical(hwnd: HWND, value: i32) -> i32 {
 
 pub fn physical_to_logical(hwnd: HWND, value: i32) -> i32 {
   let scale = get_dpi_scale(hwnd);
-  if scale > 0.0 {
-    (f64::from(value) / scale).round() as i32
-  } else {
-    value
-  }
+  (f64::from(value) / scale).round() as i32
 }
 
+/// Returns the system DPI (primary monitor only).
+///
+/// **Multi-monitor limitation:** This returns the DPI of the primary monitor.
+/// On setups where secondary monitors have different DPI, screen-level
+/// functions (mouseMove, clickAt) may land at slightly wrong positions.
+/// Element-relative functions (clickElement) are unaffected since they use
+/// per-window DPI via `get_dpi_for_window`.
 pub fn get_system_dpi() -> u32 {
   unsafe {
     let dpi = GetDpiForSystem();
@@ -74,9 +78,12 @@ impl ComScope {
         unsafe {
           let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
           if hr.is_ok() {
+            // S_OK or S_FALSE (already initialized with same threading model)
             rc.set(1);
           } else {
-            // Already initialized by external code — mark so we don't uninit
+            // RPC_E_CHANGED_MODE (different threading model) or genuine COM failure.
+            // Treat as externally initialized so we don't double-uninit.
+            warn!("CoInitializeEx failed with {hr:?}, treating as externally initialized");
             rc.set(u32::MAX);
           }
         }
@@ -111,6 +118,9 @@ pub fn parse_hwnd(handle: &str) -> Result<HWND> {
   let value = handle
     .parse::<isize>()
     .map_err(|_| Error::from(AutomationError::InvalidHandle { handle: handle.to_string() }))?;
+  if value == 0 {
+    return Err(Error::from(AutomationError::InvalidHandle { handle: handle.to_string() }));
+  }
   // SAFETY: reinterpretation of an isize as a raw pointer; HWND is only used
   // with Windows APIs that validate the handle internally.
   Ok(HWND(value as *mut core::ffi::c_void))
@@ -238,13 +248,9 @@ pub fn sort_windows_for_selection(handles: &[HWND]) -> Vec<HWND> {
   sorted
 }
 
-pub fn dedupe_hwnds(handles: Vec<HWND>) -> Vec<HWND> {
-  let mut unique = Vec::<HWND>::new();
-  for hwnd in handles {
-    if !unique.iter().any(|existing| existing.0 == hwnd.0) {
-      unique.push(hwnd);
-    }
-  }
-  unique
+pub fn dedupe_hwnds(mut handles: Vec<HWND>) -> Vec<HWND> {
+  handles.sort_by_key(|h| h.0 as usize);
+  handles.dedup_by_key(|h| h.0 as usize);
+  handles
 }
 

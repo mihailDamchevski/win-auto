@@ -61,9 +61,9 @@ export class PermissionDeniedError extends AutomationError {
   constructor(
     message: string,
     public readonly handle: string,
-    public readonly isUipibarrier: boolean = false,
+    public readonly isUipBarrier: boolean = false,
   ) {
-    const finalMsg = isUipibarrier ? `${message}\n\n${UIPI_HELP_MESSAGE}` : message;
+    const finalMsg = isUipBarrier ? `${message}\n\n${UIPI_HELP_MESSAGE}` : message;
     super(finalMsg);
   }
 }
@@ -138,8 +138,9 @@ function flattenTree(
 function formatTree(tree: ElementNode[]): string {
   const lines = flattenTree(tree, 0, MAX_TREE_DEPTH, "  ");
   if (lines.length > MAX_ELEMENTS_IN_ERROR) {
+    const remaining = lines.length - MAX_ELEMENTS_IN_ERROR;
     lines.splice(MAX_ELEMENTS_IN_ERROR);
-    lines.push(`  ... and ${lines.length - MAX_ELEMENTS_IN_ERROR} more`);
+    lines.push(`  ... and ${remaining} more`);
   }
   return lines.join("\n");
 }

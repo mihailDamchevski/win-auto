@@ -15,7 +15,6 @@ export interface WinAutoConfig {
   timeoutMs?: number;
   screenshotOnFailure?: boolean;
   inputMode?: "pattern" | "hardware" | "auto";
-  dpiScale?: number;
   retryOnStale?: number;
   debugImages?: boolean;
   debugLocators?: boolean;
@@ -29,7 +28,6 @@ export type ResolvedWinAutoConfig = {
   timeoutMs: number;
   screenshotOnFailure: boolean;
   inputMode: "pattern" | "hardware" | "auto";
-  dpiScale: number;
   retryOnStale: number;
   debugImages: boolean;
   debugLocators: boolean;
@@ -43,7 +41,6 @@ const DEFAULTS: ResolvedWinAutoConfig = {
   timeoutMs: 10_000,
   screenshotOnFailure: false,
   inputMode: "auto",
-  dpiScale: 1.0,
   retryOnStale: 2,
   debugImages: false,
   debugLocators: false,
@@ -60,7 +57,6 @@ export function resolveConfig(userConfig?: WinAutoConfig | null): ResolvedWinAut
     timeoutMs: userConfig.timeoutMs ?? DEFAULTS.timeoutMs,
     screenshotOnFailure: userConfig.screenshotOnFailure ?? DEFAULTS.screenshotOnFailure,
     inputMode: userConfig.inputMode ?? DEFAULTS.inputMode,
-    dpiScale: userConfig.dpiScale ?? DEFAULTS.dpiScale,
     retryOnStale: userConfig.retryOnStale ?? DEFAULTS.retryOnStale,
     debugImages: userConfig.debugImages ?? DEFAULTS.debugImages,
     debugLocators: userConfig.debugLocators ?? DEFAULTS.debugLocators,

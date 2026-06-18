@@ -656,11 +656,17 @@ export class MockBackend implements Backend {
     await delay();
   }
 
-  async sendKeys(windowHandle: string, text: string, _mode?: InputMode): Promise<void> {
-    const win = this.assertWindow(windowHandle);
-    const textbox = win.elements.find((e) => e.selector.role === "textbox");
-    if (textbox) {
-      textbox.text = text;
+  async sendKeys(elementHandle: string, text: string, _mode?: InputMode): Promise<void> {
+    const el = this.elementHandleToEl.get(elementHandle);
+    const win = el ? this.windowHandleToWin.get(el.parentHandle ?? "") : undefined;
+    if (!win) {
+      const win2 = this.assertWindow(elementHandle);
+      const textbox = win2.elements.find((e) => e.selector.role === "textbox");
+      if (textbox) {
+        textbox.text = text;
+      }
+    } else {
+      el!.text = text;
     }
     this.markDirty();
     await delay();

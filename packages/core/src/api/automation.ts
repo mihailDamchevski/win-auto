@@ -73,6 +73,9 @@ export class Automation {
           cwd: options.cwd,
           env,
           runAs: options.runAs,
+          job: options.job,
+          createNoWindow: options.createNoWindow,
+          aumid: options.aumid,
         })
       : await this.backend.launch(options.executablePath);
     const windows = await this.backend.enumerateWindows(processId, options.executablePath);

@@ -31,7 +31,8 @@ fn uipi_permission_denied(handle: &str) -> Error {
 }
 
 fn is_uipi_permission(err: &Error) -> bool {
-  err.to_string().starts_with("Access denied:")
+  let msg = err.to_string();
+  msg.starts_with("Access denied:") || msg.to_lowercase().contains("access denied")
 }
 
 use crate::discovery::{create_uia, find_child_window_by_text, find_element_hwnd, find_element_uia};
@@ -349,7 +350,9 @@ pub(super) async fn type_text_with_mode(
           if let Ok(element) = automation.ElementFromHandle(hwnd) {
             if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
               let bstr: BSTR = text.clone().into();
-              let _ = pattern.SetValue(&bstr);
+              if let Err(e) = pattern.SetValue(&bstr) {
+                tracing::warn!("UIA ValuePattern.SetValue failed in auto mode: {e}, trying WM_SETTEXT");
+              }
               return Ok(());
             }
           }
@@ -359,7 +362,12 @@ pub(super) async fn type_text_with_mode(
       tracing::warn!("UIA ValuePattern failed for hwnd={element_handle}, falling back to WM_SETTEXT");
       let wide = to_wide_null_terminated(&text);
       unsafe {
-        SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
+        let result = SendMessageW(hwnd, WM_SETTEXT, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as isize)));
+        if result.0 == 0 {
+          return Err(Error::from(AutomationError::Generic {
+            message: "WM_SETTEXT failed — element may be read-only or UIPI-blocked".into(),
+          }));
+        }
       }
       Ok(())
     }
@@ -372,6 +380,7 @@ async fn hardware_type_sendinput(element_handle: String, text: String) -> Result
   unsafe {
     let _ = SetForegroundWindow(hwnd);
   }
+  let _ = hwnd;
   tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
   let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
@@ -446,6 +455,7 @@ pub async fn send_keys(
       unsafe {
         let _ = SetForegroundWindow(hwnd);
       }
+      let _ = hwnd;
       tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
       let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
@@ -493,6 +503,7 @@ pub async fn press_key_codes(window_handle: String, key_codes: Vec<i32>) -> Resu
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
+  let _ = hwnd;
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
   for &vk in &key_codes {
@@ -709,7 +720,7 @@ pub(super) async fn click_element_with_mode(
       // Hardware-only: use enigo-based click (or fallback to SendInput)
       #[cfg(feature = "input-hardware")]
       {
-        match crate::hardware_input::hardware_click(element_handle.clone()).await {
+        match crate::hardware_input::hardware_click(element_handle.clone()) {
           Ok(()) => return Ok(()),
           Err(err) => {
             if is_uipi_permission(&err) {
@@ -795,9 +806,9 @@ pub(super) async fn click_element_with_mode(
           })?;
         }
       }
-      tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-      send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
-      Ok(())
+  tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
+  Ok(())
     }
   }
 }
@@ -826,7 +837,7 @@ async fn hardware_click_sendinput(element_handle: String) -> Result<()> {
     })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   Ok(())
 }
 
@@ -1123,9 +1134,9 @@ pub async fn resolve_element_path(window_handle: String, path: Vec<ElementPathSt
                 if i as i32 == step.sibling_index {
                   true
                 } else {
-                  // If sibling index doesn't match but properties do, this might still be the right element
-                  // if the tree structure changed. Use properties only as fallback.
-                  false
+                  // Properties matched but sibling index differs — accept as fallback
+                  // since tree structure may have changed between build and resolve.
+                  true
                 }
               };
 
@@ -1827,6 +1838,7 @@ pub async fn press_key(window_handle: String, key_combination: String) -> Result
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
+  let _ = hwnd;
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
   let parts: Vec<&str> = key_combination.split('+').map(|s| s.trim()).collect();
@@ -1892,27 +1904,64 @@ fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
   }
 }
 
-async fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) {
+async fn send_mouse_click(flags_down: MOUSE_EVENT_FLAGS, flags_up: MOUSE_EVENT_FLAGS) -> Result<()> {
   // SAFETY: SendInput with properly initialized INPUT_MOUSE structures is safe;
   // the MOUSEINPUT struct is zero-initialized from make_mouse_input with valid dwFlags.
   unsafe {
-    SendInput(
+    let sent = SendInput(
       &[make_mouse_input(flags_down.0)],
       std::mem::size_of::<INPUT>() as i32,
     );
+    if sent == 0 {
+      return Err(Error::from(AutomationError::Generic {
+        message: "SendInput (mouse down) failed — possible UIPI barrier".into(),
+      }));
+    }
   }
   tokio::time::sleep(std::time::Duration::from_millis(10)).await;
   unsafe {
-    SendInput(
+    let sent = SendInput(
       &[make_mouse_input(flags_up.0)],
       std::mem::size_of::<INPUT>() as i32,
     );
+    if sent == 0 {
+      return Err(Error::from(AutomationError::Generic {
+        message: "SendInput (mouse up) failed — possible UIPI barrier".into(),
+      }));
+    }
   }
+  Ok(())
 }
 
 #[napi(js_name = "rightClickElement")]
 pub async fn right_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
+  // Try UIA bounding rect first (better for UWP/modern apps)
+  let uia_ok = unsafe {
+    let _com_init = crate::utils::ComScope::init();
+    if let Ok(automation) = create_uia() {
+      if let Ok(element) = automation.ElementFromHandle(hwnd) {
+        if let Ok(rect) = element.CurrentBoundingRectangle() {
+          let cx = (rect.left + rect.right) / 2;
+          let cy = (rect.top + rect.bottom) / 2;
+          SetCursorPos(cx, cy).map_err(|err| {
+            if is_access_denied(&err) {
+              uipi_permission_denied(&element_handle)
+            } else {
+              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+            }
+          }).is_ok()
+        } else { false }
+      } else { false }
+    } else { false }
+  };
+  if uia_ok {
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await?;
+    return Ok(());
+  }
+  // Fallback: Win32 GetWindowRect
+  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
   let mut rect = RECT::default();
   unsafe {
     if GetWindowRect(hwnd, &mut rect).is_err() {
@@ -1930,13 +1979,41 @@ pub async fn right_click_element(element_handle: String) -> Result<()> {
       })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-  send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await;
+  send_mouse_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP).await?;
   Ok(())
 }
 
 #[napi(js_name = "doubleClickElement")]
 pub async fn double_click_element(element_handle: String) -> Result<()> {
   let hwnd = parse_hwnd(&element_handle)?;
+  // Try UIA bounding rect first (better for UWP/modern apps)
+  let uia_ok = unsafe {
+    let _com_init = crate::utils::ComScope::init();
+    if let Ok(automation) = create_uia() {
+      if let Ok(element) = automation.ElementFromHandle(hwnd) {
+        if let Ok(rect) = element.CurrentBoundingRectangle() {
+          let cx = (rect.left + rect.right) / 2;
+          let cy = (rect.top + rect.bottom) / 2;
+          SetCursorPos(cx, cy).map_err(|err| {
+            if is_access_denied(&err) {
+              uipi_permission_denied(&element_handle)
+            } else {
+              Error::from(AutomationError::Generic { message: "Failed to set cursor position".into() })
+            }
+          }).is_ok()
+        } else { false }
+      } else { false }
+    } else { false }
+  };
+  if uia_ok {
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
+    return Ok(());
+  }
+  // Fallback: Win32 GetWindowRect
+  tracing::warn!("UIA bounding rect failed for hwnd={element_handle}, falling back to Win32 GetWindowRect");
   let mut rect = RECT::default();
   unsafe {
     if GetWindowRect(hwnd, &mut rect).is_err() {
@@ -1955,9 +2032,9 @@ pub async fn double_click_element(element_handle: String) -> Result<()> {
   }
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   // Two quick left clicks
-  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   Ok(())
 }
 
@@ -1997,7 +2074,7 @@ pub async fn click_at(x: i32, y: i32) -> Result<()> {
       })?;
   }
   tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await;
+  send_mouse_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP).await?;
   Ok(())
 }
 
@@ -2014,6 +2091,7 @@ pub async fn key_down(window_handle: String, key: String) -> Result<()> {
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
+  let _ = hwnd;
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
@@ -2029,6 +2107,7 @@ pub async fn key_up(window_handle: String, key: String) -> Result<()> {
     SwitchToThisWindow(hwnd, true);
     let _ = SetForegroundWindow(hwnd);
   }
+  let _ = hwnd;
   tokio::time::sleep(std::time::Duration::from_millis(50)).await;
   let vk = vk_from_name(&key)
     .ok_or_else(|| Error::from(AutomationError::Generic { message: format!("Unknown key: {key}") }))?;
