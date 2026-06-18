@@ -9,15 +9,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  node-version: "20"
+  node-version: "24"
 
 jobs:
   lint-typecheck:
     name: Lint & TypeCheck
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.node-version }}
           cache: npm
@@ -30,8 +30,8 @@ jobs:
     name: Unit Tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.node-version }}
           cache: npm
@@ -42,8 +42,8 @@ jobs:
     name: Native Build (x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.node-version }}
           cache: npm
@@ -52,7 +52,7 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - run: npm ci
       - run: npm run build:native
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: win-auto-native-x64
           path: native/win-auto-native/*.node
@@ -63,13 +63,13 @@ jobs:
     runs-on: windows-latest
     needs: [native-build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.node-version }}
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: win-auto-native-x64
           path: native/win-auto-native
@@ -79,8 +79,8 @@ jobs:
     name: Coverage
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.node-version }}
           cache: npm
