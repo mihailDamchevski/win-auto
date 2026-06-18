@@ -185,7 +185,7 @@ export class ElementAssertionsImpl {
   }
 
   async toHaveClassName(className: string | RegExp): Promise<void> {
-    const actual = await this.el.getClassName();
+    const actual = await this.el.getAttribute("className");
     if (className instanceof RegExp) {
       expect(actual, `Expected element ${this.el.handle} className to match ${className}`).toMatch(className);
     } else {
@@ -207,7 +207,7 @@ export class ElementAssertionsImpl {
       expect(actual, `Expected element ${this.el.handle} role to be "${selector.role}"`).toBe(selector.role);
     }
     if (selector.className != null) {
-      const actual = await this.el.getClassName();
+      const actual = await this.el.getAttribute("className");
       expect(actual, `Expected element ${this.el.handle} className to be "${selector.className}"`).toBe(selector.className);
     }
   }

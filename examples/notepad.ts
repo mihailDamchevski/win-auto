@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     throw new Error("Notepad text area was not found.");
   }
 
-  await element.type("hello from real native backend");
+  await element.typeText("hello from real native backend");
 }
 
 void main();

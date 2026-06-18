@@ -59,7 +59,13 @@ fn match_mode_matches(actual: &str, query: &str, mode: &str) -> bool {
   match mode {
     "exact" => actual.eq_ignore_ascii_case(query),
     "regex" => {
-      if let Ok(re) = regex::Regex::new(&format!("(?i){}", query)) {
+      if query.len() > 512 {
+        return false;
+      }
+      if let Ok(re) = regex::RegexBuilder::new(&format!("(?i){}", query))
+        .size_limit(1_000_000)
+        .build()
+      {
         re.is_match(actual)
       } else {
         false
@@ -603,7 +609,8 @@ pub async fn get_text(element_handle: String) -> Result<String> {
   unsafe {
     let len = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(0)), Some(LPARAM(0))).0;
     if len > 0 {
-      let mut buffer = vec![0u16; (len + 1) as usize];
+      let capped_len = (len as usize).min(500_000);
+      let mut buffer = vec![0u16; capped_len + 1];
       let copied = SendMessageW(
         hwnd,
         WM_GETTEXT,
@@ -2256,7 +2263,8 @@ pub async fn get_element_attribute(element_handle: String, attribute_name: Strin
         // Fallback: WM_GETTEXT
         let len = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(0)), Some(LPARAM(0))).0;
         if len > 0 {
-          let mut buffer = vec![0u16; (len + 1) as usize];
+          let capped_len = (len as usize).min(500_000);
+          let mut buffer = vec![0u16; capped_len + 1];
           let copied = SendMessageW(hwnd, WM_GETTEXT, Some(WPARAM(buffer.len() as _)), Some(LPARAM(buffer.as_mut_ptr() as isize)));
           if copied.0 > 0 {
             return Ok(String::from_utf16_lossy(&buffer[..copied.0 as usize]));

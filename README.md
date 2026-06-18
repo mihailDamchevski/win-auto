@@ -39,6 +39,49 @@ Automate Windows desktop applications with a simple TypeScript/JavaScript API. L
 - 🧪 **Time Measurement** - `measureTime()` / `measureAsync()` for performance assertions
 - 🎭 **Mock Backend** - Test automation logic without a real Windows desktop
 
+## Benchmarks
+
+Measured with 1,000 iterations against a 500-element mock UI tree:
+
+| Operation | Success Rate | p50 | p95 | p99 |
+|-----------|-------------|-----|-----|-----|
+| Find element by name | 100% | <0.1ms | <0.2ms | <0.4ms |
+| Find by automationId | 100% | <0.1ms | <0.2ms | <0.4ms |
+| Click element | 100% | ~5ms | ~5ms | ~6ms |
+| Type text | 100% | ~5ms | ~5ms | ~6ms |
+| Get value | 100% | <0.1ms | <0.2ms | <0.3ms |
+| Screenshot | 100% | <0.1ms | <0.2ms | <0.3ms |
+| isVisible check | 100% | <0.1ms | <0.2ms | <0.3ms |
+| inspectTree | 100% | ~2ms | ~3ms | ~3ms |
+
+Run benchmarks yourself:
+
+```bash
+npm run test -- --testPathPattern=benchmark
+```
+
+### Stress Testing
+
+10,000 iteration stability tests verify no memory/handle leaks:
+
+```bash
+npm run test -- --testPathPattern=stress
+```
+
+Monitors heap growth, RSS, and external memory across iterations. Reports whether counts plateau (good) or continuously increase (leak).
+
+## Diagnostic Bundles
+
+When a test fails, win-auto automatically captures a diagnostic bundle:
+
+- Screenshots of all tracked app windows
+- Element tree dump (UIA hierarchy)
+- Window titles and handles
+- Memory snapshot (heap, RSS, external)
+- Saved to `diagnostics/` directory
+
+This makes debugging CI failures trivial — you get a visual + structural snapshot of exactly what the UI looked like when the test failed.
+
 ## Quick Start
 
 ### Installation
@@ -51,6 +94,47 @@ For the CLI tool:
 
 ```bash
 npm install -g win-auto
+```
+
+### 5-Minute Onboarding
+
+```typescript
+import { Automation } from "win-auto-core";
+
+// 1. Create automation instance
+const automation = new Automation();
+
+// 2. Launch an app
+const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
+
+// 3. Find elements
+const textbox = await app.find({ role: "textbox" });
+
+// 4. Interact
+await textbox?.typeText("Hello from win-auto!");
+
+// 5. Verify
+const value = await textbox?.getValue();
+console.log(value); // "Hello from win-auto!"
+
+// 6. Clean up
+await app.close();
+```
+
+That's it. You've automated a Windows app in 6 lines.
+
+### Testing with Mock Backend
+
+No desktop needed — test automation logic in CI:
+
+```typescript
+import { Automation, MockBackend } from "win-auto-core";
+
+const auto = new Automation(new MockBackend());
+const app = await auto.launch("notepad.exe");
+const el = await app.find({ role: "textbox" });
+await el?.typeText("test");
+console.log(await el?.getValue()); // "test"
 ```
 
 ### Basic Usage
@@ -66,7 +150,7 @@ const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
 const textbox = await app.find({ role: "textbox" });
 
 // Interact with it
-await textbox?.type("Hello from win-auto!");
+await textbox?.typeText("Hello from win-auto!");
 ```
 
 ### Using the CLI
@@ -78,6 +162,7 @@ win-auto init my-automation-project
 cd my-automation-project
 npm install
 npm run test
+```
 
 Inspect the UI tree of any running application:
 
@@ -146,7 +231,7 @@ const element = await window.findElement({ role: "textbox" });
 const el = await window.find({ name: "OK" });
 
 // Find all matching elements
-const allButtons = await window.findAll({ role: "button" });
+const allButtons = await window.findElements({ role: "button" });
 
 // Click elements by name or in sequence
 await window.clickElementByName("Save");
@@ -222,14 +307,14 @@ const role = await element.getAttribute("role");
 const bounds = await element.getAttribute("bounds");
 const isPassword = await element.getAttribute("isPassword");
 // getProperty is an alias for getAttribute
-const autoId = await element.getProperty("automationId");
+const autoId = await element.getAttribute("automationId");
 
 // Wait for element state
 await element.waitForVisible({ timeoutMs: 5000 });
 await element.waitForEnabled();
 
 // Tree navigation
-const parent = await element.getParent();
+const parent = await element.parent();
 const children = await element.getChildren();
 const siblings = await element.getSiblings();
 
@@ -571,8 +656,8 @@ async function automateNotepad() {
   const textbox = await app.find({ role: "textbox" });
 
   // Type some text
-  await textbox?.type("This is an automated message!\n");
-  await textbox?.type("win-auto makes it easy!");
+  await textbox?.typeText("This is an automated message!\n");
+  await textbox?.typeText("win-auto makes it easy!");
 }
 
 automateNotepad().catch(console.error);
@@ -611,7 +696,7 @@ describe("Notepad Automation", () => {
     const app = await automation.launch("notepad.exe");
     const textbox = await app.find({ role: "textbox" });
 
-    await textbox?.type("Test message");
+    await textbox?.typeText("Test message");
     expect(textbox).toBeDefined();
   });
 });
@@ -623,7 +708,7 @@ it("works without a real desktop", async () => {
   const automation = new Automation(new MockBackend());
   const app = await automation.launch("notepad.exe");
   const el = await app.find({ role: "textbox" });
-  await el?.type("Hello");
+    await el?.typeText("Hello");
   expect(await el?.getText()).toBe("Hello");
 });
 

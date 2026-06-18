@@ -74,7 +74,7 @@ pub fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
       biPlanes: 1,
       biBitCount: 32,
       biCompression: BI_RGB.0,
-      biSizeImage: (width * height * 4) as u32,
+      biSizeImage: (width as u32).checked_mul(height as u32).and_then(|v| v.checked_mul(4)).unwrap_or(0),
       biXPelsPerMeter: 0,
       biYPelsPerMeter: 0,
       biClrUsed: 0,
@@ -86,7 +86,10 @@ pub fn capture_window_bitmap(hwnd: HWND) -> Result<CapturedBitmap> {
       bmiColors: [RGBQUAD::default()],
     };
 
-    let image_size = (width * height * 4) as usize;
+    let image_size = (width as usize)
+      .checked_mul(height as usize)
+      .and_then(|v| v.checked_mul(4))
+      .ok_or_else(|| napi::Error::from_reason("Screenshot dimensions too large"))?;
     let mut buffer = vec![0u8; image_size];
 
     let result = GetDIBits(
@@ -152,8 +155,18 @@ pub async fn capture_screenshot(element_handle: String) -> Result<Vec<u8>> {
 
 #[napi(js_name = "captureScreenshotToFile")]
 pub async fn capture_screenshot_to_file(element_handle: String, path: String) -> Result<()> {
+  if path.is_empty() || path.len() > 260 {
+    return Err(Error::from(AutomationError::Generic {
+      message: format!("Invalid screenshot path length: {}", path.len()),
+    }));
+  }
+  if path.contains('\0') {
+    return Err(Error::from(AutomationError::Generic {
+      message: "Screenshot path contains null byte".to_string(),
+    }));
+  }
   let bytes = capture_screenshot(element_handle).await?;
-  std::fs::write(path, bytes).map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to write screenshot file: {err}") }))
+  std::fs::write(&path, bytes).map_err(|err| Error::from(AutomationError::Generic { message: format!("Failed to write screenshot to '{path}': {err}") }))
 }
 
 // --- Template matching ---

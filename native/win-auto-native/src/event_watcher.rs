@@ -58,7 +58,7 @@ static WIN_EVENT_CALLBACK: OnceLock<Mutex<Option<EventCallback>>> = OnceLock::ne
 fn get_change_event() -> HANDLE {
   CHANGE_EVENT.get_or_init(|| {
     EventHandle(unsafe {
-      CreateEventW(None, false, false, None).expect("CreateEventW for change event failed")
+      CreateEventW(None, false, false, None).expect("CreateEventW failed — system may be low on resources")
     })
   }).0
 }
@@ -66,7 +66,7 @@ fn get_change_event() -> HANDLE {
 fn get_shutdown_event() -> HANDLE {
   SHUTDOWN_EVENT.get_or_init(|| {
     EventHandle(unsafe {
-      CreateEventW(None, true, false, None).expect("CreateEventW for shutdown event failed")
+      CreateEventW(None, true, false, None).expect("CreateEventW failed — system may be low on resources")
     })
   }).0
 }

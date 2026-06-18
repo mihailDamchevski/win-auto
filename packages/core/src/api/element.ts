@@ -185,17 +185,9 @@ export class Element {
     await this.backend.dragDrop(this.handle, targetHandle);
   }
 
-  public async dragTo(target: Element | string): Promise<void> {
-    return this.dragDrop(target);
-  }
-
   public async typeText(text: string): Promise<void> {
     await this.retryOnStale((h) => this.backend.typeText(h, text, this.inputMode));
     this.events.emitElementTyped(this.handle, text);
-  }
-
-  public async type(text: string): Promise<void> {
-    return this.typeText(text);
   }
 
   public async focus(): Promise<void> {
@@ -323,14 +315,6 @@ export class Element {
 
   public async getAttribute(name: string): Promise<string> {
     return this.retryOnStale((h) => this.backend.getElementAttribute(h, name));
-  }
-
-  public async getProperty(name: string): Promise<string> {
-    return this.getAttribute(name);
-  }
-
-  public async getClassName(): Promise<string> {
-    return this.getAttribute("className");
   }
 
   private async matchesSelector(handle: string, selector: ElementSelector): Promise<boolean> {

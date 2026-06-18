@@ -95,10 +95,6 @@ export class Window {
     return new Element(elementHandle, this.handle, this.backend, this.events, selector, this.inputMode);
   }
 
-  public async find(selector: ElementSelector): Promise<Element | null> {
-    return this.findElement(selector);
-  }
-
   public async findElements(selector: ElementSelector): Promise<Element[]> {
     const handles = await this.backend.findAll(
       this.handle,

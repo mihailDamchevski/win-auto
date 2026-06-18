@@ -4,7 +4,8 @@ import {
   onTestFailed,
   expect as vitestExpect,
 } from "vitest";
-import { closeTrackedApps, captureScreenshotsFromTrackedApps } from "./context";
+import { closeTrackedApps } from "./context";
+import { captureDiagnosticBundle } from "./diagnostics";
 import { describe, it } from "./vitest";
 import { loadWinAutoConfig } from "../api/config";
 
@@ -34,10 +35,27 @@ loadWinAutoConfig()
 
 beforeEach(() => {
   onTestFailed(async () => {
-    const files = await captureScreenshotsFromTrackedApps();
-    if (files.length > 0) {
-      console.log(`Screenshots saved:\n  ${files.join("\n  ")}`);
+    const state = (globalThis as Record<string, unknown>).__vitest_state__ as
+      | { currentTestName?: string }
+      | undefined;
+    const testName = state?.currentTestName ?? "unknown-test";
+    const bundle = await captureDiagnosticBundle(testName, "diagnostics");
+    console.log(`\n=== Diagnostic Bundle ===`);
+    console.log(`Test: ${bundle.testFailed}`);
+    console.log(`Apps: ${bundle.summary.totalApps}`);
+    console.log(`Screenshots: ${bundle.summary.totalScreenshots}`);
+    console.log(`Heap: ${bundle.summary.heapUsedMB}MB`);
+    for (const entry of bundle.entries) {
+      console.log(`  [${entry.pid}] ${entry.app} — window: ${entry.windowTitle ?? "N/A"}`);
+      if (entry.elementTree) {
+        const lines = entry.elementTree.split("\n").slice(0, 20);
+        console.log(`    Element tree (${lines.length} lines):`);
+        for (const line of lines) {
+          console.log(`      ${line}`);
+        }
+      }
     }
+    console.log(`Bundle saved: diagnostics/\n`);
   });
 });
 

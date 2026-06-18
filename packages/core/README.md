@@ -16,7 +16,7 @@ import { Automation } from "@win-auto/core";
 const automation = new Automation();
 const app = await automation.launch("C:\\Windows\\System32\\notepad.exe");
 const textbox = await app.find({ role: "textbox" });
-await textbox?.type("Hello from win-auto!");
+await textbox?.typeText("Hello from win-auto!");
 ```
 
 ## API
@@ -84,7 +84,7 @@ Window management and element discovery.
 ```typescript
 // Element finding
 const el = await window.findElement({ role: "textbox" });
-const all = await window.findAll({ role: "button" });
+const all = await window.findElements({ role: "button" });
 await window.clickElementByName("Save");
 await window.clickSequence(["File", "Save As"]);
 
@@ -158,7 +158,7 @@ const focused = await element.isFocused();
 const toggleState = await element.getToggleState();
 
 // Class name (Win32 window class)
-const className = await element.getClassName();
+const className = await element.getAttribute("className");
 
 // Read arbitrary UIA attributes
 const name = await element.getAttribute("name");
@@ -166,7 +166,7 @@ const role = await element.getAttribute("role");
 const bounds = await element.getAttribute("bounds");
 const legacyName = await element.getAttribute("legacyName"); // MSAA fallback
 // getProperty is an alias
-const autoId = await element.getProperty("automationId");
+const autoId = await element.getAttribute("automationId");
 
 // Wait for element state (positive)
 await element.waitForVisible({ timeoutMs: 5000 });
@@ -188,7 +188,7 @@ const relative = await element.findRelative(
 );
 
 // Tree navigation (legacy)
-await element.getParent();
+await element.parent();
 await element.getChildren();
 await element.getSiblings();
 

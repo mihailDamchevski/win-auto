@@ -100,11 +100,7 @@ export class App {
     throw await buildWindowNotFoundError(this.processId, timeoutMs, this.backend);
   }
 
-  public async find(selector: {
-    automationId?: string;
-    name?: string;
-    role?: string;
-  }): Promise<Element | null> {
+  public async find(selector: ElementSelector): Promise<Element | null> {
     const mainWindow = await this.getMainWindow();
     if (!mainWindow) {
       return null;

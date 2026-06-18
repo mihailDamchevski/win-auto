@@ -28,6 +28,9 @@ export { expectElementTree } from "./treeSnapshot";
 // Fixture helpers
 export { createMockFixture } from "./fixture";
 
+// Diagnostic bundles
+export { captureDiagnosticBundle } from "./diagnostics";
+
 // Conditions & time measurement
 export { isCI, isRealDesktop, measureTime, measureAsync } from "./conditions";
 
