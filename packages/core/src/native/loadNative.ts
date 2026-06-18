@@ -9,7 +9,7 @@ import { BackendError } from "../api/errors";
 // in CJS builds the try block throws and we fall back to __dirname / require.
 function getModuleUrl(): string {
   try {
-    // @ts-expect-error — import.meta is only valid with --module es2022+
+    // @ts-ignore — import.meta not allowed in CommonJS
     return (import.meta as { url: string }).url;
   } catch {
     return "";
@@ -18,7 +18,7 @@ function getModuleUrl(): string {
 
 function getNodeRequire(): NodeRequire {
   try {
-    // @ts-expect-error — import.meta is only valid with --module es2022+
+    // @ts-ignore — import.meta not allowed in CommonJS
     return createRequire((import.meta as { url: string }).url);
   } catch {
     return require;
