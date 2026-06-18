@@ -9,6 +9,9 @@ import { Diagnostics } from "./diagnostics";
 import { loadNativeBindings } from "../native/loadNative";
 import type { NativeBindings, AppSelector, InputMode, LaunchOptions } from "./types";
 import { TraceRecorder, setCurrentTraceRecorder } from "./trace";
+import { MockClock, DeterministicBackendPoller } from "./deterministicWait";
+import { SessionRecorder } from "./sessionRecorder";
+import { SessionReplayer } from "./sessionReplayer";
 
 export class Automation {
   public readonly events: AutomationEvents;
@@ -18,14 +21,29 @@ export class Automation {
   public readonly trace: TraceRecorder;
   public readonly inputMode: InputMode;
   public readonly backend: Backend;
+  public readonly deterministic: boolean;
+  public readonly recorder?: SessionRecorder;
+  public readonly replayer?: SessionReplayer;
+  public readonly mockClock?: MockClock;
+  public readonly deterministicPoller?: DeterministicBackendPoller;
   private nativeBindings?: NativeBindings;
 
-  constructor(backend?: Backend, inputMode?: InputMode, traceEnabled?: boolean) {
+  constructor(backend?: Backend, inputMode?: InputMode, traceEnabled?: boolean, deterministic?: boolean) {
     this.backend = backend ?? Automation.detectBackend() ?? new NativeBackend();
     this.inputMode = inputMode ?? "auto";
+    this.deterministic = deterministic ?? false;
     this.events = new AutomationEvents();
     this.processes = new ProcessManager(this.backend);
     this.wait = new WaitBuilder(this.backend);
+
+    if (this.deterministic) {
+      this.mockClock = new MockClock();
+      this.deterministicPoller = new DeterministicBackendPoller(this.mockClock, this.backend);
+    }
+
+    this.recorder = new SessionRecorder(this.backend);
+    this.replayer = new SessionReplayer(this.backend);
+
     try {
       this.nativeBindings = loadNativeBindings();
     } catch {
@@ -34,6 +52,7 @@ export class Automation {
     this.diagnostics = new Diagnostics(this.backend, this.nativeBindings);
     this.trace = new TraceRecorder();
     setCurrentTraceRecorder(this.trace);
+    this.trace.recordInputModeDecision("Automation", this.inputMode, `constructor inputMode=${this.inputMode}`);
     if (traceEnabled) {
       this.trace.attach(this.events);
     }
@@ -56,7 +75,7 @@ export class Automation {
 
   /** Async factory for ESM environments where mock backend cannot be loaded
    *  via synchronous require(). Falls through to NativeBackend on failure. */
-  static async create(backend?: Backend, inputMode?: InputMode): Promise<Automation> {
+  static async create(backend?: Backend, inputMode?: InputMode, deterministic?: boolean): Promise<Automation> {
     if (!backend && process.env.WIN_AUTO_BACKEND === "mock") {
       try {
         const { MockBackend } = await import("../mock/mockBackend.js");
@@ -65,7 +84,7 @@ export class Automation {
         // NativeBackend fallback
       }
     }
-    return new Automation(backend, inputMode);
+    return new Automation(backend, inputMode, undefined, deterministic);
   }
 
   public async launch(executablePath: string): Promise<App> {

@@ -4,6 +4,7 @@ import type { ElementSelector, ImageMatch, LocatorFilter, WaitOptions } from "./
 import { Element } from "./element";
 import { classNamesForSelector } from "../native/classNames";
 import { AutomationError, buildElementNotFoundError, TimeoutError } from "./errors";
+import { getCurrentTraceRecorder } from "./trace";
 
 type LocatorStrategy =
   | { type: "selector"; selector: ElementSelector }
@@ -267,6 +268,13 @@ export class Locator {
             const fbEl = await this.findBySelector(fb.selector);
             if (fbEl) {
               debugLog(`fallback ${fb.strategyName} succeeded`);
+              getCurrentTraceRecorder()?.recordLocatorDecision(
+                strategy.selector,
+                fallbacks.length,
+                fb.strategyName,
+                fb.confidence,
+                `healing fallback succeeded (primary selector matched 0 elements)`,
+              );
               // LRU eviction: remove oldest entry if cache exceeds limit
               if (strategyCache.size >= CACHE_MAX_SIZE) {
                 const firstKey = strategyCache.keys().next().value;
@@ -330,6 +338,14 @@ export class Locator {
         if (best) {
           const el = new Element(best.handle, this.windowHandle, this.backend, this.events);
           debugLog(`parallel healing: ${best.strategyName} (confidence ${best.confidence})`);
+          const candidates = results.filter((r): r is HealedResult => r !== null);
+          getCurrentTraceRecorder()?.recordLocatorDecision(
+            {} as ElementSelector,
+            candidates.length,
+            best.strategyName,
+            best.confidence,
+            `parallel healing best match`,
+          );
           return el;
         }
 

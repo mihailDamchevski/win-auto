@@ -29,6 +29,10 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@win-auto/core": "0.1.7"
+    "@win-auto/core": "0.1.7",
+    "blessed": "^0.1.81"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.27"
   }
 }

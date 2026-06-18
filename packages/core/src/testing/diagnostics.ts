@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getTrackedApps } from "../api/testAutomation";
 import type { TraceRecorder, TraceSession } from "../api/trace";
+import { FailureBundle } from "../api/failureBundle";
 
 type DiagnosticEntry = {
   timestamp: string;
@@ -28,6 +29,12 @@ type DiagnosticBundle = {
     heapUsedMB: number;
   };
   trace?: TraceSession;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+  timingBreakdown?: Record<string, { count: number; totalMs: number; avgMs: number; minMs: number; maxMs: number }>;
 };
 
 function formatTree(nodes: unknown[], depth = 0): string {
@@ -56,6 +63,7 @@ export async function captureDiagnosticBundle(
   testName: string,
   dir?: string,
   traceRecorder?: TraceRecorder,
+  error?: Error,
 ): Promise<DiagnosticBundle> {
   const bundleDir = dir ?? "diagnostics";
   if (!fs.existsSync(bundleDir)) {
@@ -134,15 +142,39 @@ export async function captureDiagnosticBundle(
     },
   };
 
+  if (error) {
+    bundle.error = {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
   if (traceRecorder && traceRecorder.entries.length > 0) {
     const session = traceRecorder.export();
     bundle.trace = session;
+    bundle.timingBreakdown = session.timingBreakdown;
     const tracePath = path.join(testDir, "trace.json");
     fs.writeFileSync(tracePath, JSON.stringify(session, null, 2), "utf-8");
   }
 
   const bundlePath = path.join(testDir, "bundle.json");
   fs.writeFileSync(bundlePath, JSON.stringify(bundle, null, 2), "utf-8");
+
+  // Also export a FailureBundle (standalone JSON with embedded screenshots)
+  try {
+    const fbData = await FailureBundle.capture(testName, {
+      trace: bundle.trace,
+      error,
+    });
+    const fbPath = path.join(testDir, "failure-bundle.json");
+    await FailureBundle.export(fbData, fbPath);
+    // Generate HTML report
+    const htmlPath = path.join(testDir, "report.html");
+    await FailureBundle.exportHTML(fbData, htmlPath);
+  } catch {
+    // FailureBundle export is best-effort
+  }
 
   return bundle;
 }

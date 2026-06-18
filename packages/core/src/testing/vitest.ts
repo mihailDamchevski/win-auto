@@ -1,6 +1,7 @@
 import { it as vitestIt, describe as vitestDescribe } from "vitest";
 import type { SuiteCollector } from "vitest";
 import { isCI, isRealDesktop } from "./conditions";
+import { isTestQuarantined } from "./flaky";
 
 const DEFAULT_TEST_TIMEOUT_MS = 30_000;
 
@@ -30,16 +31,30 @@ const flakyIt = (retries?: number) => {
     retry(name, fn, timeout ?? DEFAULT_TEST_TIMEOUT_MS);
 };
 
+const quarantineIt: TestFn = (name: string, fn: () => void | Promise<void>, timeout?: number) => {
+  if (isTestQuarantined(name)) {
+    return vitestIt.skip(`[quarantined] ${name}`, fn, timeout ?? DEFAULT_TEST_TIMEOUT_MS);
+  }
+  return vitestIt(name, fn, timeout ?? DEFAULT_TEST_TIMEOUT_MS);
+};
+
 export const it: typeof vitestIt & {
   ci: TestFn;
   realDesktop: TestFn;
   flaky: (
     retries?: number,
   ) => (name: string, fn: () => void | Promise<void>, timeout?: number) => void;
-} = Object.assign(baseIt, vitestIt, { ci: ciIt, realDesktop: realDesktopIt, flaky: flakyIt } as {
+  quarantine: TestFn;
+} = Object.assign(baseIt, vitestIt, {
+  ci: ciIt,
+  realDesktop: realDesktopIt,
+  flaky: flakyIt,
+  quarantine: quarantineIt,
+} as {
   ci: TestFn;
   realDesktop: TestFn;
   flaky: typeof flakyIt;
+  quarantine: TestFn;
 });
 
 // 8.6 — Suite-level retry via describe.flaky

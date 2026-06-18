@@ -22,6 +22,18 @@ export interface WinAutoConfig {
   eventLog?: string[];
   pollInterval?: "adaptive" | number;
   appConfig?: AppConfigEntry[];
+  /** Flaky test economics: directory for history store (default: .win-auto/flaky) */
+  flakyHistoryDir?: string;
+  /** Failure rate threshold (0-1) for auto-quarantine (default: 0.3) */
+  flakyThreshold?: number;
+  /** Minimum runs before quarantine kicks in (default: 5) */
+  flakyMinRuns?: number;
+  /** Deterministic mode: uses virtual clock for deterministic polling */
+  deterministic?: boolean;
+  /** Session recording: path to record file */
+  recordPath?: string;
+  /** Session replay: path to session JSON */
+  replayPath?: string;
 }
 
 export type ResolvedWinAutoConfig = {

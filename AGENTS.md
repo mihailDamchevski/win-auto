@@ -90,6 +90,7 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 | **P10.3–P10.5** | Diagnostics class, config expansion (`win-auto.config.ts` schema), `win-auto diagnose` CLI command | `diagnostics.ts`, `config.ts`, `cli/diagnose.ts` |
 | **P10.1 (DPI wired)** | DPI helpers, `logical_to_physical_system` in mouseMove/clickAt, `physical_to_logical` in findImage results, real DPI in diagnostics | `utils.rs`, `interaction.rs`, `screenshot.rs`, `diagnostics.ts` |
 | **P10.2 (UIPI bypass)** | `is_uip_barrier` wired in PermissionDenied errors, auto-retry pattern mode on hardware UIPI failure, `getSystemDpi` napi export | `interaction.rs`, `error.rs`, `types.ts` |
+| **P12 (Determinism Layer)** | MockClock virtual time, DeterministicPoll, SessionRecorder/SessionReplayer, waitForUiChange debounce/coalesce/stall detection, `win-auto record`/`replay` CLI, `deterministic` config option | `deterministicWait.ts`, `sessionRecorder.ts`, `sessionReplayer.ts`, `cli/commands/record.ts`, `cli/commands/replay.ts` |
 
 ### Partially Complete
 
@@ -98,11 +99,12 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 | **P4.2 remaining UIA patterns** | ✅ Done (AGENTS.md was outdated) | `ExpandCollapsePattern`, `ScrollPattern`, `RangeValuePattern`, `SelectionPattern`, `GridPattern`/`TablePattern`, `WindowPattern` — all implemented |
 | **P10.1 DPI coordinate wiring** | ✅ Done | mouseMove/clickAt now use system DPI conversion; findImage returns logical coords; diagnostics reports real DPI via native `getSystemDpi` |
 | **P10.2 UIPI elevation** | ✅ Done | `is_uip_barrier` set in PermissionDenied errors; hardware → pattern auto-fallback on UIPI; all SetCursorPos call sites detect UIPI |
+| **P12 tree injection in replayer** | 🔄 Partial | `injectNode()` is a placeholder — full MockTreeElement injection not wired; session frame trees not populated on native backend |
 
 ### Test Status
 
-- 95 unit tests + 1 e2e test (`native-ping`) pass
-- Pre-existing: `loadNative.ts` has 4 `import.meta` typecheck errors (CJS limitation); 3 lint errors (`@ts-ignore`, `require()`)
+- 94 unit tests + 1 e2e test (`native-ping`) pass
+- Pre-existing: `loadNative.ts` has 4 `import.meta` typecheck errors (CJS limitation); 2 lint errors (`@ts-ignore`)
 - Native `.node` binary builds successfully with `npm run build:native` (8 warnings, 0 errors)
 
 ### Relevant Files
@@ -129,6 +131,11 @@ win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highli
 - `packages/core/src/testing/treeSnapshot.ts` — element tree snapshots
 - `packages/core/src/testing/fixture.ts` — `createMockFixture`
 - `packages/core/src/diagnostics.ts` — P10.3 diagnostics class
-- `packages/core/src/config.ts` — P10.4 config schema
+- `packages/core/src/config.ts` — P10.4 config schema, P12 deterministic option
 - `packages/cli/src/commands/diagnose.ts` — P10.5 CLI command
+- `packages/core/src/api/deterministicWait.ts` — P12 MockClock, DeterministicPoll, DeterministicBackendPoller
+- `packages/core/src/api/sessionRecorder.ts` — P12 SessionRecorder, SessionRecord types
+- `packages/core/src/api/sessionReplayer.ts` — P12 SessionReplayer, ReplayResult
+- `packages/cli/src/commands/record.ts` — P12 `win-auto record` CLI command
+- `packages/cli/src/commands/replay.ts` — P12 `win-auto replay` CLI command
 ```

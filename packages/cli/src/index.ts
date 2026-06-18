@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 import { initProject } from "./commands/init";
 import { inspectCommand } from "./commands/inspect";
+import { inspectorCommand } from "./commands/inspector";
 import { queryCommand } from "./commands/query";
 import { elevateCommand } from "./commands/elevate";
 import { diagnoseCommand } from "./commands/diagnose";
+import { testReportCommand } from "./commands/testReport";
+import { recordCommand } from "./commands/record";
+import { replayCommand } from "./commands/replay";
 export { Automation, App, Window, Element, TestAutomation } from "@win-auto/core";
 
 async function runCli(): Promise<void> {
@@ -23,9 +27,14 @@ async function runCli(): Promise<void> {
     const target = args[0];
     if (!target) {
       process.stderr.write(
-        "Usage: win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n",
+        "Usage: win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>] [--tui]\n",
       );
       process.exitCode = 1;
+      return;
+    }
+    if (args.includes("--tui")) {
+      const mode = args.includes("--hwnd") ? "hwnd" : "uia";
+      await inspectorCommand(target, mode);
       return;
     }
     const maxDepth = args[1] && !args[1].startsWith("--") ? Number(args[1]) : undefined;
@@ -74,11 +83,65 @@ async function runCli(): Promise<void> {
     return;
   }
 
+  if (command === "test-report") {
+    const dirIdx = args.indexOf("--dir");
+    const thresholdIdx = args.indexOf("--threshold");
+    const topIdx = args.indexOf("--top");
+    testReportCommand({
+      historyDir: dirIdx >= 0 && dirIdx + 1 < args.length ? args[dirIdx + 1] : undefined,
+      threshold: thresholdIdx >= 0 && thresholdIdx + 1 < args.length ? Number(args[thresholdIdx + 1]) : undefined,
+      top: topIdx >= 0 && topIdx + 1 < args.length ? Number(args[topIdx + 1]) : undefined,
+    });
+    return;
+  }
+
+  if (command === "record") {
+    const pidIdx = args.indexOf("--pid");
+    const outputIdx = args.indexOf("--output");
+    const durationIdx = args.indexOf("--duration");
+    const targetArg = args[0];
+    if (!targetArg && pidIdx < 0) {
+      process.stderr.write("Usage: win-auto record <pid> [--output <file>] [--duration <ms>]\n");
+      process.exitCode = 1;
+      return;
+    }
+    const pid = pidIdx >= 0 ? Number(args[pidIdx + 1]) : Number(targetArg);
+    if (isNaN(pid)) {
+      process.stderr.write("Error: PID must be a number\n");
+      process.exitCode = 1;
+      return;
+    }
+    await recordCommand({
+      pid,
+      output: outputIdx >= 0 && outputIdx + 1 < args.length ? args[outputIdx + 1] : undefined,
+      durationMs: durationIdx >= 0 && durationIdx + 1 < args.length ? Number(args[durationIdx + 1]) : undefined,
+    });
+    return;
+  }
+
+  if (command === "replay") {
+    const speedIdx = args.indexOf("--speed");
+    const verbose = args.includes("--verbose");
+    const inputPath = args[0];
+    if (!inputPath) {
+      process.stderr.write("Usage: win-auto replay <session.json> [--speed <factor>] [--verbose]\n");
+      process.exitCode = 1;
+      return;
+    }
+    await replayCommand({
+      input: inputPath,
+      speed: speedIdx >= 0 && speedIdx + 1 < args.length ? Number(args[speedIdx + 1]) : undefined,
+      verbose,
+    });
+    return;
+  }
+
   if (command === "diagnose") {
     const pidIdx = args.indexOf("--pid");
     const nameIdx = args.indexOf("--name");
     const outputIdx = args.indexOf("--output");
     const bundleIdx = args.indexOf("--bundle");
+    const htmlIdx = args.indexOf("--html");
     await diagnoseCommand({
       pid: pidIdx >= 0 && pidIdx + 1 < args.length ? Number(args[pidIdx + 1]) : undefined,
       name: nameIdx >= 0 && nameIdx + 1 < args.length ? args[nameIdx + 1] : undefined,
@@ -89,6 +152,7 @@ async function runCli(): Promise<void> {
       recommend: args.includes("--recommend"),
       output: outputIdx >= 0 && outputIdx + 1 < args.length ? args[outputIdx + 1] : undefined,
       bundle: bundleIdx >= 0 && bundleIdx + 1 < args.length ? args[bundleIdx + 1] : undefined,
+      html: htmlIdx >= 0 && htmlIdx + 1 < args.length ? args[htmlIdx + 1] : undefined,
     });
     return;
   }
@@ -97,7 +161,7 @@ async function runCli(): Promise<void> {
   process.stdout.write("Usage:\n");
   process.stdout.write("  win-auto init <project-name>\n");
   process.stdout.write(
-    "  win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>]\n",
+    "  win-auto inspect <pid|imageName> [maxDepth] [--hwnd] [--highlight <name>] [--tui]\n",
   );
   process.stdout.write(
     "  win-auto query <pid|imageName> [--name <name>] [--role <role>] [--all] [--highlight]\n",
@@ -105,6 +169,10 @@ async function runCli(): Promise<void> {
   process.stdout.write("  win-auto diagnose [--pid <pid>] [--name <name>] [--tree] [--hwnd]\n");
   process.stdout.write("                 [--uia] [--events] [--recommend] [--output <file>]\n");
   process.stdout.write("  win-auto diagnose --bundle <path>\n");
+  process.stdout.write("  win-auto diagnose --bundle <path> --html <output.html>\n");
+  process.stdout.write("  win-auto test-report [--dir <historyDir>] [--threshold <0-1>] [--top <N>]\n");
+  process.stdout.write("  win-auto record <pid> [--output <file>] [--duration <ms>]\n");
+  process.stdout.write("  win-auto replay <session.json> [--speed <factor>] [--verbose]\n");
   process.stdout.write("  win-auto elevate\n");
 }
 

@@ -2,7 +2,7 @@
 
 **Goal:** Make win-auto a production-ready, debuggable, observable platform that other engineers can adopt without knowing its internals.
 
-**Status:** Phases 1–8 complete (hardening, benchmarks, API cleanup, security). Phases 9–13 ahead (tooling, determinism, release).
+**Status:** Phases 1–11 complete (hardening, benchmarks, API cleanup, security, tracing, inspector, flaky economics). Phases 12–13 ahead (determinism, extension points).
 
 ---
 
@@ -18,10 +18,13 @@
 | 6 | Observability (basic) | ✅ Done | `diagnostics.ts` — screenshots + element tree on failure |
 | 7 | Security & Hardening | ✅ Done | Capped buffers, regex limits, checked arithmetic, path validation |
 | 8 | Performance Benchmarking | ✅ Done | Same as Phase 3 |
+| 9 | Execution Trace & Failure Bundles | ✅ Done | `TraceRecorder` with error/assertion/decision events; `FailureBundle` with JSON + HTML export; locator decision tree; timing breakdown; richer `diagnose --bundle` + `--html` output |
+| 10 | UI Inspector (Dev Tool) | ✅ Done | `win-auto inspect <pid> --tui` — blessed-based TUI with live UIA tree, filter, properties panel, locator preview, highlight overlay |
+| 11 | Flaky Test Economics | ✅ Done | `FlakyHistoryStore` with JSON persistence; `it.quarantine()` auto-skip; `win-auto test-report` CLI with clustering; failure mode tracking; config-driven thresholds |
 
 ---
 
-## Phase 9: Execution Trace & Failure Bundles
+## Phase 9: Execution Trace & Failure Bundles ✅
 
 **Why:** "Debugging is more important than execution" at scale. Every failure needs a self-contained artifact — no reproduction required.
 
@@ -42,7 +45,7 @@
 
 ---
 
-## Phase 10: UI Inspector (Dev Tool)
+## Phase 10: UI Inspector (Dev Tool) ✅
 
 **Why:** Writing locators without seeing the UIA tree is blind. `win-auto inspect` is text-only and slow for exploration.
 
@@ -59,7 +62,7 @@
 
 ---
 
-## Phase 11: Flaky Test Economics
+## Phase 11: Flaky Test Economics ✅
 
 **Why:** CI greenness decays as test count grows. Need automated tracking and quarantine.
 

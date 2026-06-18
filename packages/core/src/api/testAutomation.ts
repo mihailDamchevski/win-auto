@@ -54,8 +54,22 @@ export async function captureScreenshotsFromTrackedApps(dir?: string): Promise<s
 }
 
 export class TestAutomation extends Automation {
+  /** If deterministic, automatically start recording on construction. */
+  constructor(backend?: import("./backend").Backend, inputMode?: import("./types").InputMode, traceEnabled?: boolean, deterministic?: boolean) {
+    super(backend, inputMode, traceEnabled, deterministic);
+    if (deterministic && this.recorder) {
+      this.recorder.start();
+    }
+  }
+
   public override async launchApp(options: LaunchOptions): Promise<App> {
     const app = await super.launchApp(options);
+    if (this.recorder?.isRecording()) {
+      await this.recorder.recordAction("app:launched", {
+        pid: app.processId,
+        executablePath: options.executablePath,
+      });
+    }
     return trackApp(app);
   }
 }

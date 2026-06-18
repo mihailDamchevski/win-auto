@@ -23,7 +23,13 @@ export type TraceEventType =
   | "window:restore"
   | "locator:found"
   | "locator:staleRecovered"
+  | "locator:decision"
+  | "inputMode:decision"
+  | "snapshot:before"
+  | "snapshot:after"
   | "screenshot"
+  | "error"
+  | "assertion"
   | "app:launched"
   | "app:closed"
   | "window:found"
@@ -40,6 +46,28 @@ export type TraceEntry = {
   text?: string;
   processId?: number;
   metadata?: Record<string, unknown>;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+  expected?: unknown;
+  actual?: unknown;
+  assertionMessage?: string;
+  decision?: {
+    strategyName: string;
+    confidence: number;
+    reason: string;
+    candidates: number;
+  };
+};
+
+export type TraceTimingCategory = {
+  count: number;
+  totalMs: number;
+  avgMs: number;
+  minMs: number;
+  maxMs: number;
 };
 
 export type TraceSession = {
@@ -47,6 +75,20 @@ export type TraceSession = {
   endTime?: number;
   entryCount: number;
   entries: TraceEntry[];
+  errors?: Array<{
+    timestamp: number;
+    name: string;
+    message: string;
+    stack?: string;
+  }>;
+  assertionFailures?: Array<{
+    timestamp: number;
+    expected: unknown;
+    actual: unknown;
+    message: string;
+  }>;
+  locatorDecisions?: TraceEntry[];
+  timingBreakdown?: Record<string, TraceTimingCategory>;
 };
 
 const EVENT_TRACE_MAP: Record<string, TraceEventType> = {
@@ -113,13 +155,126 @@ export class TraceRecorder {
     this.entries.push({ timestamp: Date.now(), type, ...details });
   }
 
+  recordError(error: Error, context?: Record<string, unknown>): void {
+    this.entries.push({
+      timestamp: Date.now(),
+      type: "error",
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      },
+      metadata: context,
+    });
+  }
+
+  recordAssertionFailure(
+    expected: unknown,
+    actual: unknown,
+    message: string,
+    context?: Record<string, unknown>,
+  ): void {
+    this.entries.push({
+      timestamp: Date.now(),
+      type: "assertion",
+      expected,
+      actual,
+      assertionMessage: message,
+      metadata: context,
+    });
+  }
+
+  recordLocatorDecision(
+    selector: ElementSelector,
+    candidates: number,
+    strategyName: string,
+    confidence: number,
+    reason: string,
+  ): void {
+    this.entries.push({
+      timestamp: Date.now(),
+      type: "locator:decision",
+      selector,
+      decision: { strategyName, confidence, reason, candidates },
+    });
+  }
+
+  recordInputModeDecision(
+    target: string,
+    chosen: InputMode,
+    reason: string,
+  ): void {
+    this.entries.push({
+      timestamp: Date.now(),
+      type: "inputMode:decision",
+      inputMode: chosen,
+      text: target,
+      metadata: { reason },
+    });
+  }
+
+  clear(): void {
+    this.entries.length = 0;
+  }
+
+  getTimingBreakdown(): Record<string, TraceTimingCategory> {
+    const buckets = new Map<string, number[]>();
+    for (const entry of this.entries) {
+      if (entry.durationMs === undefined) continue;
+      const cat = entry.type.split(":")[0] ?? "other";
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat)!.push(entry.durationMs);
+    }
+    const result: Record<string, TraceTimingCategory> = {};
+    for (const [cat, durations] of buckets) {
+      const sorted = [...durations].sort((a, b) => a - b);
+      const totalMs = durations.reduce((s, d) => s + d, 0);
+      result[cat] = {
+        count: durations.length,
+        totalMs: Math.round(totalMs * 100) / 100,
+        avgMs: Math.round((totalMs / durations.length) * 100) / 100,
+        minMs: sorted[0] ?? 0,
+        maxMs: sorted[sorted.length - 1] ?? 0,
+      };
+    }
+    return result;
+  }
+
   export(): TraceSession {
-    return {
+    const timingBreakdown = this.getTimingBreakdown();
+    const errors = this.entries
+      .filter((e) => e.type === "error" && e.error)
+      .map((e) => ({
+        timestamp: e.timestamp,
+        name: e.error!.name,
+        message: e.error!.message,
+        stack: e.error!.stack,
+      }));
+    const assertionFailures = this.entries
+      .filter((e) => e.type === "assertion")
+      .map((e) => ({
+        timestamp: e.timestamp,
+        expected: e.expected,
+        actual: e.actual,
+        message: e.assertionMessage ?? "",
+      }));
+    const locatorDecisions = this.entries.filter(
+      (e) => e.type === "locator:decision",
+    );
+
+    const session: TraceSession = {
       startTime: this.startTime,
       endTime: Date.now(),
       entryCount: this.entries.length,
       entries: [...this.entries],
     };
+
+    if (errors.length > 0) session.errors = errors;
+    if (assertionFailures.length > 0) session.assertionFailures = assertionFailures;
+    if (locatorDecisions.length > 0) session.locatorDecisions = locatorDecisions;
+    if (Object.keys(timingBreakdown).length > 0) session.timingBreakdown = timingBreakdown;
+
+    return session;
   }
 
   private payloadToEntry(type: TraceEventType, payload: Record<string, unknown>): TraceEntry {

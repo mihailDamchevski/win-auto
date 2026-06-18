@@ -69,4 +69,16 @@ export type {
   DebugPayload,
 } from "./api/events";
 export { TraceRecorder, setCurrentTraceRecorder, getCurrentTraceRecorder } from "./api/trace";
-export type { TraceEventType, TraceEntry, TraceSession } from "./api/trace";
+export type { TraceEventType, TraceEntry, TraceSession, TraceTimingCategory } from "./api/trace";
+export { FailureBundle } from "./api/failureBundle";
+export type { FailureBundleData, FailureBundleAppEntry } from "./api/failureBundle";
+export { FlakyHistoryStore } from "./testing/flakyHistory";
+export type { FlakyRecord, FlakySummary, FlakyCluster, FlakyReport, FailureMode } from "./testing/flakyHistory";
+export { initFlakyTracking, recordFlakyResult, isTestQuarantined, generateFlakyReport } from "./testing/flaky";
+export type { FlakyOptions } from "./testing/flaky";
+export { MockClock, DeterministicPoll, DeterministicBackendPoller } from "./api/deterministicWait";
+export type { Clock, PollFn } from "./api/deterministicWait";
+export { SessionRecorder } from "./api/sessionRecorder";
+export type { SessionRecord, RecordedAction, SessionFrame } from "./api/sessionRecorder";
+export { SessionReplayer } from "./api/sessionReplayer";
+export type { ReplayResult } from "./api/sessionReplayer";

@@ -5,6 +5,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_INTERVAL_MS = 100;
 const ADAPTIVE_MIN_MS = 10;
 const ADAPTIVE_MAX_MS = 500;
+const STALL_WARN_THRESHOLD = 5_000; // warn after 5s of no-change polling
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -12,10 +13,22 @@ function delay(ms: number): Promise<void> {
 
 // ─── Condition runner ──────────────────────────────────────────────────
 
+export type WaitStrategy = {
+  /** Debounce period: wait this long after the last change before re-checking. */
+  debounceMs?: number;
+  /** Coalesce multiple rapid UI changes into a single poll cycle. */
+  coalesce?: boolean;
+  /** Stall detection: warn when polling produces no state change for this long. */
+  stallWarnMs?: number;
+  /** Abort polling after this many consecutive no-change cycles. */
+  maxStalePolls?: number;
+};
+
 export type PollOptions = {
   timeoutMs?: number;
   intervalMs?: number;
   adaptive?: boolean;
+  strategy?: WaitStrategy;
 };
 
 /** Poll a condition function until it returns a non-null/non-undefined value
@@ -29,10 +42,25 @@ export async function pollCondition<T>(
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
   let interval = options?.adaptive ? ADAPTIVE_MIN_MS : (options?.intervalMs ?? DEFAULT_INTERVAL_MS);
+  const strategy = options?.strategy;
+  const stallWarnMs = strategy?.stallWarnMs ?? STALL_WARN_THRESHOLD;
+  const maxStalePolls = strategy?.maxStalePolls ?? 50;
+  let lastChangeTime = start;
+  let stalePollCount = 0;
+  let previousResult: T | null | undefined = undefined;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const cleanupDebounce = (): void => {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+  };
 
   while (true) {
     const elapsed = Date.now() - start;
     if (elapsed >= timeoutMs) {
+      cleanupDebounce();
       throw new TimeoutError(
         `Condition not satisfied within ${timeoutMs}ms`,
         "pollCondition",
@@ -40,11 +68,50 @@ export async function pollCondition<T>(
       );
     }
 
+    // Debounce: if enabled and we have a previous value that hasn't changed,
+    // wait for the debounce period before re-checking.
+    if (strategy?.debounceMs && strategy.debounceMs > 0) {
+      const debounceResult = await fn();
+      if (debounceResult !== null && debounceResult !== undefined) {
+        return debounceResult;
+      }
+      if (strategy.debounceMs > 0) {
+        await delay(strategy.debounceMs);
+        continue;
+      }
+    }
+
     const result = await fn();
     if (result !== null && result !== undefined) {
+      cleanupDebounce();
       return result;
     }
 
+    // Track staleness
+    if (result === previousResult) {
+      stalePollCount++;
+      const stallElapsed = Date.now() - lastChangeTime;
+      if (stallElapsed >= stallWarnMs && stalePollCount % 10 === 1) {
+        console.warn(
+          `[win-auto] pollCondition: no state change for ${stallElapsed}ms ` +
+            `(poll #${stalePollCount}). Is the UI still responding?`,
+        );
+      }
+      if (stalePollCount > maxStalePolls) {
+        cleanupDebounce();
+        throw new TimeoutError(
+          `Condition not satisfied after ${stalePollCount} stale polls (no state change detected)`,
+          "pollCondition",
+          timeoutMs,
+        );
+      }
+    } else {
+      lastChangeTime = Date.now();
+      stalePollCount = 0;
+    }
+    previousResult = result;
+
+    // Coalesce: wait for the full interval before polling again
     const waitMs = Math.min(interval, timeoutMs - elapsed);
     if (backend) {
       await backend.waitForUiChange(waitMs);

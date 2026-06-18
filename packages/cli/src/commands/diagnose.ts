@@ -1,5 +1,6 @@
 import fs from "fs";
-import { Automation, NativeBackend } from "@win-auto/core";
+import path from "path";
+import { Automation, NativeBackend, FailureBundle } from "@win-auto/core";
 import type { ElementNode, HwndNode } from "@win-auto/core";
 import type { TraceSession } from "@win-auto/core";
 
@@ -7,9 +8,12 @@ type BundleData = {
   testFailed?: string;
   capturedAt?: string;
   trace?: TraceSession;
+  error?: { name: string; message: string; stack?: string };
+  timingBreakdown?: Record<string, { count: number; totalMs: number; avgMs: number; minMs: number; maxMs: number }>;
   entries?: Array<{
     app: string;
     pid: number;
+    windowTitle?: string | null;
     elementTree?: string;
     screenshot?: string;
   }>;
@@ -25,6 +29,7 @@ export type DiagnoseOptions = {
   recommend?: boolean;
   output?: string;
   bundle?: string;
+  html?: string;
 };
 
 function printSection(title: string): void {
@@ -65,39 +70,104 @@ function printBundle(bundle: BundleData): void {
   printKV("Test", bundle.testFailed ?? "N/A");
   printKV("Captured At", bundle.capturedAt ?? "N/A");
 
+  if (bundle.error) {
+    process.stdout.write(`\n  ${"─".repeat(56)}\n`);
+    process.stdout.write(`  ERROR: ${bundle.error.name}\n`);
+    process.stdout.write(`  Message: ${bundle.error.message}\n`);
+    if (bundle.error.stack) {
+      const firstLine = bundle.error.stack.split("\n")[1]?.trim() ?? "";
+      if (firstLine) process.stdout.write(`  At: ${firstLine}\n`);
+    }
+  }
+
+  if (bundle.timingBreakdown) {
+    printSection("Timing Breakdown");
+    const cats = Object.entries(bundle.timingBreakdown).sort((a, b) => b[1].totalMs - a[1].totalMs);
+    printKV("Category".padEnd(20) + "Count", "Total    Avg     Min     Max");
+    process.stdout.write(`  ${"".padEnd(56, "─")}\n`);
+    for (const [cat, t] of cats) {
+      process.stdout.write(`  ${cat.padEnd(20)} ${String(t.count).padStart(5)}  ${String(t.totalMs).padStart(7)}ms ${String(t.avgMs).padStart(6)}ms ${String(t.minMs).padStart(6)}ms ${String(t.maxMs).padStart(6)}ms\n`);
+    }
+  }
+
   if (bundle.trace) {
     const t = bundle.trace;
     const durationMs = (t.endTime ?? t.startTime) - t.startTime;
     printKV("Start Time", new Date(t.startTime).toISOString());
     printKV("Duration", `${durationMs}ms`);
     printKV("Entries", String(t.entryCount));
+    if (t.errors) printKV("Errors", String(t.errors.length));
+    if (t.assertionFailures) printKV("Assertions", String(t.assertionFailures.length));
+    if (t.locatorDecisions) printKV("Locator Decisions", String(t.locatorDecisions.length));
 
     printSection("Action Trace");
+    let errorCount = 0;
+    let assertionCount = 0;
     for (const entry of t.entries) {
       const ts = new Date(entry.timestamp).toISOString().slice(11, 23);
       const line = [`[${ts}] ${entry.type}`];
+      if (entry.type === "error") {
+        errorCount++;
+        if (errorCount <= 5) {
+          line.push(`error="${entry.error?.message?.substring(0, 120) ?? "unknown"}"`);
+        } else {
+          continue;
+        }
+      }
+      if (entry.type === "assertion") {
+        assertionCount++;
+        if (assertionCount <= 5) {
+          line.push(`msg="${entry.assertionMessage?.substring(0, 120) ?? ""}"`);
+        } else {
+          continue;
+        }
+      }
       if (entry.text) line.push(`text="${entry.text.substring(0, 80)}"`);
       if (entry.elementHandle) line.push(`handle=${entry.elementHandle}`);
       if (entry.processId) line.push(`pid=${entry.processId}`);
       if (entry.durationMs !== undefined) line.push(`+${entry.durationMs}ms`);
+      if (entry.decision) line.push(`[${entry.decision.strategyName} conf=${entry.decision.confidence}]`);
       process.stdout.write(`  ${line.join("  ")}\n`);
     }
 
     if (t.entries.length === 0) {
       process.stdout.write("  (empty trace)\n");
     }
+    if (errorCount > 5) process.stdout.write(`  ... and ${errorCount - 5} more errors\n`);
+    if (assertionCount > 5) process.stdout.write(`  ... and ${assertionCount - 5} more assertions\n`);
+
+    // Locator decisions summary
+    if (t.locatorDecisions && t.locatorDecisions.length > 0) {
+      printSection("Locator Decisions");
+      for (const entry of t.locatorDecisions.slice(0, 10)) {
+        const ts = new Date(entry.timestamp).toISOString().slice(11, 23);
+        process.stdout.write(`  [${ts}] strategy=${entry.decision?.strategyName} conf=${entry.decision?.confidence} reason=${entry.decision?.reason} candidates=${entry.decision?.candidates}\n`);
+      }
+      if (t.locatorDecisions.length > 10) {
+        process.stdout.write(`  ... and ${t.locatorDecisions.length - 10} more decisions\n`);
+      }
+    }
   }
 
   if (bundle.entries) {
     printSection("Tracked Apps");
     for (const e of bundle.entries) {
-      printKV(`[${e.pid}] ${e.app}`, `tree: ${e.elementTree ? "yes" : "no"}, screenshot: ${e.screenshot ? "yes" : "no"}`);
+      const title = e.windowTitle ? ` "${e.windowTitle}"` : "";
+      printKV(`[${e.pid}] ${e.app}${title}`, `tree: ${e.elementTree ? "yes" : "no"}, screenshot: ${e.screenshot ? "yes" : "no"}`);
     }
   }
 }
 
 export async function diagnoseCommand(options: DiagnoseOptions): Promise<void> {
-  if (options.bundle) {
+  if (options.html && options.bundle) {
+    const data = FailureBundle.load(options.bundle);
+    const outPath = path.resolve(options.html);
+    await FailureBundle.exportHTML(data, outPath);
+    process.stdout.write(`HTML report saved to: ${outPath}\n`);
+    return;
+  }
+
+  if (options.bundle && !options.html) {
     const raw = fs.readFileSync(options.bundle, "utf8");
     const bundle: BundleData = JSON.parse(raw);
     printBundle(bundle);
