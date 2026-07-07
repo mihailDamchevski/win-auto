@@ -185,8 +185,8 @@ export class Automation {
   /** Register a plugin. Returns `this` for chaining. */
   use(plugin: Plugin): this {
     // Wrap backend with plugin proxy on first plugin install
-    if (this.plugins.list().length === 0 && !(this.backend instanceof PluginBackendProxy)) {
-      this.backend = new PluginBackendProxy(this.backend, this.plugins);
+    if (this.plugins.list().length === 0 && !("getInner" in this.backend)) {
+      this.backend = PluginBackendProxy(this.backend, this.plugins);
     }
     this.plugins.install(plugin);
     return this;

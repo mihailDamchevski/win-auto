@@ -277,4 +277,98 @@ describe("Locator", () => {
       expect(match!.y).toBeGreaterThanOrEqual(0);
     });
   });
+
+  describe("image locator strategy", () => {
+    it("find() resolves image strategy", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "Main Input" }).image([0x42, 0x4d, 0x00]);
+      const el = await locator.find();
+      expect(el).not.toBeNull();
+      // Should find via the selector first (Main Input)
+      expect(el!.handle).toBeTruthy();
+    });
+
+    it("find() falls through to image strategy when selector fails", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "DoesNotExist" }).image([0x42, 0x4d, 0x00]);
+      const el = await locator.find();
+      expect(el).not.toBeNull();
+    });
+
+    it("find() returns null when both selector and image fail", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      // Override findImage to return null
+      const originalFindImage = backend.findImage.bind(backend);
+      backend.findImage = async () => null;
+      const locator = win.locator({ name: "DoesNotExist" }).image([0x42, 0x4d, 0x00]);
+      const el = await locator.find();
+      expect(el).toBeNull();
+      backend.findImage = originalFindImage;
+    });
+
+    it("waitFor() resolves image strategy", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "DoesNotExist" }).image([0x42, 0x4d, 0x00]);
+      const el = await locator.waitFor({ timeoutMs: 1000 });
+      expect(el).not.toBeNull();
+    });
+
+    it("click() with image strategy works", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const win = new Window(winHandle, pid, backend, new AutomationEvents());
+      const locator = win.locator({ name: "DoesNotExist" }).image([0x42, 0x4d, 0x00]);
+      await expect(locator.click({ timeoutMs: 1000 })).resolves.toBeUndefined();
+    });
+
+    it("image-only strategy with find()", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const locator = new (await import("../api/locator")).Locator(
+        winHandle,
+        backend,
+        new AutomationEvents(),
+        [{ type: "image", template: [0x42, 0x4d, 0x00] }],
+      );
+      const el = await locator.find();
+      expect(el).not.toBeNull();
+    });
+
+    it("image-only strategy with waitFor()", async () => {
+      const pid = await backend.launch("C:\\test.exe");
+      const [winHandle] = await backend.enumerateWindows(pid);
+      const locator = new (await import("../api/locator")).Locator(
+        winHandle,
+        backend,
+        new AutomationEvents(),
+        [{ type: "image", template: [0x42, 0x4d, 0x00] }],
+      );
+      const el = await locator.waitFor({ timeoutMs: 1000 });
+      expect(el).not.toBeNull();
+    });
+
+    it("image-only strategy throws on waitFor timeout", async () => {
+      const win = new Window("test-win", 1000, backend, new AutomationEvents());
+      const originalFindImage = backend.findImage.bind(backend);
+      backend.findImage = async () => null;
+      const locator = new (await import("../api/locator")).Locator(
+        win.handle,
+        backend,
+        new AutomationEvents(),
+        [{ type: "image", template: [0x42, 0x4d, 0x00] }],
+      );
+      await expect(locator.waitFor({ timeoutMs: 50, intervalMs: 10 })).rejects.toThrow(
+        "element not found within 50ms",
+      );
+      backend.findImage = originalFindImage;
+    });
+  });
 });

@@ -110,6 +110,20 @@ for (const m of meta) {
   }
 }
 
+// Also update root package.json (it has devDependencies referencing workspace packages)
+const rootPkgPath = path.join(root, "package.json");
+const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"));
+let rootChanged = false;
+rootChanged = updateDeps(rootPkg.dependencies) || rootChanged;
+rootChanged = updateDeps(rootPkg.devDependencies) || rootChanged;
+if (rootChanged) {
+  fs.writeFileSync(
+    rootPkgPath,
+    JSON.stringify(rootPkg, null, 2) + "\n",
+  );
+  console.log("Updated inter-package deps in root package.json");
+}
+
 console.log(
   "\nAll done. Run `npm run publish:all` to publish updated packages.",
 );

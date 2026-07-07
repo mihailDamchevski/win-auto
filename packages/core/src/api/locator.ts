@@ -21,6 +21,7 @@ interface HealedResult {
   handle: string;
   confidence: number;
   strategyName: string;
+  originatingSelector?: ElementSelector | null;
 }
 
 const STRATEGY_DEFS = [
@@ -83,11 +84,10 @@ const STRATEGY_DEFS = [
   },
 ];
 
-const strategyCache = new Map<string, { strategyName: string; handle: string }>();
 const CACHE_MAX_SIZE = 500;
 
-function cacheKey(s: ElementSelector): string {
-  return JSON.stringify(s, Object.keys(s).sort());
+function cacheKey(windowHandle: string, s: ElementSelector): string {
+  return `${windowHandle}::${JSON.stringify(s, Object.keys(s).sort())}`;
 }
 
 function debugLog(...args: unknown[]): void {
@@ -161,6 +161,8 @@ export class Locator {
   private healEnabled = false;
   private healThreshold = 0.5;
   private healParallel = true;
+  /** Per-instance healing cache, scoped to avoid cross-window/test contamination */
+  private strategyCache = new Map<string, { strategyName: string; handle: string }>();
 
   constructor(
     windowHandle: string,
@@ -188,6 +190,11 @@ export class Locator {
     this.healThreshold = options?.threshold ?? 0.5;
     this.healParallel = options?.parallel ?? true;
     return this;
+  }
+
+  /** Clear the per-instance healing strategy cache. Useful between tests to avoid stale healing decisions. */
+  clearHealingCache(): void {
+    this.strategyCache.clear();
   }
 
   /** Add a selector strategy. Can be chained for OR logic (multi-selector). */
@@ -233,7 +240,7 @@ export class Locator {
 
   // --- Actions ---
 
-  async find(_options?: WaitOptions): Promise<Element | null> {
+  async find(options?: WaitOptions): Promise<Element | null> {
     for (const strategy of this.strategies) {
       if (strategy.type === "selector") {
         const el = await this.findBySelector(strategy.selector);
@@ -242,8 +249,8 @@ export class Locator {
         // Healing: auto-generate fallback selectors when primary fails
         if (this.healEnabled) {
           const fallbacks = generateFallbackSelectors(strategy.selector);
-          const ck = cacheKey(strategy.selector);
-          const cached = strategyCache.get(ck);
+          const ck = cacheKey(this.windowHandle, strategy.selector);
+          const cached = this.strategyCache.get(ck);
 
           if (cached) {
             debugLog(`cache hit for ${ck}: trying ${cached.strategyName} first`);
@@ -276,14 +283,24 @@ export class Locator {
                 `healing fallback succeeded (primary selector matched 0 elements)`,
               );
               // LRU eviction: remove oldest entry if cache exceeds limit
-              if (strategyCache.size >= CACHE_MAX_SIZE) {
-                const firstKey = strategyCache.keys().next().value;
-                if (firstKey !== undefined) strategyCache.delete(firstKey);
+              if (this.strategyCache.size >= CACHE_MAX_SIZE) {
+                const firstKey = this.strategyCache.keys().next().value;
+                if (firstKey !== undefined) this.strategyCache.delete(firstKey);
               }
-              strategyCache.set(ck, { strategyName: fb.strategyName, handle: fbEl.handle });
+              this.strategyCache.set(ck, { strategyName: fb.strategyName, handle: fbEl.handle });
               return fbEl;
             }
           }
+        }
+      } else if (strategy.type === "image") {
+        // Single-attempt image find (no polling - find() is not a waiting method)
+        const match = await this.backend.findImage(this.windowHandle, strategy.template);
+        if (match && match.confidence >= (options?.minConfidence ?? 0.8)) {
+          // Create a synthetic element handle for the image match
+          // Note: Image matches don't correspond to real UIA elements, so we return
+          // a pseudo-element that can be used for coordinate-based operations
+          const pseudoHandle = `image-match-${match.x}-${match.y}-${match.width}-${match.height}`;
+          return new Element(pseudoHandle, this.windowHandle, this.backend, this.events);
         }
       }
     }
@@ -301,22 +318,27 @@ export class Locator {
       // Parallel healing: run all fallback strategies concurrently on each poll cycle
       const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const intervalMs = options?.intervalMs ?? DEFAULT_INTERVAL_MS;
+      const minConfidence = options?.minConfidence ?? 0.8;
       const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
 
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        type StrategyResult = {
+          handle: string;
+          confidence: number;
+          strategyName: string;
+          originatingSelector?: ElementSelector | null;
+        } | null;
+
         const results = await Promise.all(
-          this.strategies
-            .filter(
-              (s): s is { type: "selector"; selector: ElementSelector } => s.type === "selector",
-            )
-            .flatMap((s) => {
+          this.strategies.flatMap((s): Promise<StrategyResult>[] => {
+            if (s.type === "selector") {
               const fallbacks = generateFallbackSelectors(s.selector).filter(
                 (fb) => fb.confidence >= this.healThreshold,
               );
               // Include the original selector as highest-confidence
               return [
-                { strategyName: "original", confidence: 1.0, selector: s.selector },
-                ...fallbacks,
+                { strategyName: "original", confidence: 1.0, selector: s.selector, type: "selector" as const },
+                ...fallbacks.map((fb) => ({ ...fb, type: "selector" as const })),
               ].map((fb) =>
                 this.findBySelector(fb.selector).then((el) =>
                   el
@@ -324,23 +346,39 @@ export class Locator {
                         handle: el.handle,
                         confidence: fb.confidence,
                         strategyName: fb.strategyName,
+                        originatingSelector: s.selector,
                       }
                     : null,
                 ),
-              );
-            }),
+              ) as Promise<StrategyResult>[];
+            } else {
+              // Image strategy - use waitForImage (polls with timeout)
+              return [
+                this.waitForImage(s.template, { ...options, minConfidence }).then((match) =>
+                  match
+                    ? {
+                        handle: `image-match-${match.x}-${match.y}-${match.width}-${match.height}`,
+                        confidence: match.confidence,
+                        strategyName: "image",
+                        originatingSelector: null,
+                      }
+                    : null,
+                ),
+              ] as Promise<StrategyResult>[];
+            }
+          }),
         );
 
         const best = results
-          .filter((r): r is HealedResult => r !== null)
+          .filter((r): r is HealedResult & { originatingSelector?: ElementSelector | null } => r !== null)
           .sort((a, b) => b.confidence - a.confidence)[0];
 
         if (best) {
           const el = new Element(best.handle, this.windowHandle, this.backend, this.events);
           debugLog(`parallel healing: ${best.strategyName} (confidence ${best.confidence})`);
-          const candidates = results.filter((r): r is HealedResult => r !== null);
+          const candidates = results.filter((r): r is HealedResult & { originatingSelector?: ElementSelector | null } => r !== null);
           getCurrentTraceRecorder()?.recordLocatorDecision(
-            {} as ElementSelector,
+            best.originatingSelector ?? {} as ElementSelector,
             candidates.length,
             best.strategyName,
             best.confidence,
@@ -365,8 +403,9 @@ export class Locator {
           options,
         );
       }
+      // Only image strategies were used
       throw new TimeoutError(
-        `Locator: element not found within ${timeoutMs}ms (healing)`,
+        `Locator: image not found within ${timeoutMs}ms (healing)`,
         "waitFor",
         timeoutMs,
       );
@@ -409,11 +448,10 @@ export class Locator {
       } else if (strategy.type === "image") {
         const match = await this.waitForImage(strategy.template, options);
         if (match) {
-          await this.backend.mouseMove(
-            match.x + Math.floor(match.width / 2),
-            match.y + Math.floor(match.height / 2),
-          );
-          await this.backend.clickElement(this.windowHandle);
+          const x = match.x + Math.floor(match.width / 2);
+          const y = match.y + Math.floor(match.height / 2);
+          await this.backend.mouseMove(x, y);
+          await this.backend.clickAt(x, y);
           return;
         }
       }

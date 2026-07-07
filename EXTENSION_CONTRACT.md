@@ -51,17 +51,20 @@ interface PluginHooks {
 
 ## 2. Actions Hooked
 
-The `PluginBackendProxy` wraps every `Backend` method and dispatches `beforeAction` / `afterAction` / `onError` hooks for the following actions:
+The `PluginBackendProxy` uses a JavaScript `Proxy` to intercept **all** `Backend` method calls automatically and dispatches `beforeAction` / `afterAction` / `onError` hooks for every call. This guarantees 1:1 coverage — any method added to the `Backend` interface is instrumented without manual boilerplate.
 
-**App lifecycle:** `backend:launch`, `backend:launchProcess`, `backend:closeApp`, `backend:killProcess`, `backend:launchByAumid`, `backend:runElevated`
+A small number of methods that are simple synchronous getters with no side effects bypass the hooks for performance:
 
-**Element actions:** `backend:clickElement`, `backend:typeText`, `backend:sendKeys`, `backend:setValue`, `backend:focusElement`, `backend:pressKey`, `backend:replaceSelectedText`, `backend:rangeValueSetValue`, `backend:clickDialogButton`
+```
+ping, getWindowInfo, getProcessImageName, isProcessRunning, isProcessElevated,
+findProcessesByName, findDialogs, getDialogControls, buildElementPath,
+getToggleState, inspectWindowTree, inspectHwndTree, debugDiscovery,
+startWinEventWatcher, stopWinEventWatcher
+```
 
-**Element queries:** `backend:findElement`
+> **Before v0.2.0:** The proxy manually wrapped only ~17 of ~97 backend methods. The Proxy-based rewrite (v0.2.0) structurally guarantees full coverage regardless of interface changes.
 
-**Window actions:** `backend:setWindowBounds`
-
-All hooks receive the action name as the first parameter and a params object as the second. The params object contains the method arguments.
+All hooks receive the action name (prefixed `backend:` + method name) and a `{ args }` params object containing the method arguments.
 
 ---
 
@@ -145,7 +148,7 @@ Call `await automation.usePlugins(config.plugins)` to load plugins from config.
 
 - The `Plugin` and `PluginHooks` interfaces are stable across minor versions.
 - Hook parameter shapes (`PluginHooks.*`) will not change in breaking ways without a major version bump.
-- The `PluginBackendProxy` class may gain new methods when the `Backend` interface gains new methods, but will not lose or change existing method signatures.
+- The `PluginBackendProxy` uses a `Proxy`-based approach that automatically covers **every** method on the `Backend` interface — no manual wrapping needed when new methods are added.
 - Plugins should not depend on internal (`private`/`protected`) APIs of core classes.
 
 ---

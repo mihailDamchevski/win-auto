@@ -843,6 +843,14 @@ Copyright (C) 2026 Mihail Damchevski
 
 Licensed under AGPL-3.0.
 
+> **Note for automation/testing consumers:** The AGPL-3.0 requires that if you modify
+> `@win-auto/core` or `win-auto` and use the modified version internally (e.g., in a
+> CI/test suite that communicates with your team over a network), you must offer source
+> access to those modifications. Using the unmodified package within your own test suite
+> (without distributing or providing network access to the tool itself) does not trigger
+> the AGPL's source-sharing requirements. If you have questions about how AGPL applies
+> to your specific use case, consult your legal team.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.

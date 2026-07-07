@@ -168,3 +168,69 @@ pub fn refine_candidates(
 
   (best_x, best_y, best_ncc)
 }
+
+#[cfg(all(test, feature = "image-fft"))]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_fft_cross_correlate_perfect_match() {
+    // A simple case: screen = template = 2x2 with constant values
+    let screen = vec![1.0f64, 1.0, 1.0, 1.0];
+    let template = vec![1.0f64, 1.0, 1.0, 1.0];
+    let result = fft_cross_correlate(&screen, 2, 2, &template, 2, 2);
+    // Result should be 1x1 (2-2+1 = 1 each dimension), positive correlation
+    assert_eq!(result.len(), 1);
+    assert!(result[0] > 0.0);
+  }
+
+  #[test]
+  fn test_fft_cross_correlate_peak_at_origin() {
+    // Screen: 3x3, Template: 2x2 matching top-left of screen
+    let screen = vec![
+      9.0, 2.0, 3.0,
+      4.0, 5.0, 6.0,
+      7.0, 8.0, 1.0,
+    ];
+    let template = vec![
+      9.0, 2.0,
+      4.0, 5.0,
+    ];
+    let result = fft_cross_correlate(&screen, 3, 3, &template, 2, 2);
+    // Result should be 2x2 = 4 elements
+    assert_eq!(result.len(), 4);
+    // The highest peak should be at position (0,0) since template matches top-left
+    let max_idx = result.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+    assert_eq!(max_idx, 0);
+  }
+
+  #[test]
+  fn test_ncc_at_perfect_match() {
+    let screen = vec![1.0f64, 2.0, 3.0, 4.0];
+    let template = vec![1.0f64, 2.0, 3.0, 4.0];
+    let mean = template.iter().sum::<f64>() / 4.0;
+    let ss = template.iter().map(|v| (v - mean).powi(2)).sum();
+    let ncc = ncc_at(&screen, 2, &template, mean, ss, 2, 2, 0, 0);
+    // Perfect match should give NCC close to 1.0
+    assert!((ncc - 1.0).abs() < 1e-9);
+  }
+
+  #[test]
+  fn test_refine_candidates_selects_best() {
+    let screen = vec![
+      1.0, 2.0, 3.0,
+      4.0, 5.0, 6.0,
+      7.0, 8.0, 9.0,
+    ];
+    let template = vec![
+      5.0, 6.0,
+      8.0, 9.0,
+    ];
+    // Candidate at (1,1) should be the best match (bottom-right of screen matches template)
+    let candidates = vec![(0, 0), (1, 1)];
+    let (best_x, best_y, best_ncc) = refine_candidates(&screen, 3, &template, 2, 2, &candidates, 1, 2, 2);
+    assert_eq!(best_x, 1);
+    assert_eq!(best_y, 1);
+    assert!((best_ncc - 1.0).abs() < 1e-9);
+  }
+}

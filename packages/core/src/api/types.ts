@@ -313,6 +313,8 @@ export type InputMode = "pattern" | "hardware" | "auto";
 export type WaitOptions = {
   timeoutMs?: number;
   intervalMs?: number;
+  /** Minimum confidence threshold for image matching (default 0.8) */
+  minConfidence?: number;
 };
 
 export type FindFirstOptions = WaitOptions & {

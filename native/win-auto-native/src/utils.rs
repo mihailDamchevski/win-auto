@@ -129,8 +129,41 @@ pub fn hwnd_to_string(hwnd: HWND) -> String {
   format!("{}", hwnd.0 as isize)
 }
 
+/// A cross-platform pure function: converts a Rust `&str` to a null-terminated
+/// UTF-16 `Vec<u16>`, suitable for passing to Windows wide-string APIs.
+/// No Windows dependency — safe to compile and test on any platform.
 pub fn to_wide_null_terminated(value: &str) -> Vec<u16> {
   value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::to_wide_null_terminated;
+
+  #[test]
+  fn test_to_wide_null_terminated_empty() {
+    let result = to_wide_null_terminated("");
+    assert_eq!(result, vec![0u16]);
+  }
+
+  #[test]
+  fn test_to_wide_null_terminated_ascii() {
+    let result = to_wide_null_terminated("hello");
+    assert_eq!(result, vec![104u16, 101, 108, 108, 111, 0]);
+  }
+
+  #[test]
+  fn test_to_wide_null_terminated_unicode() {
+    let result = to_wide_null_terminated("héllo");
+    // é is 0xE9 in UTF-16
+    assert_eq!(result, vec![104u16, 0xE9, 108, 108, 111, 0]);
+  }
+
+  #[test]
+  fn test_to_wide_null_terminated_ends_with_null() {
+    let result = to_wide_null_terminated("test");
+    assert_eq!(result.last(), Some(&0u16));
+  }
 }
 
 pub fn get_class_name(hwnd: HWND) -> String {

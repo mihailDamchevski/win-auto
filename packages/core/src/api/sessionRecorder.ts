@@ -71,15 +71,18 @@ export class SessionRecorder {
     if (action === "app:launched" && params?.pid && typeof params.pid === "number") {
       this.trackedProcessIds.add(params.pid);
     }
-    if (action === "app:closed" && params?.pid && typeof params.pid === "number") {
-      this.trackedProcessIds.delete(params.pid);
-    }
 
     const timestamp = Date.now();
     this.actions.push({ action, timestamp, params });
 
+    // Capture tree before untracking the PID so the closing app's tree is included
     if (this.captureTreeOnNextAction) {
       await this.captureTree(action, timestamp);
+    }
+
+    // Only untrack PID after tree capture so "last known state" frame is recorded
+    if (action === "app:closed" && params?.pid && typeof params.pid === "number") {
+      this.trackedProcessIds.delete(params.pid);
     }
   }
 
